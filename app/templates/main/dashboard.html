@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="mb-0"><i class="bi bi-speedometer2"></i> Dashboard</h2>
+  <div class="text-muted">Welcome, {{ current_user.username }}</div>
+  </div>
+
+  <!-- Stats -->
+  <div class="row g-3 mb-4">
+    <div class="col-md-3">
+      <div class="card stats-card text-center">
+        <div class="card-body">
+          <div class="h3 mb-1">{{ stats.total_projects if stats else 0 }}</div>
+          <div class="text-muted">Projects</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card stats-card text-center">
+        <div class="card-body">
+          <div class="h3 mb-1">{{ stats.completed_projects if stats else 0 }}</div>
+          <div class="text-muted">Completed</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card stats-card text-center">
+        <div class="card-body">
+          <div class="h3 mb-1">{{ stats.processing_projects if stats else 0 }}</div>
+          <div class="text-muted">Processing</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card stats-card text-center">
+        <div class="card-body">
+          <div class="h3 mb-1">{{ stats.total_clips if stats else 0 }}</div>
+          <div class="text-muted">Clips</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-8">
+      <div class="card h-100">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="mb-0"><i class="bi bi-folder2-open"></i> Recent Projects</h5>
+          <a href="{{ url_for('main.projects') }}" class="btn btn-sm btn-outline-primary">View All</a>
+        </div>
+        <div class="card-body">
+          {% if projects %}
+            <div class="list-group list-group-flush">
+              {% for p in projects %}
+                <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                   href="{{ url_for('main.project_details', project_id=p.id) }}">
+                  <span>{{ p.name }}</span>
+                  <small class="text-muted">{{ p.updated_at.strftime('%Y-%m-%d') if p.updated_at else '' }}</small>
+                </a>
+              {% endfor %}
+            </div>
+          {% else %}
+            <p class="text-muted mb-0">No projects yet. Create one to get started.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-4">
+      <div class="card h-100">
+        <div class="card-header">
+          <h5 class="mb-0"><i class="bi bi-collection-play"></i> Recent Clips</h5>
+        </div>
+        <div class="card-body">
+          {% if recent_clips %}
+            <ul class="list-unstyled mb-0">
+              {% for c in recent_clips %}
+                <li class="mb-2">
+                  <div class="d-flex justify-content-between">
+                    <span>{{ c.title }}</span>
+                    <small class="text-muted">{{ c.duration_formatted }}</small>
+                  </div>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="text-muted mb-0">No recent clips.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-4">
+    <a href="{{ url_for('main.create_project') }}" class="btn btn-primary">
+      <i class="bi bi-plus-lg"></i> New Project
+    </a>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="card shadow-lg mt-5">
+                <div class="card-header text-center bg-primary text-white">
+                    <h4 class="mb-0">
+                        <i class="bi bi-person-plus"></i>
+                        Create Your ClippyFront Account
+                    </h4>
+                </div>
+                <div class="card-body p-4">
+                    <form method="POST" action="{{ url_for('auth.register') }}">
+                        {{ form.hidden_tag() }}
+
+                        <div class="row">
+                            <!-- Username Field -->
+                            <div class="col-12 mb-3">
+                                {{ form.username.label(class="form-label") }}
+                                {{ form.username(class="form-control" + (" is-invalid" if form.username.errors else "")) }}
+                                {% if form.username.errors %}
+                                    <div class="invalid-feedback">
+                                        {% for error in form.username.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                                <div class="form-text">Choose a unique username (3-80 characters)</div>
+                            </div>
+
+                            <!-- Email Field -->
+                            <div class="col-12 mb-3">
+                                {{ form.email.label(class="form-label") }}
+                                {{ form.email(class="form-control" + (" is-invalid" if form.email.errors else "")) }}
+                                {% if form.email.errors %}
+                                    <div class="invalid-feedback">
+                                        {% for error in form.email.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                                <div class="form-text">We'll never share your email with anyone else</div>
+                            </div>
+
+                            <!-- First Name -->
+                            <div class="col-md-6 mb-3">
+                                {{ form.first_name.label(class="form-label") }}
+                                {{ form.first_name(class="form-control" + (" is-invalid" if form.first_name.errors else "")) }}
+                                {% if form.first_name.errors %}
+                                    <div class="invalid-feedback">
+                                        {% for error in form.first_name.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+
+                            <!-- Last Name -->
+                            <div class="col-md-6 mb-3">
+                                {{ form.last_name.label(class="form-label") }}
+                                {{ form.last_name(class="form-control" + (" is-invalid" if form.last_name.errors else "")) }}
+                                {% if form.last_name.errors %}
+                                    <div class="invalid-feedback">
+                                        {% for error in form.last_name.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+
+                            <!-- Password Field -->
+                            <div class="col-md-6 mb-3">
+                                {{ form.password.label(class="form-label") }}
+                                <div class="input-group">
+                                    {{ form.password(class="form-control" + (" is-invalid" if form.password.errors else ""), id="password") }}
+                                    <button class="btn btn-outline-secondary" type="button" id="togglePassword">
+                                        <i class="bi bi-eye" id="togglePasswordIcon"></i>
+                                    </button>
+                                </div>
+                                {% if form.password.errors %}
+                                    <div class="invalid-feedback">
+                                        {% for error in form.password.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                                <div class="form-text">Minimum 8 characters</div>
+                            </div>
+
+                            <!-- Password Confirmation -->
+                            <div class="col-md-6 mb-3">
+                                {{ form.password_confirm.label(class="form-label") }}
+                                <div class="input-group">
+                                    {{ form.password_confirm(class="form-control" + (" is-invalid" if form.password_confirm.errors else ""), id="passwordConfirm") }}
+                                    <button class="btn btn-outline-secondary" type="button" id="togglePasswordConfirm">
+                                        <i class="bi bi-eye" id="togglePasswordConfirmIcon"></i>
+                                    </button>
+                                </div>
+                                {% if form.password_confirm.errors %}
+                                    <div class="invalid-feedback">
+                                        {% for error in form.password_confirm.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- External Services Section -->
+                        <div class="card bg-secondary bg-opacity-10 mb-3">
+                            <div class="card-body">
+                                <h6 class="card-title">
+                                    <i class="bi bi-link"></i>
+                                    External Services (Optional)
+                                </h6>
+                                <p class="card-text small text-muted">
+                                    Connect your Discord and Twitch accounts to enable clip collection
+                                </p>
+
+                                <div class="row">
+                                    <!-- Discord User ID -->
+                                    <div class="col-md-6 mb-3">
+                                        {{ form.discord_user_id.label(class="form-label") }}
+                                        <div class="input-group">
+                                            <span class="input-group-text">
+                                                <i class="bi bi-discord"></i>
+                                            </span>
+                                            {{ form.discord_user_id(class="form-control" + (" is-invalid" if form.discord_user_id.errors else "")) }}
+                                        </div>
+                                        {% if form.discord_user_id.errors %}
+                                            <div class="invalid-feedback">
+                                                {% for error in form.discord_user_id.errors %}
+                                                    {{ error }}
+                                                {% endfor %}
+                                            </div>
+                                        {% endif %}
+                                        <div class="form-text">
+                                            <a href="#" class="text-decoration-none" data-bs-toggle="modal" data-bs-target="#discordHelpModal">
+                                                How to find your Discord User ID?
+                                            </a>
+                                        </div>
+                                    </div>
+
+                                    <!-- Twitch Username -->
+                                    <div class="col-md-6 mb-3">
+                                        {{ form.twitch_username.label(class="form-label") }}
+                                        <div class="input-group">
+                                            <span class="input-group-text">
+                                                <i class="bi bi-twitch"></i>
+                                            </span>
+                                            {{ form.twitch_username(class="form-control" + (" is-invalid" if form.twitch_username.errors else "")) }}
+                                        </div>
+                                        {% if form.twitch_username.errors %}
+                                            <div class="invalid-feedback">
+                                                {% for error in form.twitch_username.errors %}
+                                                    {{ error }}
+                                                {% endfor %}
+                                            </div>
+                                        {% endif %}
+                                        <div class="form-text">Your Twitch channel name</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Terms and Submit -->
+                        <div class="mb-3 form-check">
+                            <input class="form-check-input" type="checkbox" id="termsCheck" required>
+                            <label class="form-check-label" for="termsCheck">
+                                I agree to the <a href="#" class="text-decoration-none">Terms of Service</a>
+                                and <a href="#" class="text-decoration-none">Privacy Policy</a>
+                            </label>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <div class="d-grid">
+                            {{ form.submit(class="btn btn-primary btn-lg") }}
+                        </div>
+                    </form>
+
+                    <!-- Additional Links -->
+                    <hr class="my-4">
+                    <div class="text-center">
+                        <p class="mb-0">
+                            Already have an account?
+                            <a href="{{ url_for('auth.login') }}" class="text-decoration-none fw-bold">Sign in here</a>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Discord Help Modal -->
+<div class="modal fade" id="discordHelpModal" tabindex="-1" aria-labelledby="discordHelpModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="discordHelpModalLabel">
+                    <i class="bi bi-discord"></i>
+                    Finding Your Discord User ID
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <ol>
+                    <li>Open Discord and go to Settings (gear icon)</li>
+                    <li>Navigate to "Advanced" in the left sidebar</li>
+                    <li>Enable "Developer Mode"</li>
+                    <li>Right-click on your username anywhere in Discord</li>
+                    <li>Select "Copy User ID" from the context menu</li>
+                    <li>Paste the ID into the field above</li>
+                </ol>
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i>
+                    Your Discord User ID is a long number (e.g., 123456789012345678)
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Password visibility toggle for main password field
+    const togglePassword = document.querySelector('#togglePassword');
+    const password = document.querySelector('#password');
+    const togglePasswordIcon = document.querySelector('#togglePasswordIcon');
+
+    togglePassword.addEventListener('click', function (e) {
+        const type = password.getAttribute('type') === 'password' ? 'text' : 'password';
+        password.setAttribute('type', type);
+
+        if (type === 'password') {
+            togglePasswordIcon.classList.remove('bi-eye-slash');
+            togglePasswordIcon.classList.add('bi-eye');
+        } else {
+            togglePasswordIcon.classList.remove('bi-eye');
+            togglePasswordIcon.classList.add('bi-eye-slash');
+        }
+    });
+
+    // Password visibility toggle for confirmation field
+    const togglePasswordConfirm = document.querySelector('#togglePasswordConfirm');
+    const passwordConfirm = document.querySelector('#passwordConfirm');
+    const togglePasswordConfirmIcon = document.querySelector('#togglePasswordConfirmIcon');
+
+    togglePasswordConfirm.addEventListener('click', function (e) {
+        const type = passwordConfirm.getAttribute('type') === 'password' ? 'text' : 'password';
+        passwordConfirm.setAttribute('type', type);
+
+        if (type === 'password') {
+            togglePasswordConfirmIcon.classList.remove('bi-eye-slash');
+            togglePasswordConfirmIcon.classList.add('bi-eye');
+        } else {
+            togglePasswordConfirmIcon.classList.remove('bi-eye');
+            togglePasswordConfirmIcon.classList.add('bi-eye-slash');
+        }
+    });
+
+    // Password strength indicator
+    const passwordField = document.querySelector('#password');
+    passwordField.addEventListener('input', function() {
+        const password = this.value;
+        const strengthIndicator = document.querySelector('#passwordStrength');
+
+        // Simple password strength check
+        let strength = 0;
+        if (password.length >= 8) strength++;
+        if (password.match(/[a-z]/)) strength++;
+        if (password.match(/[A-Z]/)) strength++;
+        if (password.match(/[0-9]/)) strength++;
+        if (password.match(/[^a-zA-Z0-9]/)) strength++;
+
+        // You can add a strength indicator here if needed
+    });
+});
+</script>
+{% endblock %}

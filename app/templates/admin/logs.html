@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+  <h2 class="mb-3"><i class="bi bi-clipboard-data"></i> Logs</h2>
+  <div class="list-group">
+    {% for log in logs %}
+      <div class="list-group-item d-flex justify-content-between">
+        <span>[{{ log.timestamp }}] {{ log.level }}</span>
+        <span>{{ log.message }}</span>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

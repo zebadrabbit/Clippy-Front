@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+  <h2 class="mb-3"><i class="bi bi-plus-square"></i> New Project</h2>
+  <form method="POST" action="{{ url_for('main.create_project') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="mb-3">
+      <label class="form-label">Project Name</label>
+      <input class="form-control" type="text" name="name" required>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Description</label>
+      <textarea class="form-control" name="description" rows="3"></textarea>
+    </div>
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label">Max Clip Duration (seconds)</label>
+        <input class="form-control" type="number" min="1" max="600" name="max_clip_duration" value="30">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Output Resolution</label>
+        <select class="form-select" name="output_resolution">
+          <option value="720p">720p</option>
+          <option value="1080p" selected>1080p</option>
+          <option value="4K">4K</option>
+        </select>
+      </div>
+    </div>
+    <div class="mt-4 d-flex gap-2">
+      <button type="submit" class="btn btn-primary"><i class="bi bi-check"></i> Create</button>
+      <a href="{{ url_for('main.projects') }}" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+
+</div>
+{% endblock %}

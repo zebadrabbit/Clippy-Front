@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-lg-6">
+            <div class="text-center py-5">
+                <div class="mb-4">
+                    <i class="bi bi-x-circle-fill text-danger" style="font-size: 4rem;"></i>
+                </div>
+                <h1 class="display-4 fw-bold">400</h1>
+                <h2 class="mb-3">Bad Request</h2>
+                <p class="lead text-muted mb-4">
+                    Your request could not be processed. This might be due to a security token issue or invalid data.
+                </p>
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i>
+                    <strong>CSRF Protection:</strong> If you're seeing this after submitting a form, please refresh the page and try again.
+                </div>
+                <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+                    <button onclick="history.back()" class="btn btn-primary">
+                        <i class="bi bi-arrow-left"></i> Go Back
+                    </button>
+                    <a href="{{ url_for('main.index') }}" class="btn btn-outline-primary">
+                        <i class="bi bi-house"></i> Go Home
+                    </a>
+                    {% if current_user.is_authenticated %}
+                    <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary">
+                        <i class="bi bi-speedometer2"></i> Dashboard
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

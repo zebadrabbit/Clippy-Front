@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="hero-section">
+    <div class="container">
+        <div class="row align-items-center">
+            <div class="col-lg-6">
+                <h1 class="display-4 fw-bold mb-4">
+                    Create Amazing Video Compilations
+                </h1>
+                <p class="lead mb-4">
+                    ClippyFront helps you collect clips from Discord and Twitch,
+                    add your own intro/outro videos, and compile them into
+                    professional-looking video compilations.
+                </p>
+                <div class="d-grid gap-2 d-md-flex">
+                    <a href="{{ url_for('auth.register') }}" class="btn btn-primary btn-lg px-4 me-md-2">
+                        <i class="bi bi-person-plus"></i> Get Started Free
+                    </a>
+                    <a href="#features" class="btn btn-outline-light btn-lg px-4">
+                        <i class="bi bi-info-circle"></i> Learn More
+                    </a>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="text-center">
+                    <i class="bi bi-camera-video-fill" style="font-size: 12rem; color: var(--bs-primary);"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Features Section -->
+<section id="features" class="py-5">
+    <div class="container">
+        <div class="row text-center mb-5">
+            <div class="col-lg-8 mx-auto">
+                <h2 class="display-5 fw-bold">Powerful Features</h2>
+                <p class="lead text-muted">
+                    Everything you need to create professional video compilations
+                </p>
+            </div>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-md-6 col-lg-3">
+                <div class="card h-100 text-center">
+                    <div class="card-body">
+                        <div class="feature-icon mx-auto">
+                            <i class="bi bi-robot"></i>
+                        </div>
+                        <h5 class="card-title">Discord Bot</h5>
+                        <p class="card-text">
+                            Connect your Discord bot to automatically collect clips
+                            from your server channels.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6 col-lg-3">
+                <div class="card h-100 text-center">
+                    <div class="card-body">
+                        <div class="feature-icon mx-auto">
+                            <i class="bi bi-twitch"></i>
+                        </div>
+                        <h5 class="card-title">Twitch Integration</h5>
+                        <p class="card-text">
+                            Download clips directly from Twitch channels
+                            using our integrated API.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6 col-lg-3">
+                <div class="card h-100 text-center">
+                    <div class="card-body">
+                        <div class="feature-icon mx-auto">
+                            <i class="bi bi-cloud-upload"></i>
+                        </div>
+                        <h5 class="card-title">Media Upload</h5>
+                        <p class="card-text">
+                            Upload your own intro videos, outro videos,
+                            and transition clips to customize your compilations.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6 col-lg-3">
+                <div class="card h-100 text-center">
+                    <div class="card-body">
+                        <div class="feature-icon mx-auto">
+                            <i class="bi bi-film"></i>
+                        </div>
+                        <h5 class="card-title">Video Processing</h5>
+                        <p class="card-text">
+                            Powerful video processing with multiple resolution
+                            options and professional quality output.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- How It Works Section -->
+<section class="py-5 bg-dark">
+    <div class="container">
+        <div class="row text-center mb-5">
+            <div class="col-lg-8 mx-auto">
+                <h2 class="display-5 fw-bold">How It Works</h2>
+                <p class="lead text-muted">
+                    Create your video compilation in just a few simple steps
+                </p>
+            </div>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-md-4">
+                <div class="text-center">
+                    <div class="feature-icon mx-auto">
+                        <span class="fw-bold">1</span>
+                    </div>
+                    <h5>Create Project</h5>
+                    <p class="text-muted">
+                        Start by creating a new video compilation project
+                        and configure your settings.
+                    </p>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="text-center">
+                    <div class="feature-icon mx-auto">
+                        <span class="fw-bold">2</span>
+                    </div>
+                    <h5>Collect Clips</h5>
+                    <p class="text-muted">
+                        Upload your own clips or connect Discord/Twitch
+                        to automatically collect content.
+                    </p>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="text-center">
+                    <div class="feature-icon mx-auto">
+                        <span class="fw-bold">3</span>
+                    </div>
+                    <h5>Download Video</h5>
+                    <p class="text-content">
+                        Our system compiles everything together and
+                        provides you with a downloadable video file.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Call to Action -->
+<section class="py-5">
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-8 mx-auto text-center">
+                <h2 class="display-6 fw-bold mb-4">Ready to Get Started?</h2>
+                <p class="lead mb-4">
+                    Join thousands of content creators who use ClippyFront
+                    to create amazing video compilations.
+                </p>
+                <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+                    <a href="{{ url_for('auth.register') }}" class="btn btn-primary btn-lg px-4 me-md-2">
+                        <i class="bi bi-person-plus"></i> Create Free Account
+                    </a>
+                    {% if current_user.is_authenticated %}
+                    <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-primary btn-lg px-4">
+                        <i class="bi bi-speedometer2"></i> Go to Dashboard
+                    </a>
+                    {% else %}
+                    <a href="{{ url_for('auth.login') }}" class="btn btn-outline-primary btn-lg px-4">
+                        <i class="bi bi-box-arrow-in-right"></i> Sign In
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

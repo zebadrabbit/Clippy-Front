@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <!-- Sidebar -->
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0">
+                        <i class="bi bi-person-circle"></i>
+                        Account
+                    </h6>
+                </div>
+                <div class="list-group list-group-flush">
+                    <a href="{{ url_for('auth.profile') }}" class="list-group-item list-group-item-action active">
+                        <i class="bi bi-person"></i> Profile
+                    </a>
+                    <a href="{{ url_for('auth.account_settings') }}" class="list-group-item list-group-item-action">
+                        <i class="bi bi-gear"></i> Settings
+                    </a>
+                    <a href="#" class="list-group-item list-group-item-action">
+                        <i class="bi bi-shield-check"></i> Security
+                    </a>
+                    <a href="#" class="list-group-item list-group-item-action">
+                        <i class="bi bi-bell"></i> Notifications
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="col-md-9">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="bi bi-person"></i>
+                        Profile Information
+                    </h5>
+                    <small class="text-muted">
+                        Member since {{ current_user.created_at.strftime('%B %Y') }}
+                    </small>
+                </div>
+                <div class="card-body">
+                    <!-- User Info Summary -->
+                    <div class="row mb-4">
+                        <div class="col-md-2">
+                            <div class="bg-primary rounded-circle d-flex align-items-center justify-content-center"
+                                 style="width: 80px; height: 80px; font-size: 2rem; color: white;">
+                                {{ current_user.username[0].upper() }}
+                            </div>
+                        </div>
+                        <div class="col-md-10">
+                            <h4>{{ current_user.get_display_name() }}</h4>
+                            <p class="text-muted mb-1">@{{ current_user.username }}</p>
+                            <p class="text-muted mb-1">{{ current_user.email }}</p>
+                            <span class="badge bg-{{ 'success' if current_user.is_active else 'secondary' }}">
+                                {{ 'Active' if current_user.is_active else 'Inactive' }}
+                            </span>
+                            {% if current_user.email_verified %}
+                                <span class="badge bg-success">
+                                    <i class="bi bi-check-circle"></i> Email Verified
+                                </span>
+                            {% else %}
+                                <span class="badge bg-warning">
+                                    <i class="bi bi-exclamation-triangle"></i> Email Not Verified
+                                </span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Profile Form -->
+                    <form method="POST" action="{{ url_for('auth.profile') }}">
+                        {{ form.hidden_tag() }}
+
+                        <div class="row">
+                            <!-- Personal Information -->
+                            <div class="col-md-6">
+                                <h6 class="border-bottom pb-2 mb-3">Personal Information</h6>
+
+                                <!-- First Name -->
+                                <div class="mb-3">
+                                    {{ form.first_name.label(class="form-label") }}
+                                    {{ form.first_name(class="form-control" + (" is-invalid" if form.first_name.errors else "")) }}
+                                    {% if form.first_name.errors %}
+                                        <div class="invalid-feedback">
+                                            {% for error in form.first_name.errors %}
+                                                {{ error }}
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+
+                                <!-- Last Name -->
+                                <div class="mb-3">
+                                    {{ form.last_name.label(class="form-label") }}
+                                    {{ form.last_name(class="form-control" + (" is-invalid" if form.last_name.errors else "")) }}
+                                    {% if form.last_name.errors %}
+                                        <div class="invalid-feedback">
+                                            {% for error in form.last_name.errors %}
+                                                {{ error }}
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <!-- External Services -->
+                            <div class="col-md-6">
+                                <h6 class="border-bottom pb-2 mb-3">External Services</h6>
+
+                                <!-- Discord User ID -->
+                                <div class="mb-3">
+                                    {{ form.discord_user_id.label(class="form-label") }}
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="bi bi-discord"></i>
+                                        </span>
+                                        {{ form.discord_user_id(class="form-control" + (" is-invalid" if form.discord_user_id.errors else "")) }}
+                                    </div>
+                                    {% if form.discord_user_id.errors %}
+                                        <div class="invalid-feedback">
+                                            {% for error in form.discord_user_id.errors %}
+                                                {{ error }}
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                    {% if current_user.discord_user_id %}
+                                        <div class="form-text text-success">
+                                            <i class="bi bi-check-circle"></i> Discord account linked
+                                        </div>
+                                    {% else %}
+                                        <div class="form-text">
+                                            Link your Discord account to enable bot integration
+                                        </div>
+                                    {% endif %}
+                                </div>
+
+                                <!-- Twitch Username -->
+                                <div class="mb-3">
+                                    {{ form.twitch_username.label(class="form-label") }}
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="bi bi-twitch"></i>
+                                        </span>
+                                        {{ form.twitch_username(class="form-control" + (" is-invalid" if form.twitch_username.errors else "")) }}
+                                    </div>
+                                    {% if form.twitch_username.errors %}
+                                        <div class="invalid-feedback">
+                                            {% for error in form.twitch_username.errors %}
+                                                {{ error }}
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                    {% if current_user.twitch_username %}
+                                        <div class="form-text text-success">
+                                            <i class="bi bi-check-circle"></i> Twitch account linked
+                                        </div>
+                                    {% else %}
+                                        <div class="form-text">
+                                            Link your Twitch account to enable clip collection
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <div class="d-flex justify-content-end">
+                            {{ form.submit(class="btn btn-primary") }}
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Account Statistics -->
+            <div class="row mt-4">
+                <div class="col-md-4">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h5 class="card-title text-primary">
+                                {{ current_user.projects.count() }}
+                            </h5>
+                            <p class="card-text">Projects Created</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h5 class="card-title text-success">
+                                {{ current_user.media_files.count() }}
+                            </h5>
+                            <p class="card-text">Media Files</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h5 class="card-title text-info">
+                                {% if current_user.last_login %}
+                                    {{ current_user.last_login.strftime('%m/%d/%Y') }}
+                                {% else %}
+                                    Never
+                                {% endif %}
+                            </h5>
+                            <p class="card-text">Last Login</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Account Actions -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h6 class="mb-0">
+                        <i class="bi bi-gear"></i>
+                        Account Actions
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Security</h6>
+                            <p class="text-muted small">Manage your account security settings</p>
+                            <a href="#" class="btn btn-outline-primary btn-sm">
+                                <i class="bi bi-key"></i> Change Password
+                            </a>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Data Export</h6>
+                            <p class="text-muted small">Download your account data and projects</p>
+                            <a href="#" class="btn btn-outline-info btn-sm">
+                                <i class="bi bi-download"></i> Export Data
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

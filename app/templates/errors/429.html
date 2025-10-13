@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-lg-6">
+            <div class="text-center py-5">
+                <div class="mb-4">
+                    <i class="bi bi-hourglass-split text-warning" style="font-size: 4rem;"></i>
+                </div>
+                <h1 class="display-4 fw-bold">429</h1>
+                <h2 class="mb-3">Too Many Requests</h2>
+                <p class="lead text-muted mb-4">
+                    You're making requests too quickly. Please slow down and try again.
+                </p>
+                <div class="alert alert-warning">
+                    <i class="bi bi-clock"></i>
+                    <strong>Rate Limited:</strong> Please wait a moment before trying again. This helps keep our service running smoothly for everyone.
+                </div>
+                <div class="progress mb-4" style="height: 10px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar"
+                         style="width: 100%" id="cooldownBar"></div>
+                </div>
+                <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+                    <button onclick="location.reload()" class="btn btn-primary" id="retryBtn" disabled>
+                        <i class="bi bi-arrow-clockwise"></i> <span id="retryText">Retry in 10s</span>
+                    </button>
+                    {% if current_user.is_authenticated %}
+                    <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-primary">
+                        <i class="bi bi-speedometer2"></i> Dashboard
+                    </a>
+                    {% endif %}
+                    <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary">
+                        <i class="bi bi-house"></i> Go Home
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    let countdown = 10;
+    const retryBtn = document.getElementById('retryBtn');
+    const retryText = document.getElementById('retryText');
+    const cooldownBar = document.getElementById('cooldownBar');
+
+    const timer = setInterval(function() {
+        countdown--;
+        retryText.textContent = `Retry in ${countdown}s`;
+
+        const percentage = (countdown / 10) * 100;
+        cooldownBar.style.width = percentage + '%';
+
+        if (countdown <= 0) {
+            clearInterval(timer);
+            retryBtn.disabled = false;
+            retryText.textContent = 'Retry Now';
+            cooldownBar.style.width = '0%';
+            cooldownBar.classList.remove('progress-bar-animated');
+        }
+    }, 1000);
+});
+</script>
+{% endblock %}
