@@ -5,6 +5,7 @@ This module handles the core user-facing routes including the landing page,
 dashboard, project management, and media upload functionality.
 """
 import os
+from uuid import uuid4
 
 from flask import (
     Blueprint,
@@ -14,6 +15,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_file,
     url_for,
 )
 from flask_login import current_user, login_required
@@ -378,6 +380,116 @@ def media_library():
         type_filter=type_filter,
         media_types=MediaType,
     )
+
+
+def _media_type_folder(media_type: MediaType, mime_type: str) -> str:
+    """
+    Map a MediaType/mime to a folder name.
+
+    Returns:
+        str: Subfolder under the user's media directory.
+    """
+    try:
+        if media_type == MediaType.INTRO:
+            return "intros"
+        if media_type == MediaType.OUTRO:
+            return "outros"
+        if media_type == MediaType.TRANSITION:
+            return "transitions"
+        # If it's an image, keep in images/
+        if mime_type and mime_type.startswith("image"):
+            return "images"
+    except Exception:
+        pass
+    # Default bucket for general video clips
+    return "clips"
+
+
+@main_bp.route("/media/upload", methods=["POST"])
+@login_required
+def media_upload():
+    """
+    Upload a media file to the user's library (not tied to a specific project).
+
+    Accepts multipart/form-data with fields:
+      - file: the uploaded file
+      - media_type: one of MediaType values (intro/outro/transition/clip)
+    """
+    if "file" not in request.files:
+        return jsonify({"error": "No file part"}), 400
+
+    file = request.files["file"]
+    if not file or file.filename == "":
+        return jsonify({"error": "No file selected"}), 400
+
+    media_type_val = request.form.get("media_type")
+    if not media_type_val or media_type_val not in [t.value for t in MediaType]:
+        return jsonify({"error": "Invalid media type"}), 400
+
+    if not allowed_file(file.filename):
+        return jsonify({"error": "Unsupported file type"}), 400
+
+    # Build per-user folder with media-type subfolder
+    try:
+        safe_name = secure_filename(file.filename) or "uploaded_file"
+        file_ext = os.path.splitext(safe_name)[1]
+        unique_name = f"{uuid4().hex}{file_ext}"
+
+        mtype = MediaType(media_type_val)
+        mime_type = file.content_type or "application/octet-stream"
+        subfolder = _media_type_folder(mtype, mime_type)
+
+        base_upload = os.path.join(
+            current_app.instance_path, current_app.config["UPLOAD_FOLDER"]
+        )
+        user_dir = os.path.join(base_upload, str(current_user.id), subfolder)
+        os.makedirs(user_dir, exist_ok=True)
+
+        dest_path = os.path.join(user_dir, unique_name)
+        file.save(dest_path)
+
+        media_file = MediaFile(
+            filename=unique_name,
+            original_filename=safe_name,
+            file_path=dest_path,
+            file_size=os.path.getsize(dest_path),
+            mime_type=mime_type,
+            media_type=mtype,
+            user_id=current_user.id,
+            project_id=None,
+        )
+        db.session.add(media_file)
+        db.session.commit()
+
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "id": media_file.id,
+                    "filename": media_file.filename,
+                    "type": media_file.media_type.value,
+                }
+            ),
+            201,
+        )
+    except Exception as e:
+        current_app.logger.error(f"Library upload failed: {e}")
+        db.session.rollback()
+        return jsonify({"error": "Upload failed"}), 500
+
+
+@main_bp.route("/media/preview/<int:media_id>")
+@login_required
+def media_preview(media_id: int):
+    """Serve a media file preview if the user has access."""
+    media = MediaFile.query.get_or_404(media_id)
+    if media.user_id != current_user.id and not current_user.is_admin():
+        # Avoid leaking file paths
+        return jsonify({"error": "Not authorized"}), 403
+    try:
+        return send_file(media.file_path, mimetype=media.mime_type, conditional=True)
+    except FileNotFoundError:
+        return jsonify({"error": "File not found"}), 404
 
 
 def allowed_file(filename):

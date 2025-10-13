@@ -7,6 +7,27 @@
     <a class="btn btn-outline-primary" href="{{ url_for('main.projects') }}">Go to Projects</a>
   </div>
 
+  <!-- Upload Zone (Dropzone) -->
+  <div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <strong>Upload Media</strong>
+      <div class="d-flex gap-2 align-items-center">
+        <select id="dz-media-type" class="form-select form-select-sm" style="width:auto">
+          {% for t in media_types %}
+            <option value="{{ t.value }}">{{ t.name.title() }}</option>
+          {% endfor %}
+        </select>
+        <small class="text-muted">Stored under per-user folders (images/, intros/, outros/, transitions/)</small>
+      </div>
+    </div>
+    <div class="card-body">
+  <form action="{{ url_for('main.media_upload') }}" class="dropzone" id="media-dropzone">
+        <div class="dz-message">Drop files here or click to upload</div>
+      </form>
+      <small class="text-muted">Supported: images and videos. Files are stored uniquely per-user to avoid collisions.</small>
+    </div>
+  </div>
+
   <form class="mb-3" method="GET" action="{{ url_for('main.media_library') }}">
     <div class="row g-2 align-items-end">
       <div class="col-auto">
@@ -25,15 +46,31 @@
   </form>
 
   {% if media_files %}
-  <div class="list-group">
+  <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 g-3">
     {% for m in media_files %}
-      <div class="list-group-item d-flex justify-content-between align-items-center">
-        <div>
-          <div class="fw-semibold">{{ m.original_filename }}</div>
+    <div class="col">
+      <div class="card h-100">
+        {% if m.mime_type.startswith('image') %}
+          <img src="{{ url_for('main.media_preview', media_id=m.id) }}" class="card-img-top" alt="{{ m.original_filename }}">
+        {% elif m.mime_type.startswith('video') %}
+          <video
+            id="video-{{ m.id }}"
+            class="video-js vjs-default-skin vjs-16-9"
+            controls preload="metadata"
+            data-setup='{}'>
+            <source src="{{ url_for('main.media_preview', media_id=m.id) }}" type="{{ m.mime_type }}">
+          </video>
+        {% else %}
+          <div class="card-img-top d-flex align-items-center justify-content-center" style="height:160px; background:#0d1117;">
+            <i class="bi bi-file-earmark-text" style="font-size:2rem;"></i>
+          </div>
+        {% endif %}
+        <div class="card-body">
+          <div class="fw-semibold text-truncate" title="{{ m.original_filename }}">{{ m.original_filename }}</div>
           <small class="text-muted">{{ m.media_type.value if m.media_type else '' }} • {{ '%.1f'|format(m.file_size_mb) }} MB</small>
         </div>
-        <small class="text-muted">{{ m.uploaded_at.strftime('%Y-%m-%d') if m.uploaded_at else '' }}</small>
       </div>
+    </div>
     {% endfor %}
   </div>
   {% else %}
@@ -54,4 +91,44 @@
   </nav>
   {% endif %}
 </div>
+{% endblock %}
+
+{% block styles %}
+  {{ super() }}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dropzone@5.9.3/dist/dropzone.css" />
+  <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script src="https://cdn.jsdelivr.net/npm/dropzone@5.9.3/dist/dropzone-min.js"></script>
+  <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
+  <script>
+    // Configure Dropzone for media uploads
+    Dropzone.autoDiscover = false;
+    (function() {
+      const dzEl = document.getElementById('media-dropzone');
+      if (!dzEl) return;
+      const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+      const mediaTypeSel = document.getElementById('dz-media-type');
+
+      const dz = new Dropzone(dzEl, {
+  url: "{{ url_for('main.media_upload') }}",
+        headers: { 'X-CSRFToken': csrfToken },
+        paramName: 'file',
+        maxFilesize: 1024, // MB
+        acceptedFiles: 'image/*,video/*',
+        parallelUploads: 2,
+        init: function() {
+          this.on('sending', function(file, xhr, formData) {
+            formData.append('media_type', mediaTypeSel.value || 'clip');
+          });
+          this.on('success', function(file, resp) {
+            // Reload to show new items or dynamically insert
+            setTimeout(function(){ window.location.reload(); }, 500);
+          });
+        }
+      });
+    })();
+  </script>
 {% endblock %}
