@@ -253,6 +253,8 @@ class MediaFile(db.Model):
     # Processing status
     is_processed = db.Column(db.Boolean, default=False)
     thumbnail_path = db.Column(db.String(500))
+    # Comma-separated tags (lightweight tagging)
+    tags = db.Column(db.Text)
 
     @property
     def file_size_mb(self) -> float:

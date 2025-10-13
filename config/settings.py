@@ -69,6 +69,7 @@ class Config:
 
     # Video Processing Configuration
     FFMPEG_BINARY = os.environ.get("FFMPEG_BINARY") or "ffmpeg"
+    YT_DLP_BINARY = os.environ.get("YT_DLP_BINARY") or "yt-dlp"
     OUTPUT_VIDEO_QUALITY = os.environ.get("OUTPUT_VIDEO_QUALITY") or "high"
 
     # Security Headers (Talisman)
@@ -76,10 +77,11 @@ class Config:
     STRICT_TRANSPORT_SECURITY = True
     CONTENT_SECURITY_POLICY = {
         "default-src": "'self'",
-        "script-src": "'self' 'unsafe-inline' cdn.jsdelivr.net",
-        "style-src": "'self' 'unsafe-inline' cdn.jsdelivr.net",
+        "script-src": "'self' 'unsafe-inline' cdn.jsdelivr.net vjs.zencdn.net",
+        "style-src": "'self' 'unsafe-inline' cdn.jsdelivr.net vjs.zencdn.net",
         "img-src": "'self' data: https:",
-        "font-src": "'self' cdn.jsdelivr.net",
+        "font-src": "'self' cdn.jsdelivr.net vjs.zencdn.net",
+        "media-src": "'self' https:",
     }
 
 

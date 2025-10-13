@@ -8,27 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- User authentication system with registration and login
-- Database models for users, projects, media uploads, and clips
-- Bootstrap frontend with dark theme
-- Media upload functionality for intro/outro videos and transitions
-- Discord bot integration for clip collection
-- Twitch API integration for clip downloading
-- Video processing pipeline with ffmpeg and yt-dlp
-- Admin panel for user and system management
-- Security measures including CSRF protection, rate limiting, and secure headers
-- Comprehensive documentation and comments
+- Self-hosted Dropzone and Video.js vendor assets and fetch script
+- Media Library page with uploads, thumbnails, tags, bulk actions
+- Improved client video playback with MIME inference and fallbacks
+- Server-side MIME detection (python-magic with mimetypes fallback)
+- FFmpeg thumbnail generation on upload
+- Admin password reset and DB bootstrap via `init_db.py`
+- Local ffmpeg/yt-dlp installer script and config resolvers
+- Tests for media endpoints and filters
+- CONTRIBUTING guidelines
 
 ### Changed
-- Enhanced project structure for multi-user environment
-- Updated dependencies for video processing and authentication
+- README overhauled with setup, vendor assets, troubleshooting
+- CSP config aligned to local vendor assets
+- Safer Jinja filter `safe_count` for SQLAlchemy queries and lists
 
-### Security
-- Added password hashing with bcrypt
-- Implemented CSRF protection
-- Added rate limiting for API endpoints
-- Secure session management
-- Input validation and sanitization
+### Fixed
+- Video.js MEDIA_ERR_SRC_NOT_SUPPORTED by setting type and probing support
+- Dropzone CDN nosniff by serving local assets
+- Development CSRF relax for auth to avoid 400s during setup
 
 ## [0.2.0] - 2025-10-13
 

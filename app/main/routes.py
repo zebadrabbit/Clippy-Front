@@ -4,7 +4,9 @@ Main application routes for the ClippyFront platform.
 This module handles the core user-facing routes including the landing page,
 dashboard, project management, and media upload functionality.
 """
+import mimetypes
 import os
+import subprocess
 from uuid import uuid4
 
 from flask import (
@@ -405,6 +407,25 @@ def _media_type_folder(media_type: MediaType, mime_type: str) -> str:
     return "clips"
 
 
+def _resolve_binary(app, name: str) -> str:
+    """Resolve a binary path, preferring project-local bin/ if present.
+
+    - For 'ffmpeg', consult app.config["FFMPEG_BINARY"] then ./bin/ffmpeg
+    - For 'yt-dlp', consult app.config["YT_DLP_BINARY"] then ./bin/yt-dlp
+    """
+    # Config-specified first
+    cfg = app.config.get("FFMPEG_BINARY" if name == "ffmpeg" else "YT_DLP_BINARY")
+    if cfg:
+        return cfg
+    # Project-local bin fallback
+    root = app.root_path  # app/ directory
+    proj_root = os.path.dirname(root)
+    candidate = os.path.join(proj_root, "bin", name)
+    if os.path.exists(candidate):
+        return candidate
+    return name
+
+
 @main_bp.route("/media/upload", methods=["POST"])
 @login_required
 def media_upload():
@@ -448,6 +469,62 @@ def media_upload():
         dest_path = os.path.join(user_dir, unique_name)
         file.save(dest_path)
 
+        # Improve MIME detection if browser provided a generic or missing type
+        try:
+            if (
+                not mime_type
+                or (mime_type in ("application/octet-stream", "binary/octet-stream"))
+                or not (mime_type.startswith("image") or mime_type.startswith("video"))
+            ):
+                # Try python-magic first
+                try:
+                    import magic  # type: ignore
+
+                    ms = magic.Magic(mime=True)
+                    detected = ms.from_file(dest_path)
+                    if detected:
+                        mime_type = detected
+                except Exception:
+                    # Fallback: mimetypes by extension
+                    guessed, _ = mimetypes.guess_type(dest_path)
+                    if guessed:
+                        mime_type = guessed
+        except Exception:
+            pass
+
+        # Generate thumbnail for videos
+        thumb_path = None
+        if mime_type and mime_type.startswith("video"):
+            try:
+                thumbs_dir = os.path.join(
+                    base_upload, str(current_user.id), "thumbnails"
+                )
+                os.makedirs(thumbs_dir, exist_ok=True)
+                thumb_name = f"{uuid4().hex}.jpg"
+                thumb_path = os.path.join(thumbs_dir, thumb_name)
+                # Extract a frame at 1s; scale width to 480 keeping aspect ratio
+                subprocess.run(
+                    [
+                        _resolve_binary(current_app, "ffmpeg"),
+                        "-y",
+                        "-ss",
+                        "1",
+                        "-i",
+                        dest_path,
+                        "-frames:v",
+                        "1",
+                        "-vf",
+                        "scale=480:-1",
+                        thumb_path,
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=True,
+                )
+            except Exception as e:
+                current_app.logger.warning(f"Thumbnail generation failed: {e}")
+                thumb_path = None
+
         media_file = MediaFile(
             filename=unique_name,
             original_filename=safe_name,
@@ -457,6 +534,7 @@ def media_upload():
             media_type=mtype,
             user_id=current_user.id,
             project_id=None,
+            thumbnail_path=thumb_path,
         )
         db.session.add(media_file)
         db.session.commit()
@@ -468,6 +546,15 @@ def media_upload():
                     "id": media_file.id,
                     "filename": media_file.filename,
                     "type": media_file.media_type.value,
+                    "preview_url": url_for(
+                        "main.media_preview", media_id=media_file.id
+                    ),
+                    "thumbnail_url": url_for(
+                        "main.media_thumbnail", media_id=media_file.id
+                    ),
+                    "mime": media_file.mime_type,
+                    "original_filename": media_file.original_filename,
+                    "tags": media_file.tags or "",
                 }
             ),
             201,
@@ -490,6 +577,141 @@ def media_preview(media_id: int):
         return send_file(media.file_path, mimetype=media.mime_type, conditional=True)
     except FileNotFoundError:
         return jsonify({"error": "File not found"}), 404
+
+
+@main_bp.route("/media/thumbnail/<int:media_id>")
+@login_required
+def media_thumbnail(media_id: int):
+    """Serve a thumbnail for a media file if available; fallback to preview for images."""
+    media = MediaFile.query.get_or_404(media_id)
+    if media.user_id != current_user.id and not current_user.is_admin():
+        return jsonify({"error": "Not authorized"}), 403
+    # If we have a thumbnail, serve it
+    if media.thumbnail_path and os.path.exists(media.thumbnail_path):
+        try:
+            return send_file(
+                media.thumbnail_path, mimetype="image/jpeg", conditional=True
+            )
+        except FileNotFoundError:
+            pass
+    # Fallback: for images, serve image; for video with no thumbnail, placeholder if available
+    if media.mime_type and media.mime_type.startswith("image"):
+        return send_file(media.file_path, mimetype=media.mime_type, conditional=True)
+    placeholder_svg = os.path.join(
+        current_app.root_path, "static", "img", "video_placeholder.svg"
+    )
+    if os.path.exists(placeholder_svg):
+        return send_file(placeholder_svg, mimetype="image/svg+xml", conditional=True)
+    placeholder_jpg = os.path.join(
+        current_app.root_path, "static", "img", "video_placeholder.jpg"
+    )
+    if os.path.exists(placeholder_jpg):
+        return send_file(placeholder_jpg, mimetype="image/jpeg", conditional=True)
+    return jsonify({"error": "Thumbnail not available"}), 404
+
+
+@main_bp.route("/media/<int:media_id>/update", methods=["POST"])
+@login_required
+def media_update(media_id: int):
+    """Rename or change type of a media file."""
+    media = MediaFile.query.get_or_404(media_id)
+    if media.user_id != current_user.id and not current_user.is_admin():
+        return jsonify({"error": "Not authorized"}), 403
+    new_name = request.form.get("original_filename", "").strip()
+    new_type = request.form.get("media_type")
+    new_tags = request.form.get("tags")
+    changed = False
+    if new_name and new_name != media.original_filename:
+        media.original_filename = new_name
+        changed = True
+    if new_type and new_type in [t.value for t in MediaType]:
+        media.media_type = MediaType(new_type)
+        changed = True
+    if new_tags is not None and new_tags != (media.tags or ""):
+        media.tags = new_tags
+        changed = True
+    if changed:
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Media update failed: {e}")
+            return jsonify({"error": "Update failed"}), 500
+    return jsonify({"success": True})
+
+
+@main_bp.route("/media/<int:media_id>/delete", methods=["POST"])
+@login_required
+def media_delete(media_id: int):
+    """Delete a media file and its thumbnail."""
+    media = MediaFile.query.get_or_404(media_id)
+    if media.user_id != current_user.id and not current_user.is_admin():
+        return jsonify({"error": "Not authorized"}), 403
+    try:
+        # Remove files from disk
+        try:
+            if os.path.exists(media.file_path):
+                os.remove(media.file_path)
+        except Exception:
+            pass
+        try:
+            if media.thumbnail_path and os.path.exists(media.thumbnail_path):
+                os.remove(media.thumbnail_path)
+        except Exception:
+            pass
+        db.session.delete(media)
+        db.session.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        current_app.logger.error(f"Media delete failed: {e}")
+        db.session.rollback()
+        return jsonify({"error": "Delete failed"}), 500
+
+
+@main_bp.route("/media/bulk", methods=["POST"])
+@login_required
+def media_bulk():
+    """Bulk operations on media: delete or change type."""
+    action = request.form.get("action")
+    ids = request.form.getlist("ids[]") or request.form.getlist("ids")
+    if not ids:
+        return jsonify({"error": "No items selected"}), 400
+    q = MediaFile.query.filter(
+        MediaFile.id.in_(ids), MediaFile.user_id == current_user.id
+    )
+    items = q.all()
+    if action == "delete":
+        ok = 0
+        for m in items:
+            try:
+                if os.path.exists(m.file_path):
+                    os.remove(m.file_path)
+            except Exception:
+                pass
+            try:
+                if m.thumbnail_path and os.path.exists(m.thumbnail_path):
+                    os.remove(m.thumbnail_path)
+            except Exception:
+                pass
+            db.session.delete(m)
+            ok += 1
+        db.session.commit()
+        return jsonify({"success": True, "deleted": ok})
+    elif action == "change_type":
+        new_type = request.form.get("media_type")
+        if not new_type or new_type not in [t.value for t in MediaType]:
+            return jsonify({"error": "Invalid media type"}), 400
+        for m in items:
+            m.media_type = MediaType(new_type)
+        db.session.commit()
+        return jsonify({"success": True, "updated": len(items)})
+    elif action == "set_tags":
+        tags_val = request.form.get("tags", "")
+        for m in items:
+            m.tags = tags_val
+        db.session.commit()
+        return jsonify({"success": True, "updated": len(items)})
+    return jsonify({"error": "Unknown action"}), 400
 
 
 def allowed_file(filename):

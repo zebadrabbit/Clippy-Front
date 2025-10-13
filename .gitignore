@@ -99,6 +99,15 @@ logs/
 .local/
 local_settings.py
 
+# Flask instance folder and runtime uploads
+instance/
+
+# Local binaries (installed via scripts/install_local_binaries.sh)
+bin/
+
+# Vendor frontend assets fetched locally (use fetch_vendor_assets.sh)
+app/static/vendor/
+
 # Backup files
 *.bak
 *.backup

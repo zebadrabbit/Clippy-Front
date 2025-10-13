@@ -14,6 +14,8 @@ from flask_login import LoginManager
 from flask_migrate import Migrate
 from flask_talisman import Talisman
 from flask_wtf.csrf import CSRFProtect
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy import text
 
 from config.settings import Config, DevelopmentConfig, ProductionConfig, TestingConfig
 
@@ -102,6 +104,19 @@ def init_extensions(app):
     from app.models import db
 
     db.init_app(app)
+
+    # Ensure minimal runtime schema updates (safe additive changes)
+    try:
+        with app.app_context():
+            engine = db.get_engine()
+            insp = sa_inspect(engine)
+            cols = {c["name"] for c in insp.get_columns("media_files")}
+            if "tags" not in cols:
+                # Add tags column as TEXT (compatible across SQLite/Postgres)
+                engine.execute(text("ALTER TABLE media_files ADD COLUMN tags TEXT"))
+    except Exception as e:
+        # Log and proceed; migrations should handle in production
+        app.logger.warning(f"Schema check/upgrade skipped or failed: {e}")
 
     # Database migrations
     Migrate(app, db)
