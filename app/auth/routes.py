@@ -41,8 +41,11 @@ def login():
 
     form = LoginForm()
 
-    # Debug and validation handling
-    if request.method == "POST":
+    # Single validation pass to avoid inconsistent outcomes on repeated calls
+    is_post = request.method == "POST"
+    is_valid = form.validate_on_submit() if is_post else False
+
+    if is_post:
         current_app.logger.debug("POST request received for login")
         current_app.logger.debug(f"Raw form keys: {list(request.form.keys())}")
         current_app.logger.debug(f"CSRF token in form: {'csrf_token' in request.form}")
@@ -50,10 +53,43 @@ def login():
             current_app.logger.debug(
                 f"CSRF token value: {request.form['csrf_token'][:20]}..."
             )
+        current_app.logger.debug(f"validate_on_submit (single-pass): {is_valid}")
 
-        is_valid = form.validate_on_submit()
-        current_app.logger.debug(f"validate_on_submit: {is_valid}")
-        if not is_valid:
+        if is_valid:
+            # Find user by username or email
+            user = User.query.filter(
+                (User.username == form.username_or_email.data)
+                | (User.email == form.username_or_email.data)
+            ).first()
+
+            # Verify user exists and password is correct
+            if user and user.check_password(form.password.data):
+                if not user.is_active:
+                    flash(
+                        "Your account has been deactivated. Please contact support.",
+                        "danger",
+                    )
+                    return redirect(url_for("auth.login"))
+
+                # Log user in
+                login_user(user, remember=form.remember_me.data)
+                current_app.logger.info(f"User login successful: {user.username}")
+
+                # Update last login timestamp
+                user.last_login = db.func.now()
+                db.session.commit()
+
+                # Redirect to next page or dashboard
+                next_page = request.args.get("next")
+                if not next_page or urlparse(next_page).netloc != "":
+                    next_page = url_for("main.dashboard")
+                current_app.logger.debug(f"Redirecting to: {next_page}")
+
+                flash(f"Welcome back, {user.username}!", "success")
+                return redirect(next_page)
+            else:
+                flash("Invalid username/email or password.", "danger")
+        else:
             # Surface specific CSRF or field validation issues to the user
             if "csrf_token" in form.errors:
                 flash(
@@ -66,39 +102,6 @@ def login():
             else:
                 # No field errors but still invalid (edge cases)
                 flash("Unable to submit the form. Please try again.", "warning")
-
-    if request.method == "POST" and form.validate_on_submit():
-        # Find user by username or email
-        user = User.query.filter(
-            (User.username == form.username_or_email.data)
-            | (User.email == form.username_or_email.data)
-        ).first()
-
-        # Verify user exists and password is correct
-        if user and user.check_password(form.password.data):
-            if not user.is_active:
-                flash(
-                    "Your account has been deactivated. Please contact support.",
-                    "danger",
-                )
-                return redirect(url_for("auth.login"))
-
-            # Log user in
-            login_user(user, remember=form.remember_me.data)
-
-            # Update last login timestamp
-            user.last_login = db.func.now()
-            db.session.commit()
-
-            # Redirect to next page or dashboard
-            next_page = request.args.get("next")
-            if not next_page or urlparse(next_page).netloc != "":
-                next_page = url_for("main.dashboard")
-
-            flash(f"Welcome back, {user.username}!", "success")
-            return redirect(next_page)
-        else:
-            flash("Invalid username/email or password.", "danger")
 
     return render_template("auth/login.html", title="Sign In", form=form)
 

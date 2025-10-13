@@ -14,6 +14,27 @@ def test_health_check(client):
     assert "message" in data
 
 
+def test_login_redirects_to_dashboard(client):
+    """Test that a successful login POST redirects to dashboard."""
+    # Login with default test user
+    resp = client.post(
+        "/auth/login",
+        data={"username_or_email": "tester", "password": "pass1234"},
+        follow_redirects=False,
+    )
+    # Should redirect (302) to dashboard
+    assert resp.status_code in (301, 302)
+    assert "/dashboard" in resp.headers.get("Location", "")
+
+
+def test_login_page_redirects_when_authenticated(client, auth):
+    """Test that GET /auth/login when authenticated redirects to dashboard."""
+    auth.login()
+    resp = client.get("/auth/login", follow_redirects=False)
+    assert resp.status_code in (301, 302)
+    assert "/dashboard" in resp.headers.get("Location", "")
+
+
 def test_start_task(client):
     """Test starting a background task."""
     response = client.post("/api/tasks/start", json={"task_name": "test_task"})
