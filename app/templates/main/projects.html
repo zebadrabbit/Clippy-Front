@@ -14,7 +14,7 @@
          href="{{ url_for('main.project_details', project_id=p.id) }}">
         <div>
           <div class="fw-semibold">{{ p.name }}</div>
-          <small class="text-muted">Status: {{ p.status.value if p.status else 'draft' }}</small>
+          <small class="text-muted">Status: {{ p.status.value if p.status else 'draft' }} · {{ p.clips|safe_count }} clips · {{ p.media_files|safe_count }} media</small>
         </div>
         <small class="text-muted">{{ p.updated_at.strftime('%Y-%m-%d') if p.updated_at else '' }}</small>
       </a>

@@ -179,7 +179,7 @@
                     <div class="card text-center">
                         <div class="card-body">
                             <h5 class="card-title text-primary">
-                                {{ current_user.projects.count() }}
+                                {{ current_user.projects|safe_count }}
                             </h5>
                             <p class="card-text">Projects Created</p>
                         </div>
@@ -189,7 +189,7 @@
                     <div class="card text-center">
                         <div class="card-body">
                             <h5 class="card-title text-success">
-                                {{ current_user.media_files.count() }}
+                                {{ current_user.media_files|safe_count }}
                             </h5>
                             <p class="card-text">Media Files</p>
                         </div>
