@@ -14,7 +14,10 @@ def make_celery(app_name=__name__):
         app_name,
         broker=config.CELERY_BROKER_URL,
         backend=config.CELERY_RESULT_BACKEND,
-        include=["app.tasks.background_tasks"],
+        include=[
+            "app.tasks.background_tasks",
+            "app.tasks.video_processing",
+        ],
     )
 
     # Update configuration

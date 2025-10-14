@@ -60,6 +60,7 @@ class Config:
 
     # External API Configuration
     DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN")
+    DISCORD_CHANNEL_ID = os.environ.get("DISCORD_CHANNEL_ID")
     TWITCH_CLIENT_ID = os.environ.get("TWITCH_CLIENT_ID")
     TWITCH_CLIENT_SECRET = os.environ.get("TWITCH_CLIENT_SECRET")
 
@@ -98,6 +99,8 @@ class DevelopmentConfig(Config):
     WTF_CSRF_CHECK_DEFAULT = False
     SESSION_COOKIE_SECURE = False  # Allow HTTP in development
     FORCE_HTTPS = False
+    # Disable rate limiting in development to avoid 429s during asset bursts
+    RATELIMIT_ENABLED = False
 
     # Development database (SQLite)
     SQLALCHEMY_DATABASE_URI = (

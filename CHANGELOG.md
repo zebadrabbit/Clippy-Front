@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2025-10-14
+
+### Added
+- Project Wizard consolidation: merged Fetch, Parse, Download into a single "Get Clips" step and removed the separate Connect step
+- Twitch connection warning on Setup with link to Profile
+
+### Changed
+- Simplified 5-step flow: Setup → Get Clips → Arrange → Compile → Export
+- More robust client polling for download tasks; recognizes both `state` and `status` and uses `ready`
+
+### Fixed
+- Wizard template duplication and malformed script tags
+- Progress bar stuck on "Polling download task progress..." due to strict status check
+
 ### Added
 - Self-hosted Dropzone and Video.js vendor assets and fetch script
 - Media Library page with uploads, thumbnails, tags, bulk actions

@@ -3,9 +3,9 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="ClippyFront - Video Compilation Platform">
-    <meta name="author" content="ClippyFront">
-    <title>{% if title %}{{ title }} - ClippyFront{% else %}ClippyFront{% endif %}</title>
+    <meta name="description" content="Clippy - Video Compilation Platform">
+    <meta name="author" content="Clippy">
+    <title>{% if title %}{{ title }} - Clippy{% else %}Clippy{% endif %}</title>
     {% if current_user.is_authenticated %}
     <meta name="csrf-token" content="{{ csrf_token() }}">
     {% endif %}
@@ -133,14 +133,14 @@
 
     {% block styles %}{% endblock %}
 </head>
-<body class="d-flex flex-column min-vh-100">
+<body class="d-flex flex-column min-vh-100" {% if current_user.is_authenticated %}data-recent-jobs-url="{{ url_for('api.recent_jobs_api') }}" data-job-details-url-template="{{ url_for('api.job_details_api', job_id=0) }}"{% endif %}>
 
     <!-- Navigation -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark border-bottom">
         <div class="container-fluid">
             <a class="navbar-brand" href="{{ url_for('main.index') }}">
                 <i class="bi bi-camera-video"></i>
-                ClippyFront
+                Clippy
             </a>
 
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
@@ -177,6 +177,17 @@
 
                 <ul class="navbar-nav">
                     {% if current_user.is_authenticated %}
+                        <li class="nav-item dropdown me-2" id="notificationsDropdown" style="display:none;">
+                            <a class="nav-link dropdown-toggle position-relative" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="bi bi-bell"></i>
+                                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" id="notifBadge" style="display:none;">0</span>
+                            </a>
+                            <ul class="dropdown-menu dropdown-menu-end" style="min-width: 320px; max-height: 60vh; overflow: auto;" id="notifMenu">
+                                <li class="dropdown-header">Recent activity</li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li class="px-3 py-2 text-muted small">No recent jobs</li>
+                            </ul>
+                        </li>
                         <li class="nav-item dropdown">
                             <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
                                 <i class="bi bi-person-circle"></i>
@@ -233,11 +244,11 @@
     </main>
 
     <!-- Footer -->
-    <footer class="footer mt-auto py-4 text-center text-muted">
+    <footer class="footer mt-auto py-4 text-muted">
         <div class="container">
             <div class="row">
                 <div class="col-md-4">
-                    <h6>ClippyFront</h6>
+                    <h6>Clippy</h6>
                     <p class="small">Video Compilation Platform<br>
                     Create amazing video compilations from your clips</p>
                 </div>
@@ -253,17 +264,21 @@
                 <div class="col-md-4">
                     <h6>Support</h6>
                     <ul class="list-unstyled small">
-                        <li><a href="#" class="text-muted">Documentation</a></li>
-                        <li><a href="#" class="text-muted">API Reference</a></li>
-                        <li><a href="#" class="text-muted">Discord Support</a></li>
-                        <li><a href="#" class="text-muted">Contact Us</a></li>
+                        <li><a href="{{ url_for('main.documentation') }}" class="text-muted">Documentation</a></li>
+                        <li><a href="{{ url_for('main.api_reference') }}" class="text-muted">API Reference</a></li>
+                        <li><a href="{{ url_for('main.support') }}" class="text-muted">Support</a></li>
+                        <li><a href="{{ url_for('main.contact') }}" class="text-muted">Contact Us</a></li>
+                        <li class="mt-2"><strong>Legal</strong></li>
+                        <li><a href="{{ url_for('main.privacy_policy') }}" class="text-muted">Privacy Policy</a></li>
+                        <li><a href="{{ url_for('main.terms_of_service') }}" class="text-muted">Terms of Service</a></li>
+                        <li><a href="{{ url_for('main.license_page') }}" class="text-muted">License</a></li>
                     </ul>
                 </div>
             </div>
             <hr>
             <div class="row">
                 <div class="col-md-6 text-start">
-                    <small>&copy; 2025 ClippyFront. All rights reserved.</small>
+                    <small>&copy; 2025 Clippy. All rights reserved.</small>
                 </div>
                 <div class="col-md-6 text-end">
                     {% if version %}
@@ -299,7 +314,126 @@
                 bsAlert.close();
             });
         }, 5000);
+
+        // Lightweight notifications poller for background jobs
+        (function(){
+            const dropdown = document.getElementById('notificationsDropdown');
+            if (!dropdown) return;
+            const badge = document.getElementById('notifBadge');
+            const menu = document.getElementById('notifMenu');
+            let lastSeenIds = new Set();
+
+            async function fetchJobs(){
+                try {
+                    const recentUrl = document.body.dataset.recentJobsUrl;
+                    if (!recentUrl) return;
+                    const res = await fetch(recentUrl);
+                    if (!res.ok) return;
+                    const data = await res.json();
+                    const items = data.items || [];
+                    render(items);
+                } catch (e) {
+                    // silent
+                }
+            }
+
+            function render(items){
+                dropdown.style.display = 'block';
+                menu.innerHTML = '';
+                const header = document.createElement('li');
+                header.className = 'dropdown-header';
+                header.textContent = 'Recent activity';
+                menu.appendChild(header);
+                menu.appendChild(document.createElement('li')).innerHTML = '<hr class="dropdown-divider">';
+
+                if (!items.length){
+                    const empty = document.createElement('li');
+                    empty.className = 'px-3 py-2 text-muted small';
+                    empty.textContent = 'No recent jobs';
+                    menu.appendChild(empty);
+                    badge.style.display = 'none';
+                    return;
+                }
+
+                let unread = 0;
+                items.forEach(j => {
+                    const li = document.createElement('li');
+                    const statusIcon = j.status === 'success' ? 'check-circle-fill text-success' : (j.status === 'failure' ? 'x-circle-fill text-danger' : 'hourglass-split text-warning');
+                    const proj = j.project_id ? ` · Project #${j.project_id}` : '';
+                    const title = `${(j.job_type || '').replace(/_/g, ' ')}${proj}`;
+                    const subtitle = j.last_log ? (j.last_log.message || j.last_log.status || '') : (j.error_message || '');
+                    const created = j.created_at ? new Date(j.created_at).toLocaleString() : '';
+                    li.innerHTML = `
+                        <a class="dropdown-item d-flex align-items-start gap-2" href="#" data-job-id="${j.id}" onclick="return window.showJobLogs(${j.id});">
+                            <i class="bi bi-${statusIcon} mt-1"></i>
+                            <div class="flex-grow-1">
+                                <div class="d-flex justify-content-between"><span>${title}</span><small class="text-muted">${j.progress || 0}%</small></div>
+                                <small class="text-muted">${subtitle || created}</small>
+                            </div>
+                        </a>`;
+                    menu.appendChild(li);
+                    if (!lastSeenIds.has(j.id) && (j.status === 'success' || j.status === 'failure')) unread++;
+                });
+                if (unread > 0){
+                    badge.textContent = unread.toString();
+                    badge.style.display = 'inline-block';
+                } else {
+                    badge.style.display = 'none';
+                }
+                lastSeenIds = new Set(items.map(i => i.id));
+            }
+
+            // Expose a tiny helper to open logs modal
+            window.showJobLogs = async function(jobId){
+                try {
+                    const baseDetails = document.body.dataset.jobDetailsUrlTemplate;
+                    if (!baseDetails) return false;
+                    const url = baseDetails.replace(/\/0$/, '/' + jobId);
+                    const res = await fetch(url);
+                    if (!res.ok) return false;
+                    const data = await res.json();
+                    const modalEl = document.getElementById('jobLogsModal');
+                    if (!modalEl) return false;
+                    modalEl.querySelector('.modal-title').textContent = `${data.job_type} · ${data.project_name || ('Project #' + (data.project_id || ''))}`;
+                    const pre = modalEl.querySelector('pre');
+                    const logs = (data.result_data && data.result_data.logs) || [];
+                    pre.textContent = logs.map(l => {
+                        const ts = l.ts ? new Date(l.ts).toLocaleString() : '';
+                        const lvl = l.level ? `[${l.level.toUpperCase()}]` : '';
+                        const status = l.status ? `(${l.status})` : '';
+                        return `${ts} ${lvl} ${l.message || ''} ${status}`.trim();
+                    }).join('\n');
+                    const modal = new bootstrap.Modal(modalEl);
+                    modal.show();
+                } catch (e) {}
+                return false;
+            }
+
+            // Poll periodically
+            if (document.body.dataset.recentJobsUrl){
+                fetchJobs();
+                setInterval(fetchJobs, 5000);
+            }
+        })();
     </script>
+
+    <!-- Job Logs Modal -->
+    <div class="modal fade" id="jobLogsModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Job logs</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <pre class="small bg-dark text-light p-3 rounded" style="max-height:60vh; white-space:pre-wrap;"></pre>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     {% block scripts %}{% endblock %}
 </body>

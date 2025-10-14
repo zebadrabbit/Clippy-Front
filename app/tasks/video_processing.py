@@ -1,5 +1,5 @@
 """
-Video processing tasks for ClippyFront platform.
+Video processing tasks for Clippy platform.
 
 This module contains Celery tasks for video compilation, clip downloading,
 and media processing using ffmpeg and yt-dlp.
@@ -13,7 +13,15 @@ from typing import Any
 
 from sqlalchemy.orm import scoped_session, sessionmaker
 
-from app.models import Clip, MediaFile, ProcessingJob, Project, ProjectStatus, db
+from app.models import (
+    Clip,
+    MediaFile,
+    MediaType,
+    ProcessingJob,
+    Project,
+    ProjectStatus,
+    db,
+)
 from app.tasks.celery_app import celery_app
 
 
@@ -70,6 +78,27 @@ def compile_video_task(self, project_id: int) -> dict[str, Any]:
         session.add(job)
         session.commit()
 
+        # Helper to append a log entry into result_data.logs
+        def log(level: str, message: str, status: str | None = None):
+            nonlocal job
+            rd = job.result_data or {}
+            logs = rd.get("logs") or []
+            logs.append(
+                {
+                    "ts": datetime.utcnow().isoformat(),
+                    "level": level,
+                    "message": message,
+                    "status": status,
+                }
+            )
+            rd["logs"] = logs
+            job.result_data = rd
+            try:
+                session.add(job)
+                session.commit()
+            except Exception:
+                session.rollback()
+
         # Get clips in order
         clips = (
             session.query(Clip)
@@ -84,6 +113,13 @@ def compile_video_task(self, project_id: int) -> dict[str, Any]:
         self.update_state(
             state="PROGRESS", meta={"progress": 10, "status": "Preparing clips"}
         )
+        log("info", "Preparing clips", status="preparing")
+        try:
+            job.progress = 10
+            session.add(job)
+            session.commit()
+        except Exception:
+            session.rollback()
 
         # Create temporary directory for processing
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -99,6 +135,13 @@ def compile_video_task(self, project_id: int) -> dict[str, Any]:
                         "status": f"Processing clip {i+1}/{len(clips)}",
                     },
                 )
+                log("info", f"Processing clip {i+1}/{len(clips)}")
+                try:
+                    job.progress = int(progress)
+                    session.add(job)
+                    session.commit()
+                except Exception:
+                    session.rollback()
 
                 clip_path = process_clip(session, clip, temp_dir, project)
                 if clip_path:
@@ -110,6 +153,13 @@ def compile_video_task(self, project_id: int) -> dict[str, Any]:
             self.update_state(
                 state="PROGRESS", meta={"progress": 70, "status": "Adding intro/outro"}
             )
+            log("info", "Adding intro/outro")
+            try:
+                job.progress = 70
+                session.add(job)
+                session.commit()
+            except Exception:
+                session.rollback()
 
             # Add intro/outro if available
             final_clips = add_intro_outro(session, project, processed_clips, temp_dir)
@@ -118,6 +168,13 @@ def compile_video_task(self, project_id: int) -> dict[str, Any]:
                 state="PROGRESS",
                 meta={"progress": 80, "status": "Compiling final video"},
             )
+            log("info", "Compiling final video", status="compiling")
+            try:
+                job.progress = 80
+                session.add(job)
+                session.commit()
+            except Exception:
+                session.rollback()
 
             # Compile final video
             output_path = compile_final_video(final_clips, temp_dir, project)
@@ -125,9 +182,78 @@ def compile_video_task(self, project_id: int) -> dict[str, Any]:
             self.update_state(
                 state="PROGRESS", meta={"progress": 90, "status": "Saving output"}
             )
+            log("info", "Saving output", status="saving")
+            try:
+                job.progress = 90
+                session.add(job)
+                session.commit()
+            except Exception:
+                session.rollback()
 
             # Move to final location and update project
             final_output_path = save_final_video(output_path, project)
+
+            # Create a MediaFile record for the final compilation so it appears in the media library
+            try:
+                media = MediaFile(
+                    filename=os.path.basename(final_output_path),
+                    original_filename=os.path.basename(final_output_path),
+                    file_path=final_output_path,
+                    file_size=os.path.getsize(final_output_path),
+                    mime_type="video/mp4",
+                    media_type=MediaType.COMPILATION,
+                    user_id=project.user_id,
+                    project_id=project.id,
+                    is_processed=True,
+                )
+                # Extract metadata for final render
+                meta = extract_video_metadata(final_output_path)
+                if meta:
+                    media.duration = meta.get("duration")
+                    media.width = meta.get("width")
+                    media.height = meta.get("height")
+                    media.framerate = meta.get("framerate")
+                # Generate thumbnail for final render
+                try:
+                    from app import create_app
+
+                    app = create_app()
+                    base_upload = os.path.join(
+                        app.instance_path, app.config.get("UPLOAD_FOLDER", "uploads")
+                    )
+                    thumbs_dir = os.path.join(
+                        base_upload, str(project.user_id), "thumbnails"
+                    )
+                    os.makedirs(thumbs_dir, exist_ok=True)
+                    thumb_name = f"compilation_{project.id}_{int(datetime.utcnow().timestamp())}.jpg"
+                    thumb_path = os.path.join(thumbs_dir, thumb_name)
+                    ffmpeg_bin = resolve_binary(app, "ffmpeg")
+                    subprocess.run(
+                        [
+                            ffmpeg_bin,
+                            "-y",
+                            "-ss",
+                            "1",
+                            "-i",
+                            final_output_path,
+                            "-frames:v",
+                            "1",
+                            "-vf",
+                            "scale=480:-1",
+                            thumb_path,
+                        ],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        check=True,
+                    )
+                    media.thumbnail_path = thumb_path
+                except Exception:
+                    pass
+
+                session.add(media)
+            except Exception:
+                # Do not fail the compilation if media record creation fails
+                pass
 
             # Update project status
             project.status = ProjectStatus.COMPLETED
@@ -143,7 +269,9 @@ def compile_video_task(self, project_id: int) -> dict[str, Any]:
                 "output_file": final_output_path,
                 "clips_processed": len(processed_clips),
                 "duration": (datetime.utcnow() - job.started_at).total_seconds(),
+                **(job.result_data or {}),
             }
+            log("success", "Compilation completed", status="completed")
 
             session.commit()
 
@@ -164,6 +292,18 @@ def compile_video_task(self, project_id: int) -> dict[str, Any]:
             job.status = "failure"
             job.error_message = str(e)
             job.completed_at = datetime.utcnow()
+            rd = job.result_data or {}
+            logs = rd.get("logs") or []
+            logs.append(
+                {
+                    "ts": datetime.utcnow().isoformat(),
+                    "level": "error",
+                    "message": str(e),
+                    "status": "failed",
+                }
+            )
+            rd["logs"] = logs
+            job.result_data = rd
 
         session.commit()
         session.close()
@@ -202,9 +342,36 @@ def download_clip_task(self, clip_id: int, source_url: str) -> dict[str, Any]:
         session.add(job)
         session.commit()
 
+        def log(level: str, message: str, status: str | None = None):
+            nonlocal job
+            rd = job.result_data or {}
+            logs = rd.get("logs") or []
+            logs.append(
+                {
+                    "ts": datetime.utcnow().isoformat(),
+                    "level": level,
+                    "message": message,
+                    "status": status,
+                }
+            )
+            rd["logs"] = logs
+            job.result_data = rd
+            try:
+                session.add(job)
+                session.commit()
+            except Exception:
+                session.rollback()
+
         self.update_state(
             state="PROGRESS", meta={"progress": 10, "status": "Starting download"}
         )
+        log("info", f"Starting download: clip {clip_id}", status="downloading")
+        try:
+            job.progress = 10
+            session.add(job)
+            session.commit()
+        except Exception:
+            session.rollback()
 
         # Download with yt-dlp
         output_path = download_with_yt_dlp(source_url, clip)
@@ -213,6 +380,13 @@ def download_clip_task(self, clip_id: int, source_url: str) -> dict[str, Any]:
             state="PROGRESS",
             meta={"progress": 80, "status": "Creating media file record"},
         )
+        log("info", "Creating media file record")
+        try:
+            job.progress = 80
+            session.add(job)
+            session.commit()
+        except Exception:
+            session.rollback()
 
         # Create media file record
         media_file = MediaFile(
@@ -221,7 +395,7 @@ def download_clip_task(self, clip_id: int, source_url: str) -> dict[str, Any]:
             file_path=output_path,
             file_size=os.path.getsize(output_path),
             mime_type="video/mp4",
-            media_type="clip",
+            media_type=MediaType.CLIP,
             user_id=clip.project.user_id,
             project_id=clip.project_id,
         )
@@ -234,7 +408,47 @@ def download_clip_task(self, clip_id: int, source_url: str) -> dict[str, Any]:
             media_file.height = metadata.get("height")
             media_file.framerate = metadata.get("framerate")
 
+        # Generate thumbnail for the downloaded video
+        try:
+            from app import create_app
+
+            app = create_app()
+            base_upload = os.path.join(
+                app.instance_path, app.config.get("UPLOAD_FOLDER", "uploads")
+            )
+            thumbs_dir = os.path.join(
+                base_upload, str(clip.project.user_id), "thumbnails"
+            )
+            os.makedirs(thumbs_dir, exist_ok=True)
+            thumb_name = f"clip_{clip.id}_{int(datetime.utcnow().timestamp())}.jpg"
+            thumb_path = os.path.join(thumbs_dir, thumb_name)
+
+            ffmpeg_bin = resolve_binary(app, "ffmpeg")
+            subprocess.run(
+                [
+                    ffmpeg_bin,
+                    "-y",
+                    "-ss",
+                    "1",
+                    "-i",
+                    output_path,
+                    "-frames:v",
+                    "1",
+                    "-vf",
+                    "scale=480:-1",
+                    thumb_path,
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=True,
+            )
+            media_file.thumbnail_path = thumb_path
+        except Exception as thumb_err:
+            # Do not fail the task if thumbnail creation fails
+            print(f"Thumbnail generation failed for clip {clip.id}: {thumb_err}")
+
         session.add(media_file)
+        session.flush()  # ensure media_file.id is available
 
         # Update clip
         clip.media_file = media_file
@@ -249,7 +463,9 @@ def download_clip_task(self, clip_id: int, source_url: str) -> dict[str, Any]:
         job.result_data = {
             "downloaded_file": output_path,
             "media_file_id": media_file.id,
+            **(job.result_data or {}),
         }
+        log("success", "Download completed", status="completed")
 
         session.commit()
 
@@ -265,6 +481,18 @@ def download_clip_task(self, clip_id: int, source_url: str) -> dict[str, Any]:
             job.status = "failure"
             job.error_message = str(e)
             job.completed_at = datetime.utcnow()
+            rd = job.result_data or {}
+            logs = rd.get("logs") or []
+            logs.append(
+                {
+                    "ts": datetime.utcnow().isoformat(),
+                    "level": "error",
+                    "message": str(e),
+                    "status": "failed",
+                }
+            )
+            rd["logs"] = logs
+            job.result_data = rd
             session.commit()
 
         session.close()
@@ -291,8 +519,12 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
     output_path = os.path.join(temp_dir, f"clip_{clip.id}_processed.mp4")
 
     # Build ffmpeg command for clip processing
+    from app import create_app
+
+    app = create_app()
+    ffmpeg_bin = resolve_binary(app, "ffmpeg")
     cmd = [
-        "ffmpeg",
+        ffmpeg_bin,
         "-i",
         input_path,
         "-c:v",
@@ -350,7 +582,7 @@ def add_intro_outro(
     # Add intro if available
     intro = (
         session.query(MediaFile)
-        .filter_by(project_id=project.id, media_type="intro")
+        .filter_by(project_id=project.id, media_type=MediaType.INTRO)
         .first()
     )
 
@@ -362,7 +594,7 @@ def add_intro_outro(
     # Add transitions between clips if available
     transition = (
         session.query(MediaFile)
-        .filter_by(project_id=project.id, media_type="transition")
+        .filter_by(project_id=project.id, media_type=MediaType.TRANSITION)
         .first()
     )
 
@@ -381,7 +613,7 @@ def add_intro_outro(
     # Add outro if available
     outro = (
         session.query(MediaFile)
-        .filter_by(project_id=project.id, media_type="outro")
+        .filter_by(project_id=project.id, media_type=MediaType.OUTRO)
         .first()
     )
 
@@ -402,8 +634,12 @@ def process_media_file(input_path: str, output_path: str, project: Project) -> N
         output_path: Output file path
         project: Project with settings
     """
+    from app import create_app
+
+    app = create_app()
+    ffmpeg_bin = resolve_binary(app, "ffmpeg")
     cmd = [
-        "ffmpeg",
+        ffmpeg_bin,
         "-i",
         input_path,
         "-c:v",
@@ -454,8 +690,12 @@ def compile_final_video(clips: list[str], temp_dir: str, project: Project) -> st
     )
 
     # Build ffmpeg concat command
+    from app import create_app
+
+    app = create_app()
+    ffmpeg_bin = resolve_binary(app, "ffmpeg")
     cmd = [
-        "ffmpeg",
+        ffmpeg_bin,
         "-f",
         "concat",
         "-safe",
@@ -532,8 +772,9 @@ def download_with_yt_dlp(url: str, clip: Clip) -> str:
     output_template = os.path.join(download_dir, f"clip_{clip.id}_%(title)s.%(ext)s")
 
     # yt-dlp command
+    yt_bin = resolve_binary(app, "yt-dlp")
     cmd = [
-        "yt-dlp",
+        yt_bin,
         "--format",
         "best[ext=mp4]/best",
         "--output",
@@ -564,8 +805,12 @@ def extract_video_metadata(file_path: str) -> dict[str, Any]:
     Returns:
         Dict: Video metadata
     """
+    from app import create_app
+
+    app = create_app()
+    ffprobe_bin = resolve_binary(app, "ffprobe")
     cmd = [
-        "ffprobe",
+        ffprobe_bin,
         "-v",
         "quiet",
         "-print_format",
@@ -588,14 +833,52 @@ def extract_video_metadata(file_path: str) -> dict[str, Any]:
                     break
 
             if video_stream:
+                # Parse framerate safely (e.g., "30000/1001")
+                fr_raw = video_stream.get("r_frame_rate", "0/1")
+                try:
+                    num, den = fr_raw.split("/")
+                    fr_val = float(num) / float(den) if float(den or 0) else 0.0
+                except Exception:
+                    try:
+                        fr_val = float(fr_raw)
+                    except Exception:
+                        fr_val = 0.0
+
                 return {
                     "duration": float(data.get("format", {}).get("duration", 0)),
                     "width": int(video_stream.get("width", 0)),
                     "height": int(video_stream.get("height", 0)),
-                    "framerate": eval(video_stream.get("r_frame_rate", "0/1")),
+                    "framerate": fr_val,
                 }
 
     except Exception:
         pass
 
     return {}
+
+
+def resolve_binary(app, name: str) -> str:
+    """Resolve a binary path using app config or local ./bin fallback.
+
+    Looks for config keys FFMPEG_BINARY, YT_DLP_BINARY, FFPROBE_BINARY based on name.
+    If not configured, prefers project-local bin/<name> if present, else returns name.
+    """
+    cfg_key = None
+    lname = name.lower()
+    if lname == "ffmpeg":
+        cfg_key = "FFMPEG_BINARY"
+    elif lname in ("yt-dlp", "ytdlp"):
+        cfg_key = "YT_DLP_BINARY"
+    elif lname == "ffprobe":
+        cfg_key = "FFPROBE_BINARY"
+
+    if cfg_key:
+        path = app.config.get(cfg_key)
+        if path:
+            return path
+
+    proj_root = os.path.dirname(app.root_path)
+    candidate = os.path.join(proj_root, "bin", name)
+    if os.path.exists(candidate):
+        return candidate
+    return name

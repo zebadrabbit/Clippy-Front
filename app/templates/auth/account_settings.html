@@ -160,9 +160,12 @@
                                 </div>
                                 <div class="ms-auto">
                                     {% if current_user.discord_user_id %}
-                                        <button class="btn btn-outline-danger btn-sm">Disconnect</button>
+                                        <form method="POST" action="{{ url_for('auth.disconnect_discord') }}">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <button type="submit" class="btn btn-outline-danger btn-sm">Disconnect</button>
+                                        </form>
                                     {% else %}
-                                        <a href="{{ url_for('auth.profile') }}" class="btn btn-outline-primary btn-sm">Connect</a>
+                                        <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#connectDiscordModal">Connect</button>
                                     {% endif %}
                                 </div>
                             </div>
@@ -180,9 +183,12 @@
                                 </div>
                                 <div class="ms-auto">
                                     {% if current_user.twitch_username %}
-                                        <button class="btn btn-outline-danger btn-sm">Disconnect</button>
+                                        <form method="POST" action="{{ url_for('auth.disconnect_twitch') }}">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <button type="submit" class="btn btn-outline-danger btn-sm">Disconnect</button>
+                                        </form>
                                     {% else %}
-                                        <a href="{{ url_for('auth.profile') }}" class="btn btn-outline-primary btn-sm">Connect</a>
+                                        <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#connectTwitchModal">Connect</button>
                                     {% endif %}
                                 </div>
                             </div>
@@ -340,6 +346,58 @@
                     Delete Account
                 </button>
             </div>
+        </div>
+    </div>
+</div>
+</div>
+
+<!-- Connect Discord Modal -->
+<div class="modal fade" id="connectDiscordModal" tabindex="-1" aria-labelledby="connectDiscordLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="connectDiscordLabel"><i class="bi bi-discord"></i> Connect Discord</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" action="{{ url_for('auth.connect_discord') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Discord User ID</label>
+                        <input type="text" class="form-control" name="discord_user_id" placeholder="e.g. 123456789012345678" required>
+                        <div class="form-text">Temporary placeholder until OAuth. You can find this via Discord settings (Developer Mode).</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Connect</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Connect Twitch Modal -->
+<div class="modal fade" id="connectTwitchModal" tabindex="-1" aria-labelledby="connectTwitchLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="connectTwitchLabel"><i class="bi bi-twitch"></i> Connect Twitch</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" action="{{ url_for('auth.connect_twitch') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Twitch Username</label>
+                        <input type="text" class="form-control" name="twitch_username" placeholder="e.g. yourchannel" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Connect</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>

@@ -1,5 +1,5 @@
 """
-Admin panel routes for ClippyFront platform management.
+Admin panel routes for Clippy platform management.
 
 This module provides administrative functionality including user management,
 system monitoring, and platform configuration for admin users only.

@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container py-5">
+  <h2>Support</h2>
+  <p class="text-muted">Need help? Check our docs or reach out.</p>
+  <ul>
+    <li><a href="{{ url_for('main.documentation') }}">Documentation</a></li>
+    <li><a href="{{ url_for('main.contact') }}">Contact Support</a></li>
+  </ul>
+</div>
+{% endblock %}

@@ -276,3 +276,86 @@ def account_settings():
         Response: Rendered account settings template
     """
     return render_template("auth/account_settings.html", title="Account Settings")
+
+
+@auth_bp.route("/connect/discord", methods=["POST"])
+@login_required
+def connect_discord():
+    """Save Discord user identifier to the current user's account.
+
+    This is a lightweight placeholder for a full OAuth flow. Accepts
+    'discord_user_id' from a simple form submission and stores it.
+    """
+    discord_id = (request.form.get("discord_user_id") or "").strip()
+    if not discord_id:
+        flash("Please provide a Discord User ID.", "warning")
+        return redirect(url_for("auth.account_settings"))
+    try:
+        current_user.discord_user_id = discord_id
+        db.session.commit()
+        flash("Discord connected successfully.", "success")
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(
+            f"Discord connect failed for user {current_user.id}: {e}"
+        )
+        flash("Failed to connect Discord.", "danger")
+    return redirect(url_for("auth.account_settings"))
+
+
+@auth_bp.route("/disconnect/discord", methods=["POST"])
+@login_required
+def disconnect_discord():
+    """Clear Discord connection from the current user's account."""
+    try:
+        current_user.discord_user_id = None
+        db.session.commit()
+        flash("Discord disconnected.", "info")
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(
+            f"Discord disconnect failed for user {current_user.id}: {e}"
+        )
+        flash("Failed to disconnect Discord.", "danger")
+    return redirect(url_for("auth.account_settings"))
+
+
+@auth_bp.route("/connect/twitch", methods=["POST"])
+@login_required
+def connect_twitch():
+    """Save Twitch username to the current user's account.
+
+    Placeholder for OAuth: accepts 'twitch_username' from form.
+    """
+    twitch_name = (request.form.get("twitch_username") or "").strip()
+    if not twitch_name:
+        flash("Please provide a Twitch username.", "warning")
+        return redirect(url_for("auth.account_settings"))
+    try:
+        current_user.twitch_username = twitch_name
+        db.session.commit()
+        flash("Twitch connected successfully.", "success")
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(
+            f"Twitch connect failed for user {current_user.id}: {e}"
+        )
+        flash("Failed to connect Twitch.", "danger")
+    return redirect(url_for("auth.account_settings"))
+
+
+@auth_bp.route("/disconnect/twitch", methods=["POST"])
+@login_required
+def disconnect_twitch():
+    """Clear Twitch connection from the current user's account."""
+    try:
+        current_user.twitch_username = None
+        db.session.commit()
+        flash("Twitch disconnected.", "info")
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(
+            f"Twitch disconnect failed for user {current_user.id}: {e}"
+        )
+        flash("Failed to disconnect Twitch.", "danger")
+    return redirect(url_for("auth.account_settings"))

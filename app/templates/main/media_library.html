@@ -17,7 +17,6 @@
             <option value="{{ t.value }}">{{ t.name.title() }}</option>
           {% endfor %}
         </select>
-        <small class="text-muted">Stored per user (images/, intros/, outros/, transitions/)</small>
       </div>
     </div>
     <div class="card-body">
@@ -25,7 +24,7 @@
         <div class="dz-message">Drop files here or click to upload</div>
         <div class="dz-previews mt-3"></div>
       </form>
-      <small class="text-muted">Images and videos are supported; filenames are de-collided automatically.</small>
+      <small class="text-muted">Images and videos are supported.</small>
     </div>
   </div>
 
@@ -144,8 +143,8 @@
         return;
       }
       Dropzone.autoDiscover = false;
-      const dzEl = document.getElementById('media-dropzone');
-      const grid = document.getElementById('media-grid');
+  const dzEl = document.getElementById('media-dropzone');
+  let grid = document.getElementById('media-grid');
       const bulkBar = document.getElementById('bulk-toolbar');
       const bulkCount = document.getElementById('bulk-count');
       const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
@@ -168,7 +167,24 @@
           this.on('success', function(file, resp){
             if (!resp || !resp.success) return;
             const col = createMediaCard(resp);
-            grid && col && (grid.prepend(col), attachCardHandlers(col), updateBulkBar());
+            // Ensure grid exists even if the page initially had no media
+            if (!grid) {
+              // Replace the "No media files yet." placeholder with a fresh grid
+              const placeholder = Array.from(document.querySelectorAll('p.text-muted'))
+                .find(p => /No media files yet\./i.test(p.textContent || ''));
+              const newGrid = document.createElement('div');
+              newGrid.id = 'media-grid';
+              newGrid.className = 'row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 g-3';
+              if (placeholder && placeholder.parentElement) {
+                placeholder.replaceWith(newGrid);
+              } else {
+                // Fallback: append to page container
+                const container = document.querySelector('.container.py-4');
+                if (container) { container.appendChild(newGrid); }
+              }
+              grid = document.getElementById('media-grid') || newGrid;
+            }
+            if (grid && col) { grid.prepend(col); attachCardHandlers(col); updateBulkBar(); }
           });
         }
       });
@@ -328,7 +344,7 @@
         </div>`;
       document.body.appendChild(playerModalEl);
       let bsPlayerModal; function ensurePlayerModal(){ if (!bsPlayerModal) bsPlayerModal = new bootstrap.Modal(playerModalEl); return bsPlayerModal; }
-      let vjs;
+  let vjs;
       function onOpenVideo(e){
         const id = e.currentTarget.getAttribute('data-id');
         const card = document.querySelector('.media-card[data-id="' + id + '"]');
@@ -348,8 +364,9 @@
             default: return '';
           }
         })();
-        const mime = validMime ? rawMime : (guessedMime || '');
-        const src = "{{ url_for('main.media_preview', media_id=0, _external=True) }}".replace('0', id);
+  const mime = validMime ? rawMime : (guessedMime || '');
+  // Use a relative URL so it always targets the current origin/host
+  const src = "{{ url_for('main.media_preview', media_id=0) }}".replace('0', id);
         console.debug('Opening video', { id, src, mime });
         // Basic capability check; if browser can't play, show a message and offer direct download
         const probe = document.createElement('video');
@@ -375,6 +392,15 @@
           vjs.play();
         }
       }
+
+      // Ensure playback stops when modal closes
+      playerModalEl.addEventListener('hidden.bs.modal', function(){
+        try {
+          if (vjs) { vjs.pause(); }
+          const el = document.getElementById('inline-player');
+          if (el) { el.pause?.(); el.removeAttribute('src'); el.load?.(); }
+        } catch (_) {}
+      });
 
       // Wire for existing cards
       attachHandlers();

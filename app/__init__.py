@@ -110,10 +110,39 @@ def init_extensions(app):
         with app.app_context():
             engine = db.get_engine()
             insp = sa_inspect(engine)
-            cols = {c["name"] for c in insp.get_columns("media_files")}
-            if "tags" not in cols:
-                # Add tags column as TEXT (compatible across SQLite/Postgres)
-                engine.execute(text("ALTER TABLE media_files ADD COLUMN tags TEXT"))
+            # Collect existing columns once
+            mf_cols = {c["name"] for c in insp.get_columns("media_files")}
+            clip_cols = {c["name"] for c in insp.get_columns("clips")}
+
+            statements = []
+            # media_files: add tags if missing
+            if "tags" not in mf_cols:
+                statements.append(text("ALTER TABLE media_files ADD COLUMN tags TEXT"))
+            # clips: add metadata columns if missing
+            if "creator_name" not in clip_cols:
+                statements.append(
+                    text("ALTER TABLE clips ADD COLUMN creator_name VARCHAR(120)")
+                )
+            if "game_name" not in clip_cols:
+                statements.append(
+                    text("ALTER TABLE clips ADD COLUMN game_name VARCHAR(120)")
+                )
+            if "clip_created_at" not in clip_cols:
+                # Use DATETIME which is friendlier across backends (SQLite stores as TEXT)
+                statements.append(
+                    text("ALTER TABLE clips ADD COLUMN clip_created_at DATETIME")
+                )
+
+            if statements:
+                # Execute in a single transaction; SQLAlchemy 2.x style
+                with engine.begin() as conn:
+                    for stmt in statements:
+                        conn.execute(stmt)
+                # Optionally re-inspect or log success
+                app.logger.info(
+                    "Applied runtime schema updates: %s",
+                    ", ".join(s.text for s in statements),
+                )
     except Exception as e:
         # Log and proceed; migrations should handle in production
         app.logger.warning(f"Schema check/upgrade skipped or failed: {e}")
@@ -127,13 +156,14 @@ def init_extensions(app):
     # CSRF Protection
     csrf.init_app(app)
 
-    # Rate limiting
-    limiter = Limiter(
-        key_func=get_remote_address,
-        default_limits=[app.config.get("RATELIMIT_DEFAULT", "100 per hour")],
-        storage_uri=app.config.get("RATELIMIT_STORAGE_URL"),
-    )
-    limiter.init_app(app)
+    # Rate limiting (can be disabled via RATELIMIT_ENABLED=False)
+    if app.config.get("RATELIMIT_ENABLED", True):
+        limiter = Limiter(
+            key_func=get_remote_address,
+            default_limits=[app.config.get("RATELIMIT_DEFAULT", "100 per hour")],
+            storage_uri=app.config.get("RATELIMIT_STORAGE_URL"),
+        )
+        limiter.init_app(app)
 
     # User session management
     login_manager = LoginManager()

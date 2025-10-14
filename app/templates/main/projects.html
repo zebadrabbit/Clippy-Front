@@ -4,20 +4,27 @@
 <div class="container py-4">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h2 class="mb-0"><i class="bi bi-folder2-open"></i> My Projects</h2>
-    <a href="{{ url_for('main.create_project') }}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> New Project</a>
+    <div class="d-flex gap-2">
+      <a href="{{ url_for('main.project_wizard') }}" class="btn btn-primary"><i class="bi bi-magic"></i> New Project (Wizard)</a>
+    </div>
   </div>
 
   {% if projects %}
   <div class="list-group">
     {% for p in projects %}
-      <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
-         href="{{ url_for('main.project_details', project_id=p.id) }}">
-        <div>
+      <div class="list-group-item d-flex justify-content-between align-items-center">
+        <a class="text-decoration-none flex-grow-1" href="{{ url_for('main.project_details', project_id=p.id) }}">
           <div class="fw-semibold">{{ p.name }}</div>
           <small class="text-muted">Status: {{ p.status.value if p.status else 'draft' }} · {{ p.clips|safe_count }} clips · {{ p.media_files|safe_count }} media</small>
+        </a>
+        <div class="d-flex align-items-center gap-2">
+          <small class="text-muted">{{ p.updated_at.strftime('%Y-%m-%d') if p.updated_at else '' }}</small>
+          <form method="POST" action="{{ url_for('main.delete_project', project_id=p.id) }}" onsubmit="return confirm('Delete project {{ p.name }}? This cannot be undone.');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+          </form>
         </div>
-        <small class="text-muted">{{ p.updated_at.strftime('%Y-%m-%d') if p.updated_at else '' }}</small>
-      </a>
+      </div>
     {% endfor %}
   </div>
   {% else %}

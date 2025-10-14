@@ -1,5 +1,5 @@
 """
-Database models for ClippyFront application.
+Database models for Clippy application.
 
 This module contains all SQLAlchemy models defining the database schema
 for users, projects, media files, clips, and related entities.
@@ -51,12 +51,14 @@ class MediaType(Enum):
     - OUTRO: Ending video
     - TRANSITION: Transition between clips
     - CLIP: Main content clip
+    - COMPILATION: Final compiled render output
     """
 
     INTRO = "intro"
     OUTRO = "outro"
     TRANSITION = "transition"
     CLIP = "clip"
+    COMPILATION = "compilation"
 
 
 class User(UserMixin, db.Model):
@@ -303,6 +305,11 @@ class Clip(db.Model):
     source_platform = db.Column(db.String(50))  # 'discord', 'twitch', 'upload'
     source_url = db.Column(db.String(500))
     source_id = db.Column(db.String(100))  # Platform-specific ID
+
+    # Optional enriched metadata for UI and rendering
+    creator_name = db.Column(db.String(120))  # who clipped it / creator
+    game_name = db.Column(db.String(120))  # game title if available
+    clip_created_at = db.Column(db.DateTime)  # when clip was created on platform
 
     # Project association
     project_id = db.Column(db.Integer, db.ForeignKey("projects.id"), nullable=False)

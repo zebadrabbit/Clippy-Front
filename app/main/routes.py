@@ -1,5 +1,5 @@
 """
-Main application routes for the ClippyFront platform.
+Main application routes for the Clippy platform.
 
 This module handles the core user-facing routes including the landing page,
 dashboard, project management, and media upload functionality.
@@ -33,7 +33,7 @@ main_bp = Blueprint("main", __name__)
 @main_bp.route("/")
 def index():
     """
-    Landing page for the ClippyFront platform.
+    Landing page for the Clippy platform.
 
     Displays information about the platform and provides links to
     authentication for new and existing users.
@@ -43,7 +43,7 @@ def index():
     """
     return render_template(
         "main/index.html",
-        title="ClippyFront - Video Compilation Platform",
+        title="Clippy - Video Compilation Platform",
         version=get_version(),
     )
 
@@ -130,54 +130,7 @@ def projects():
     )
 
 
-@main_bp.route("/projects/new", methods=["GET", "POST"])
-@login_required
-def create_project():
-    """
-    Create a new video compilation project.
-
-    GET: Display project creation form
-    POST: Process form and create new project
-
-    Returns:
-        Response: Rendered form or redirect to project details
-    """
-    if request.method == "POST":
-        name = request.form.get("name", "").strip()
-        description = request.form.get("description", "").strip()
-        max_clip_duration = request.form.get("max_clip_duration", 30, type=int)
-        output_resolution = request.form.get("output_resolution", "1080p")
-
-        if not name:
-            flash("Project name is required.", "danger")
-            return redirect(url_for("main.create_project"))
-
-        try:
-            project = Project(
-                name=name,
-                description=description or None,
-                user_id=current_user.id,
-                max_clip_duration=max_clip_duration,
-                output_resolution=output_resolution,
-            )
-
-            db.session.add(project)
-            db.session.commit()
-
-            flash(f"Project '{name}' created successfully!", "success")
-            return redirect(url_for("main.project_details", project_id=project.id))
-
-        except Exception as e:
-            db.session.rollback()
-            current_app.logger.error(
-                f"Project creation error for user {current_user.id}: {str(e)}"
-            )
-            flash(
-                "An error occurred while creating the project. Please try again.",
-                "danger",
-            )
-
-    return render_template("main/create_project.html", title="New Project")
+## Legacy project creation route removed; use the wizard and API instead.
 
 
 @main_bp.route("/projects/<int:project_id>")
@@ -209,6 +162,63 @@ def project_details(project_id):
         clips=clips,
         media_files=media_files,
     )
+
+
+@main_bp.route("/projects/<int:project_id>/delete", methods=["POST"])
+@login_required
+def delete_project(project_id: int):
+    """Delete a project and its associated resources for the current user.
+
+    - Removes compiled output file if present
+    - Deletes media files on disk and thumbnails
+    - Deletes DB rows for media files and clips
+    - Deletes the project row
+    """
+    project = Project.query.filter_by(
+        id=project_id, user_id=current_user.id
+    ).first_or_404()
+
+    try:
+        # Remove compiled output if present
+        try:
+            if project.output_filename:
+                compiled_path = os.path.join(
+                    current_app.instance_path, "compilations", project.output_filename
+                )
+                if os.path.exists(compiled_path):
+                    os.remove(compiled_path)
+        except Exception:
+            pass
+
+        # Delete media files (files on disk + DB rows)
+        for m in list(project.media_files):
+            try:
+                if m.file_path and os.path.exists(m.file_path):
+                    os.remove(m.file_path)
+            except Exception:
+                pass
+            try:
+                if m.thumbnail_path and os.path.exists(m.thumbnail_path):
+                    os.remove(m.thumbnail_path)
+            except Exception:
+                pass
+            db.session.delete(m)
+
+        # Delete clips
+        for c in list(project.clips):
+            db.session.delete(c)
+
+        # Finally, delete the project
+        db.session.delete(project)
+        db.session.commit()
+
+        flash("Project deleted.", "success")
+        return redirect(url_for("main.projects"))
+    except Exception as e:
+        current_app.logger.error(f"Project delete failed: {e}")
+        db.session.rollback()
+        flash("Failed to delete project. Please try again.", "danger")
+        return redirect(url_for("main.projects"))
 
 
 @main_bp.route("/projects/<int:project_id>/upload", methods=["GET", "POST"])
@@ -398,6 +408,8 @@ def _media_type_folder(media_type: MediaType, mime_type: str) -> str:
             return "outros"
         if media_type == MediaType.TRANSITION:
             return "transitions"
+        if media_type == MediaType.COMPILATION:
+            return "compilations"
         # If it's an image, keep in images/
         if mime_type and mime_type.startswith("image"):
             return "images"
@@ -733,3 +745,95 @@ def allowed_file(filename):
     ) | current_app.config.get("ALLOWED_IMAGE_EXTENSIONS", set())
 
     return file_ext in allowed_extensions
+
+
+@main_bp.route("/projects/wizard", methods=["GET"])
+@login_required
+def project_wizard():
+    """Render the multi-step project creation and compilation wizard.
+
+    The wizard guides the user through:
+        1) choosing the route (Twitch/Discord) and basic project setup
+        2) connecting services (Discord/Twitch)
+        3) fetching candidate clips/messages
+        4) extracting/confirming clip URLs
+        5) downloading clips with progress and cancellation
+        6) previewing and arranging a timeline
+        7) compiling clips into a single video
+        8) exporting/sharing the result
+
+    This endpoint currently serves the UI scaffolding. Back-end wiring for
+    downloading and compilation can be integrated with Celery tasks.
+    """
+    return render_template(
+        "main/project_wizard.html",
+        title="Project Wizard",
+        media_types=MediaType,
+    )
+
+
+# Informational and Legal pages
+
+
+@main_bp.route("/docs")
+def documentation():
+    return render_template("main/docs.html", title="Documentation")
+
+
+@main_bp.route("/api-reference")
+def api_reference():
+    return render_template("main/api_reference.html", title="API Reference")
+
+
+@main_bp.route("/support")
+def support():
+    return render_template("main/support.html", title="Support")
+
+
+@main_bp.route("/contact")
+def contact():
+    return render_template("main/contact.html", title="Contact Us")
+
+
+@main_bp.route("/privacy")
+def privacy_policy():
+    return render_template("main/privacy.html", title="Privacy Policy")
+
+
+@main_bp.route("/terms")
+def terms_of_service():
+    return render_template("main/terms.html", title="Terms of Service")
+
+
+@main_bp.route("/license")
+def license_page():
+    return render_template("main/license.html", title="License")
+
+
+@main_bp.route("/projects/<int:project_id>/download-output")
+@login_required
+def download_compiled_output(project_id: int):
+    """Download the compiled output video for a project if available."""
+    project = Project.query.filter_by(
+        id=project_id, user_id=current_user.id
+    ).first_or_404()
+
+    if not project.output_filename:
+        return jsonify({"error": "No compiled output available"}), 404
+
+    # The compiled file is stored under instance/compilations/<filename>
+    final_path = os.path.join(
+        current_app.instance_path, "compilations", project.output_filename
+    )
+    if not os.path.exists(final_path):
+        return jsonify({"error": "Compiled file not found"}), 404
+
+    # Guess mime type based on extension
+    guessed, _ = mimetypes.guess_type(final_path)
+    mimetype = guessed or "application/octet-stream"
+    return send_file(
+        final_path,
+        mimetype=mimetype,
+        as_attachment=True,
+        download_name=project.output_filename,
+    )

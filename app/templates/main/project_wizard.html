@@ -1,0 +1,595 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0"><i class="bi bi-magic"></i> New Project Wizard</h2>
+    <a class="btn btn-outline-secondary" href="{{ url_for('main.projects') }}">Back to Projects</a>
+  </div>
+
+  <!-- Wizard flow: 1) Setup 2) Get Clips 3) Arrange 4) Compile 5) Export -->
+  <ul class="nav nav-pills mb-3" id="wizard-steps" role="tablist">
+    <li class="nav-item" role="presentation"><button class="nav-link active" id="step1-tab" data-step="1" type="button">1. Setup</button></li>
+    <li class="nav-item" role="presentation"><button class="nav-link" id="step2-tab" data-step="2" type="button">2. Get Clips</button></li>
+    <li class="nav-item" role="presentation"><button class="nav-link" id="step3-tab" data-step="3" type="button">3. Arrange</button></li>
+    <li class="nav-item" role="presentation"><button class="nav-link" id="step4-tab" data-step="4" type="button">4. Compile</button></li>
+    <li class="nav-item" role="presentation"><button class="nav-link" id="step5-tab" data-step="5" type="button">5. Export</button></li>
+  </ul>
+
+  <div class="card">
+    <div class="card-body">
+      <div id="wizard-data" data-user-has-twitch="{{ '1' if current_user.is_authenticated and current_user.twitch_username else '0' }}" class="d-none"></div>
+      <style>
+        /* Arrange step layout tweaks */
+        #clips-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+          gap: 0.75rem;
+          align-content: start;
+        }
+        .clip-card .card-img-top { height: 110px; object-fit: cover; }
+        .timeline-item { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+      </style>
+      <!-- Step 1: Setup -->
+      <div class="wizard-step" data-step="1">
+        <h5 class="mb-3">Step 1: Project Setup</h5>
+        <form id="setup-form" class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label">Route</label>
+            <select class="form-select" name="route" id="route-select">
+              <option value="twitch" selected>Twitch</option>
+              <option value="discord">Discord</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <div class="alert alert-warning d-none" id="twitch-warning">
+              <strong>Twitch not connected.</strong> Add your Twitch username to unlock fetching clips.
+              <a href="{{ url_for('auth.profile') }}" class="alert-link">Open your profile</a>.
+            </div>
+          </div>
+          <div class="col-md-8">
+            <label class="form-label">Project Name</label>
+            <input class="form-control" name="name" placeholder="My Compilation" required>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Description (optional)</label>
+            <textarea class="form-control" name="description" rows="2" placeholder="Short description..."></textarea>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Output Resolution</label>
+            <select class="form-select" name="resolution">
+              <option value="720p">720p</option>
+              <option value="1080p" selected>1080p</option>
+              <option value="1440p">1440p</option>
+              <option value="2160p">2160p (4K)</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Output Format</label>
+            <select class="form-select" name="format">
+              <option value="mp4" selected>MP4</option>
+              <option value="webm">WebM</option>
+              <option value="mov">MOV</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Output FPS</label>
+            <input type="number" min="1" max="60" step="1" class="form-control" name="fps" value="30">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Max Clips to Download</label>
+            <input type="number" min="1" max="500" step="1" class="form-control" name="max_clips" value="20">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Min Clip Length (sec)</label>
+            <input type="number" min="1" max="600" step="1" class="form-control" name="min_len" value="5">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Max Clip Length (sec)</label>
+            <input type="number" min="5" max="600" step="1" class="form-control" name="max_len" value="300">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Start Date</label>
+            <input type="date" class="form-control" name="start_date">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">End Date</label>
+            <input type="date" class="form-control" name="end_date">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Min Views (optional)</label>
+            <input type="number" class="form-control" name="min_views" placeholder="e.g. 1000">
+          </div>
+        </form>
+        <div class="d-flex justify-content-end mt-3">
+          <button class="btn btn-primary" id="next-1">Next</button>
+        </div>
+      </div>
+
+  <!-- Step 2: Get Clips (consolidates Fetch + Parse + Download) -->
+      <div class="wizard-step d-none" data-step="2">
+        <h5 class="mb-3">Step 2: Get Clips</h5>
+        <div class="mb-2 small text-muted">Discord: fetch 200 recent messages; Twitch: fetch up to your selected clip limit.</div>
+        <div class="d-flex gap-2 align-items-center">
+          <button class="btn btn-primary" id="fetch-btn"><i class="bi bi-download"></i> Fetch</button>
+          <div class="spinner-border spinner-border-sm text-primary d-none" id="fetch-spinner" role="status"></div>
+        </div>
+        <div class="mt-3">
+          <pre class="bg-dark p-3 rounded" id="fetch-log" style="min-height: 120px; max-height: 200px; overflow:auto;">Ready.</pre>
+        </div>
+        <div class="row g-2 mt-2">
+          <div class="col-12">
+            <textarea class="form-control" id="parse-input" rows="5" placeholder="Fetched content (optional, for review)..."></textarea>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Detected Clip URLs</label>
+            <textarea class="form-control" id="clip-urls" rows="5" placeholder="https://clips.twitch.tv/...\nhttps://clips.twitch.tv/...\n"></textarea>
+          </div>
+        </div>
+        <div class="mt-3">
+          <div class="progress" role="progressbar" aria-label="Downloads" aria-valuemin="0" aria-valuemax="100">
+            <div class="progress-bar" id="dl-progress" style="width: 0%">0%</div>
+          </div>
+          <div class="mt-2 small">
+            Downloaded: <span id="dl-count">0</span> • Skipped: <span id="dl-skipped">0</span> • Failed: <span id="dl-failed">0</span>
+          </div>
+          <div class="mt-2 d-flex gap-2">
+            <button class="btn btn-primary" id="start-download"><i class="bi bi-cloud-download"></i> Start Download</button>
+            <button class="btn btn-outline-danger" id="cancel-download" disabled>Cancel</button>
+          </div>
+          <div class="mt-3">
+            <pre class="bg-dark p-3 rounded" id="download-log" style="min-height: 120px; max-height: 200px; overflow:auto;">Ready.</pre>
+          </div>
+        </div>
+        <div class="d-flex justify-content-between mt-3">
+          <button class="btn btn-outline-secondary" data-prev="1">Back</button>
+          <button class="btn btn-primary" id="next-2" disabled>Next</button>
+        </div>
+      </div>
+
+      <!-- Step 3: Arrange -->
+      <div class="wizard-step d-none" data-step="3">
+        <h5 class="mb-3">Step 3: Arrange Timeline</h5>
+        <div class="row g-3">
+          <div class="col-12">
+            <div class="card">
+              <div class="card-header">Downloaded Clips</div>
+              <div class="card-body" id="clips-grid" style="min-height: 220px;">
+                <div class="text-muted">No clips yet. Download first.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="mt-3">
+          <div class="card">
+            <div class="card-header">Timeline</div>
+            <div class="card-body" id="timeline" style="min-height: 160px;">
+              <div class="text-muted">Drag clips here to arrange order (stub).</div>
+            </div>
+          </div>
+        </div>
+        <div class="form-check mt-3">
+          <input class="form-check-input" type="checkbox" id="arranged-confirm">
+          <label class="form-check-label" for="arranged-confirm">I have arranged my timeline</label>
+        </div>
+        <div class="d-flex justify-content-between mt-3">
+          <button class="btn btn-outline-secondary" data-prev="2">Back</button>
+          <button class="btn btn-primary" id="next-3" disabled>Next</button>
+        </div>
+      </div>
+
+      <!-- Step 4: Compile -->
+      <div class="wizard-step d-none" data-step="4">
+        <h5 class="mb-3">Step 4: Compile Video</h5>
+        <div class="mb-2 small text-muted">Intro (optional) → Clips (with transitions) → Outro (optional)</div>
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="checkbox" id="use-intro">
+          <label class="form-check-label" for="use-intro">Include Intro</label>
+        </div>
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="checkbox" id="use-outro">
+          <label class="form-check-label" for="use-outro">Include Outro</label>
+        </div>
+        <!-- Auto-start compile option removed -->
+        <div class="mt-3">
+          <button class="btn btn-primary" id="start-compile"><i class="bi bi-play-circle"></i> Start Compile</button>
+          <button class="btn btn-outline-danger" id="cancel-compile" disabled>Cancel</button>
+        </div>
+        <div class="progress mt-3" role="progressbar" aria-label="Compile" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar" id="compile-progress" style="width: 0%">0%</div></div>
+        <div class="mt-3"><pre class="bg-dark p-3 rounded" id="compile-log" style="min-height: 140px; max-height: 240px; overflow:auto;">Ready.</pre></div>
+        <div class="d-flex justify-content-between mt-3"><button class="btn btn-outline-secondary" data-prev="3">Back</button><button class="btn btn-primary" id="next-4" disabled>Next</button></div>
+      </div>
+
+      <!-- Step 5: Export -->
+      <div class="wizard-step d-none" data-step="5">
+        <h5 class="mb-3">Step 5: Export</h5>
+        <div class="alert alert-success d-none" id="export-ready">
+          <strong>Compilation complete!</strong> Choose what to do next.
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+          <a class="btn btn-success disabled" aria-disabled="true" id="download-output"><i class="bi bi-download"></i> Download Video</a>
+          <button class="btn btn-outline-danger disabled" id="upload-youtube" aria-disabled="true"><i class="bi bi-youtube"></i> Upload to YouTube</button>
+          <button class="btn btn-outline-primary disabled" id="upload-discord" aria-disabled="true"><i class="bi bi-discord"></i> Upload to Discord</button>
+        </div>
+        <div class="d-flex justify-content-between mt-3">
+          <button class="btn btn-outline-secondary" data-prev="4">Back</button>
+          <a class="btn btn-primary" href="{{ url_for('main.projects') }}">Finish</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+(function(){
+  // Simple stepper
+  const steps = Array.from(document.querySelectorAll('.wizard-step'));
+  function gotoStep(n){
+    steps.forEach(s => s.classList.toggle('d-none', s.dataset.step !== String(n)));
+    document.querySelectorAll('#wizard-steps .nav-link').forEach(btn => btn.classList.toggle('active', btn.dataset.step === String(n)));
+    if (String(n) === '5' && wizard.projectId) { refreshExportInfo().catch(() => {}); }
+  }
+  document.querySelectorAll('#wizard-steps .nav-link').forEach(btn => btn.addEventListener('click', (e) => {
+    const target = Number(btn.dataset.step);
+    if (target >= 4) {
+      const arrangedConfirm = document.getElementById('arranged-confirm');
+      if (arrangedConfirm && !arrangedConfirm.checked) {
+        e.preventDefault();
+        alert('Please arrange your timeline before proceeding to compile.');
+        return;
+      }
+    }
+    gotoStep(btn.dataset.step);
+  }));
+
+  // Next/Back buttons and helpers
+  let wizard = { projectId: null, downloadTasks: [], compileTaskId: null };
+  const USER_HAS_TWITCH = (document.getElementById('wizard-data')?.dataset.userHasTwitch === '1');
+  async function api(path, opts={}){
+    const res = await fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts));
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+
+  // Twitch warning toggle
+  const routeSelect = document.getElementById('route-select');
+  const twitchWarn = document.getElementById('twitch-warning');
+  function updateTwitchWarning(){
+    const val = routeSelect.value;
+    const show = (val === 'twitch') && !USER_HAS_TWITCH;
+    if (twitchWarn) twitchWarn.classList.toggle('d-none', !show);
+  }
+  routeSelect.addEventListener('change', updateTwitchWarning);
+
+  // Create project and go to Get Clips
+  document.getElementById('next-1').addEventListener('click', async () => {
+    const route = routeSelect.value;
+    const form = document.getElementById('setup-form');
+    const fd = new FormData(form);
+    const maxClips = parseInt(fd.get('max_clips') || '20', 10);
+    const payload = {
+      name: (fd.get('name') || 'My Compilation').toString(),
+      description: (fd.get('description') || '').toString(),
+      output_resolution: (fd.get('resolution') || '1080p').toString(),
+      output_format: (fd.get('format') || 'mp4').toString(),
+      max_clip_duration: parseInt(fd.get('max_len') || '300', 10)
+    };
+    try {
+      const r = await api('/api/projects', { method: 'POST', body: JSON.stringify(payload) });
+      wizard.projectId = r.project_id;
+      wizard.route = route;
+      wizard.maxClips = Math.max(1, Math.min(100, isNaN(maxClips) ? 20 : maxClips));
+      gotoStep(2);
+    } catch (e) {
+      alert('Failed to create project: ' + e.message);
+    }
+  });
+  document.querySelector('[data-prev="1"]').addEventListener('click', () => gotoStep(1));
+  document.querySelector('[data-prev="2"]').addEventListener('click', () => gotoStep(2));
+  document.querySelector('[data-prev="3"]').addEventListener('click', () => gotoStep(3));
+  document.querySelector('[data-prev="4"]').addEventListener('click', () => gotoStep(4));
+
+  // Fetchers
+  async function fetchTwitchClips() {
+    const spinner = document.getElementById('fetch-spinner');
+    const log = document.getElementById('fetch-log');
+    spinner.classList.remove('d-none');
+    log.textContent = 'Fetching Twitch clips for your connected username...';
+    try {
+      const first = Math.max(1, Math.min(100, wizard.maxClips || 20));
+      const res = await fetch(`/api/twitch/clips?first=${first}`);
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const items = data.items || [];
+      log.textContent = `Fetched ${items.length} clips for @${data.username}.`;
+      const parseInput = document.getElementById('parse-input');
+      const urlsBox = document.getElementById('clip-urls');
+      parseInput.value = JSON.stringify(items, null, 2);
+      const urls = items.map(it => it.url).filter(Boolean);
+      urlsBox.value = urls.join('\n');
+      wizard.fetchedClips = items;
+      document.getElementById('start-download').disabled = urls.length === 0;
+      return urls;
+    } catch (e) {
+      log.textContent = 'Failed to fetch clips. Make sure your Twitch username is connected in Account Settings and TWITCH_CLIENT_ID/SECRET are set.';
+      return [];
+    } finally {
+      spinner.classList.add('d-none');
+    }
+  }
+  async function fetchDiscordClips() {
+    const spinner = document.getElementById('fetch-spinner');
+    const log = document.getElementById('fetch-log');
+    spinner.classList.remove('d-none');
+    log.textContent = 'Fetching recent Discord messages...';
+    try {
+      const res = await fetch('/api/discord/messages?limit=200');
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const items = data.items || [];
+      const urls = (data.clip_urls || []).filter(Boolean);
+      log.textContent = `Fetched ${items.length} messages and detected ${urls.length} clip URLs.`;
+      const parseInput = document.getElementById('parse-input');
+      const urlsBox = document.getElementById('clip-urls');
+      parseInput.value = JSON.stringify(items, null, 2);
+      urlsBox.value = urls.join('\n');
+      document.getElementById('start-download').disabled = urls.length === 0;
+      return urls;
+    } catch (e) {
+      log.textContent = 'Failed to fetch Discord messages. Check DISCORD_BOT_TOKEN and DISCORD_CHANNEL_ID.';
+      return [];
+    } finally {
+      spinner.classList.add('d-none');
+    }
+  }
+  document.getElementById('fetch-btn').addEventListener('click', async (e) => {
+    e.preventDefault();
+    if ((wizard.route || routeSelect.value) === 'discord') {
+      await fetchDiscordClips();
+    } else {
+      await fetchTwitchClips();
+    }
+  });
+
+  // Queue downloads
+  async function queueDownloads(urls) {
+    if (!wizard.projectId) { throw new Error('Project not created yet.'); }
+    if (!urls || urls.length === 0) { throw new Error('No clip URLs to download.'); }
+    const limit = Math.max(1, Math.min(100, wizard.maxClips || urls.length));
+    let payload = { urls: urls.slice(0, limit), limit };
+    if (Array.isArray(wizard.fetchedClips) && wizard.fetchedClips.length) {
+      const source = wizard.fetchedClips.slice(0, limit);
+      const clips = source.filter(c => c && c.url).map(c => ({
+        url: c.url,
+        title: c.title,
+        creator_name: c.creator_name,
+        game_name: c.game_name,
+        created_at: c.created_at,
+      }));
+      if (clips.length) payload = { clips, limit };
+    }
+    const r = await api(`/api/projects/${wizard.projectId}/clips/download`, { method: 'POST', body: JSON.stringify(payload) });
+    wizard.downloadTasks = r.items || [];
+    const log = document.getElementById('download-log');
+    log.textContent = `Queued ${wizard.downloadTasks.length} downloads${wizard.maxClips ? ` (limited to ${wizard.maxClips})` : ''}.`;
+  }
+
+  // Download progress/polling
+  let dlTimer = null;
+  async function startDownloadPolling() {
+    const bar = document.getElementById('dl-progress');
+    const log = document.getElementById('download-log');
+    bar.style.width = '0%'; bar.textContent = '0%';
+    document.getElementById('cancel-download').disabled = false;
+  log.textContent = 'Polling download task progress...'; // Celery states: PENDING, STARTED, PROGRESS, SUCCESS, FAILURE
+    const total = wizard.downloadTasks.length || 1;
+    async function poll(){
+      let done = 0, failed = 0;
+      for (const t of wizard.downloadTasks) {
+        if (t.done) { done++; continue; }
+        try {
+          const s = await api(`/api/tasks/${t.task_id}`);
+          const st = String((s && (s.state || s.status)) || '').toUpperCase();
+          if (st) {
+            // Append a lightweight state line occasionally
+            if (!t._lastState || t._lastState !== st) {
+              t._lastState = st;
+              try {
+                const ts = new Date().toLocaleTimeString();
+                log.textContent += `\n[${ts}] task ${t.task_id.slice(0,8)}…: ${st}`;
+                log.scrollTop = log.scrollHeight;
+              } catch (_) {}
+            }
+          }
+          if (st === 'SUCCESS' || (s && s.ready && st !== 'FAILURE')) {
+            t.done = true; done++;
+          } else if (st === 'FAILURE') {
+            t.done = true; t.failed = true; done++; failed++;
+          }
+        } catch (_) {}
+      }
+      const pct = Math.floor((done / total) * 100);
+      bar.style.width = pct + '%'; bar.textContent = pct + '%';
+      document.getElementById('dl-count').textContent = String(done - failed);
+      document.getElementById('dl-failed').textContent = String(failed);
+      if (done >= total) {
+        clearInterval(dlTimer);
+        document.getElementById('cancel-download').disabled = true;
+        log.textContent = 'Downloads complete.';
+        document.getElementById('next-2').disabled = false;
+        try {
+          const lst = await api(`/api/projects/${wizard.projectId}/clips`);
+          const grid = document.getElementById('clips-grid');
+          grid.innerHTML = '';
+          (lst.items || []).forEach(item => {
+            const card = document.createElement('div');
+            card.className = 'card clip-card';
+            card.dataset.clipId = String(item.id || '');
+            const img = document.createElement('img');
+            img.className = 'card-img-top';
+            img.alt = item.title || 'clip thumbnail';
+            img.src = (item.media && item.media.thumbnail_url) || '';
+            card.appendChild(img);
+            const body = document.createElement('div');
+            body.className = 'card-body';
+            const h5 = document.createElement('h5');
+            h5.className = 'card-title';
+            h5.textContent = item.title || 'Clip';
+            const p = document.createElement('p');
+            p.className = 'card-text';
+            const who = item.creator_name ? `By ${item.creator_name}` : '';
+            const game = item.game_name ? ` • ${item.game_name}` : '';
+            const when = item.created_at ? ` • ${new Date(item.created_at).toLocaleString()}` : '';
+            p.textContent = `${who}${game}${when}` || 'Details unavailable';
+            const btn = document.createElement('a');
+            btn.href = '#';
+            btn.className = 'btn btn-sm btn-primary';
+            btn.textContent = 'Add to timeline';
+            btn.addEventListener('click', (e) => { e.preventDefault();
+              const tl = document.getElementById('timeline');
+              const it = document.createElement('div');
+              it.className = 'timeline-item alert alert-secondary py-1 px-2 mb-1';
+              it.dataset.clipId = String(item.id || '');
+              const titleSpan = document.createElement('span');
+              titleSpan.textContent = item.title || 'Clip';
+              const rm = document.createElement('button');
+              rm.className = 'btn btn-sm btn-outline-danger';
+              rm.textContent = 'Remove';
+              rm.addEventListener('click', () => {
+                it.remove();
+                const sourceCard = document.querySelector(`.clip-card[data-clip-id="${item.id}"]`);
+                if (sourceCard) sourceCard.classList.remove('d-none');
+                const tlBody = document.getElementById('timeline');
+                if (tlBody && tlBody.querySelectorAll('.timeline-item').length === 0) {
+                  const chk = document.getElementById('arranged-confirm');
+                  if (chk) { chk.checked = false; chk.dispatchEvent(new Event('change')); }
+                }
+              });
+              it.appendChild(titleSpan);
+              it.appendChild(rm);
+              tl.appendChild(it);
+              card.classList.add('d-none');
+              const chk = document.getElementById('arranged-confirm');
+              if (chk) { chk.checked = true; chk.dispatchEvent(new Event('change')); }
+            });
+            body.appendChild(h5);
+            body.appendChild(p);
+            body.appendChild(btn);
+            card.appendChild(body);
+            grid.appendChild(card);
+          });
+        } catch (_) {}
+        return;
+      }
+    }
+    dlTimer = setInterval(poll, 1000);
+    await poll();
+  }
+  document.getElementById('start-download').addEventListener('click', async () => {
+    try {
+      if (!wizard.downloadTasks || wizard.downloadTasks.length === 0) {
+        const urlsText = (document.getElementById('clip-urls').value || '').trim();
+        let urls = urlsText ? urlsText.split(/\s+/).map(s => s.trim()).filter(Boolean) : [];
+        if ((!urls || urls.length === 0) && Array.isArray(wizard.fetchedClips)) {
+          urls = (wizard.fetchedClips || []).map(c => c && c.url).filter(Boolean);
+        }
+        if (!urls || urls.length === 0) {
+          alert('No clip URLs detected. Please fetch clips first.');
+          return;
+        }
+        await queueDownloads(urls);
+        const log = document.getElementById('download-log');
+        if (wizard.downloadTasks && wizard.downloadTasks.length) {
+          const ts = new Date().toLocaleTimeString();
+          log.textContent += `\n[${ts}] queued ${wizard.downloadTasks.length} download task(s).`;
+        }
+      }
+      await startDownloadPolling();
+    } catch (e) {
+      alert('Failed to start downloads: ' + (e.message || e));
+    }
+  });
+  document.getElementById('cancel-download').addEventListener('click', () => { if (dlTimer) { clearInterval(dlTimer); } document.getElementById('download-log').textContent = 'Cancelled.'; });
+  document.getElementById('next-2').addEventListener('click', () => gotoStep(3));
+
+  // Arrange gating
+  const next3Btn = document.getElementById('next-3');
+  const arrangedConfirm = document.getElementById('arranged-confirm');
+  arrangedConfirm.addEventListener('change', () => { next3Btn.disabled = !arrangedConfirm.checked; });
+  document.getElementById('next-3').addEventListener('click', () => gotoStep(4));
+
+  // Compile and poll
+  let compTimer = null;
+  document.getElementById('start-compile').addEventListener('click', async () => {
+    if (!wizard.projectId) { alert('Project not set.'); return; }
+    const bar = document.getElementById('compile-progress');
+    const log = document.getElementById('compile-log');
+    bar.style.width = '0%'; bar.textContent = '0%';
+    document.getElementById('cancel-compile').disabled = false;
+    log.textContent = 'Starting compilation...';
+    try {
+      const r = await api(`/api/projects/${wizard.projectId}/compile`, { method: 'POST' });
+      wizard.compileTaskId = r.task_id;
+      async function poll(){
+        try {
+          const s = await api(`/api/tasks/${wizard.compileTaskId}`);
+          const st = s.state || s.status;
+          const meta = s.info || {};
+          const pct = Math.max(0, Math.min(100, Math.floor(meta.progress || 0)));
+          bar.style.width = pct + '%'; bar.textContent = pct + '%';
+          if (st === 'SUCCESS') {
+            clearInterval(compTimer);
+            document.getElementById('cancel-compile').disabled = true;
+            log.textContent = 'Compilation complete.';
+            document.getElementById('next-4').disabled = false;
+            document.getElementById('export-ready').classList.remove('d-none');
+            try { await refreshExportInfo(); } catch (e) {
+              const dl = document.getElementById('download-output');
+              dl.classList.remove('disabled');
+              dl.href = `/projects/${wizard.projectId}/download-output`;
+            }
+            document.getElementById('upload-youtube').classList.remove('disabled');
+            document.getElementById('upload-discord').classList.remove('disabled');
+            return;
+          }
+          if (st === 'FAILURE') {
+            clearInterval(compTimer);
+            document.getElementById('cancel-compile').disabled = true;
+            log.textContent = 'Compilation failed.';
+            return;
+          }
+        } catch (_) {}
+      }
+      compTimer = setInterval(poll, 1200);
+      poll();
+    } catch (e) {
+      alert('Failed to start compilation: ' + e.message);
+    }
+  });
+  document.getElementById('cancel-compile').addEventListener('click', () => { if (compTimer) { clearInterval(compTimer); } document.getElementById('compile-log').textContent = 'Cancelled.'; });
+  document.getElementById('next-4').addEventListener('click', () => gotoStep(5));
+
+  // Default routing states on load
+  gotoStep(1);
+  updateTwitchWarning();
+
+  async function refreshExportInfo(){
+    if (!wizard.projectId) return;
+    try {
+      const details = await api(`/api/projects/${wizard.projectId}`);
+      const dl = document.getElementById('download-output');
+      const ready = document.getElementById('export-ready');
+      if (details && details.download_url) {
+        dl.classList.remove('disabled');
+        dl.href = details.download_url;
+        ready.classList.remove('d-none');
+        dl.textContent = `Download Video${details.output_filename ? ` (${details.output_filename})` : ''}`;
+      }
+    } catch (_) {}
+  }
+})();
+</script>
+{% endblock %}
