@@ -190,19 +190,38 @@ def delete_project(project_id: int):
         except Exception:
             pass
 
-        # Delete media files (files on disk + DB rows)
+        # Handle media assets
+        # - Reusable assets (intro/outro/transition) are DETACHED from the project to remain in the user's library
+        # - Project-specific assets (clips, compilations, images tied to project) are DELETED from disk and DB
+        preserved = 0
+        removed = 0
         for m in list(project.media_files):
             try:
-                if m.file_path and os.path.exists(m.file_path):
-                    os.remove(m.file_path)
+                if m.media_type in {
+                    MediaType.INTRO,
+                    MediaType.OUTRO,
+                    MediaType.TRANSITION,
+                }:
+                    # Keep in library; just detach from this project
+                    m.project_id = None
+                    preserved += 1
+                    continue
+                # Delete project-scoped media and compiled outputs
+                try:
+                    if m.file_path and os.path.exists(m.file_path):
+                        os.remove(m.file_path)
+                except Exception:
+                    pass
+                try:
+                    if m.thumbnail_path and os.path.exists(m.thumbnail_path):
+                        os.remove(m.thumbnail_path)
+                except Exception:
+                    pass
+                db.session.delete(m)
+                removed += 1
             except Exception:
-                pass
-            try:
-                if m.thumbnail_path and os.path.exists(m.thumbnail_path):
-                    os.remove(m.thumbnail_path)
-            except Exception:
-                pass
-            db.session.delete(m)
+                # Best-effort cleanup; continue with others
+                continue
 
         # Delete clips
         for c in list(project.clips):
@@ -212,7 +231,10 @@ def delete_project(project_id: int):
         db.session.delete(project)
         db.session.commit()
 
-        flash("Project deleted.", "success")
+        flash(
+            f"Project deleted. Preserved {preserved} reusable media item(s) in your library.",
+            "success",
+        )
         return redirect(url_for("main.projects"))
     except Exception as e:
         current_app.logger.error(f"Project delete failed: {e}")
