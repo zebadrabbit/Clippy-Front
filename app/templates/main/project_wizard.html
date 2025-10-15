@@ -21,14 +21,20 @@
       <div id="wizard-data" data-user-has-twitch="{{ '1' if current_user.is_authenticated and current_user.twitch_username else '0' }}" class="d-none"></div>
       <style>
         /* Arrange step layout tweaks */
-        #clips-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        .scroll-row {
+          display: flex;
+          flex-wrap: nowrap;
+          overflow-x: auto;
           gap: 0.75rem;
-          align-content: start;
+          align-items: stretch;
+          padding-bottom: 0.25rem;
+          -webkit-overflow-scrolling: touch;
         }
+        .scroll-row .card { min-width: 180px; }
         .clip-card .card-img-top { height: 110px; object-fit: cover; }
-        .timeline-item { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+        /* Timeline as stacked cards */
+        #timeline { display: flex; flex-direction: column; gap: 0.5rem; }
+        #timeline .card-img-top { height: 90px; object-fit: cover; }
       </style>
       <!-- Step 1: Setup -->
       <div class="wizard-step" data-step="1">
@@ -154,32 +160,55 @@
           <div class="col-12">
             <div class="card mb-2">
               <div class="card-header d-flex justify-content-between align-items-center">
-                <span>Intro selection (optional)</span>
+                <div class="d-flex align-items-center gap-2">
+                  <button class="btn btn-sm btn-link p-0" data-bs-toggle="collapse" data-bs-target="#collapse-intros" aria-expanded="true" aria-controls="collapse-intros" title="Collapse/expand">
+                    <i class="bi bi-chevron-down"></i>
+                  </button>
+                  <span>Intro selection (optional)</span>
+                </div>
                 <button class="btn btn-sm btn-outline-secondary" id="refresh-intros">Refresh</button>
               </div>
-              <div class="card-body">
-                <div id="intro-list" class="d-flex flex-wrap gap-2">
-                  <div class="text-muted">No intros found. Upload one under Upload Media.</div>
+              <div id="collapse-intros" class="collapse show">
+                <div class="card-body">
+                  <div id="intro-list" class="scroll-row">
+                    <div class="text-muted">No intros found. Upload one under Upload Media.</div>
+                  </div>
                 </div>
               </div>
             </div>
-            <div class="card">
+            <div class="card mb-2">
               <div class="card-header d-flex justify-content-between align-items-center">
-                <span>Outro selection (optional)</span>
+                <div class="d-flex align-items-center gap-2">
+                  <button class="btn btn-sm btn-link p-0" data-bs-toggle="collapse" data-bs-target="#collapse-outros" aria-expanded="true" aria-controls="collapse-outros" title="Collapse/expand">
+                    <i class="bi bi-chevron-down"></i>
+                  </button>
+                  <span>Outro selection (optional)</span>
+                </div>
                 <button class="btn btn-sm btn-outline-secondary" id="refresh-outros">Refresh</button>
               </div>
-              <div class="card-body">
-                <div id="outro-list" class="d-flex flex-wrap gap-2">
-                  <div class="text-muted">No outros found. Upload one under Upload Media.</div>
+              <div id="collapse-outros" class="collapse show">
+                <div class="card-body">
+                  <div id="outro-list" class="scroll-row">
+                    <div class="text-muted">No outros found. Upload one under Upload Media.</div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
           <div class="col-12">
             <div class="card">
-              <div class="card-header">Downloaded Clips</div>
-              <div class="card-body" id="clips-grid" style="min-height: 220px;">
-                <div class="text-muted">No clips yet. Download first.</div>
+              <div class="card-header d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center gap-2">
+                  <button class="btn btn-sm btn-link p-0" data-bs-toggle="collapse" data-bs-target="#collapse-clips" aria-expanded="true" aria-controls="collapse-clips" title="Collapse/expand">
+                    <i class="bi bi-chevron-down"></i>
+                  </button>
+                  <span>Downloaded Clips</span>
+                </div>
+              </div>
+              <div id="collapse-clips" class="collapse show">
+                <div class="card-body" id="clips-row" style="min-height: 220px;">
+                  <div class="text-muted">No clips yet. Download first.</div>
+                </div>
               </div>
             </div>
           </div>
@@ -187,9 +216,7 @@
         <div class="mt-3">
           <div class="card">
             <div class="card-header">Timeline</div>
-            <div class="card-body" id="timeline" style="min-height: 160px;">
-              <div class="text-muted">Drag clips here to arrange order (stub).</div>
-            </div>
+            <div class="card-body" id="timeline" style="min-height: 160px;"></div>
           </div>
         </div>
         <div class="form-check mt-3">
@@ -446,11 +473,12 @@
         document.getElementById('next-2').disabled = false;
         try {
           const lst = await api(`/api/projects/${wizard.projectId}/clips`);
-          const grid = document.getElementById('clips-grid');
-          grid.innerHTML = '';
+          const row = document.getElementById('clips-row');
+          row.innerHTML = '';
           (lst.items || []).forEach(item => {
             const card = document.createElement('div');
             card.className = 'card clip-card';
+            card.style.minWidth = '200px';
             card.dataset.clipId = String(item.id || '');
             const img = document.createElement('img');
             img.className = 'card-img-top';
@@ -458,52 +486,25 @@
             img.src = (item.media && item.media.thumbnail_url) || '';
             card.appendChild(img);
             const body = document.createElement('div');
-            body.className = 'card-body';
-            const h5 = document.createElement('h5');
-            h5.className = 'card-title';
-            h5.textContent = item.title || 'Clip';
-            const p = document.createElement('p');
-            p.className = 'card-text';
+            body.className = 'card-body p-2';
+            const title = document.createElement('div');
+            title.className = 'small fw-semibold text-truncate';
+            title.textContent = item.title || 'Clip';
+            const meta = document.createElement('div');
+            meta.className = 'small text-muted';
             const who = item.creator_name ? `By ${item.creator_name}` : '';
             const game = item.game_name ? ` • ${item.game_name}` : '';
             const when = item.created_at ? ` • ${new Date(item.created_at).toLocaleString()}` : '';
-            p.textContent = `${who}${game}${when}` || 'Details unavailable';
-            const btn = document.createElement('a');
-            btn.href = '#';
-            btn.className = 'btn btn-sm btn-primary';
+            meta.textContent = `${who}${game}${when}` || 'Details unavailable';
+            const btn = document.createElement('button');
+            btn.className = 'btn btn-sm btn-primary w-100 mt-1';
             btn.textContent = 'Add to timeline';
-            btn.addEventListener('click', (e) => { e.preventDefault();
-              const tl = document.getElementById('timeline');
-              const it = document.createElement('div');
-              it.className = 'timeline-item alert alert-secondary py-1 px-2 mb-1';
-              it.dataset.clipId = String(item.id || '');
-              const titleSpan = document.createElement('span');
-              titleSpan.textContent = item.title || 'Clip';
-              const rm = document.createElement('button');
-              rm.className = 'btn btn-sm btn-outline-danger';
-              rm.textContent = 'Remove';
-              rm.addEventListener('click', () => {
-                it.remove();
-                const sourceCard = document.querySelector(`.clip-card[data-clip-id="${item.id}"]`);
-                if (sourceCard) sourceCard.classList.remove('d-none');
-                const tlBody = document.getElementById('timeline');
-                if (tlBody && tlBody.querySelectorAll('.timeline-item').length === 0) {
-                  const chk = document.getElementById('arranged-confirm');
-                  if (chk) { chk.checked = false; chk.dispatchEvent(new Event('change')); }
-                }
-              });
-              it.appendChild(titleSpan);
-              it.appendChild(rm);
-              tl.appendChild(it);
-              card.classList.add('d-none');
-              const chk = document.getElementById('arranged-confirm');
-              if (chk) { chk.checked = true; chk.dispatchEvent(new Event('change')); }
-            });
-            body.appendChild(h5);
-            body.appendChild(p);
+            btn.addEventListener('click', (e) => { e.preventDefault(); addClipToTimeline(item, card); });
+            body.appendChild(title);
+            body.appendChild(meta);
             body.appendChild(btn);
             card.appendChild(body);
-            grid.appendChild(card);
+            row.appendChild(card);
           });
         } catch (_) {}
         return;
@@ -635,7 +636,7 @@
     items.forEach(it => {
       const card = document.createElement('div');
       card.className = 'card';
-      card.style.width = '160px';
+      card.style.minWidth = '180px';
       card.style.cursor = 'pointer';
       const img = document.createElement('img');
       img.className = 'card-img-top';
@@ -647,15 +648,9 @@
       const title = document.createElement('div');
       title.className = 'small text-truncate';
       title.textContent = it.original_filename || it.filename;
-      const btn = document.createElement('button');
-      btn.className = 'btn btn-sm btn-primary w-100 mt-1';
-      btn.textContent = 'Add to timeline';
-      btn.addEventListener('click', (e) => { e.stopPropagation(); selectHandler(it); });
-      card.addEventListener('click', () => {
-        if (it.preview_url) window.open(it.preview_url, '_blank');
-      });
+      // Clicking the whole card selects/places it in the timeline
+      card.addEventListener('click', (e) => { e.preventDefault(); selectHandler(it); });
       body.appendChild(title);
-      body.appendChild(btn);
       card.appendChild(img);
       card.appendChild(body);
       el.appendChild(card);
@@ -663,27 +658,86 @@
   }
   async function refreshIntros(){
     const items = await loadMediaList('intro');
-    renderMediaList('intro-list', items, (it) => {
-      wizard.selectedIntroId = it.id;
-      // Visual indicator: highlight selected
-      document.querySelectorAll('#intro-list .card').forEach(c => c.classList.remove('border-primary'));
-      const found = Array.from(document.querySelectorAll('#intro-list .card')).find(c => c.querySelector('.small')?.textContent === (it.original_filename || it.filename));
-      if (found) found.classList.add('border', 'border-primary');
-    });
+    renderMediaList('intro-list', items, (it) => { addIntroToTimeline(it); });
   }
   async function refreshOutros(){
     const items = await loadMediaList('outro');
-    renderMediaList('outro-list', items, (it) => {
-      wizard.selectedOutroId = it.id;
-      document.querySelectorAll('#outro-list .card').forEach(c => c.classList.remove('border-primary'));
-      const found = Array.from(document.querySelectorAll('#outro-list .card')).find(c => c.querySelector('.small')?.textContent === (it.original_filename || it.filename));
-      if (found) found.classList.add('border', 'border-primary');
-    });
+    renderMediaList('outro-list', items, (it) => { addOutroToTimeline(it); });
   }
   document.getElementById('refresh-intros').addEventListener('click', (e) => { e.preventDefault(); refreshIntros(); });
   document.getElementById('refresh-outros').addEventListener('click', (e) => { e.preventDefault(); refreshOutros(); });
   // Load lists when entering Arrange step
   document.getElementById('step3-tab').addEventListener('click', () => { refreshIntros(); refreshOutros(); });
+
+  // Timeline helpers
+  function createTimelineCard(opts){
+    const { title, thumb, kind, clipId, mediaId } = opts;
+    const card = document.createElement('div');
+    card.className = 'card';
+    if (kind) card.dataset.kind = kind;
+    if (clipId) card.dataset.clipId = String(clipId);
+    if (mediaId) card.dataset.mediaId = String(mediaId);
+    if (thumb){
+      const img = document.createElement('img'); img.className = 'card-img-top'; img.src = thumb; img.alt = title || kind || 'item'; card.appendChild(img);
+    }
+    const body = document.createElement('div'); body.className = 'card-body p-2 d-flex justify-content-between align-items-center';
+    const t = document.createElement('div'); t.className = 'small fw-semibold text-truncate'; t.textContent = title || (kind ? kind.toUpperCase() : 'Item');
+    const rm = document.createElement('button'); rm.className = 'btn btn-sm btn-outline-danger'; rm.textContent = 'Remove';
+    rm.addEventListener('click', () => {
+      const tl = document.getElementById('timeline');
+      const wasIntro = card.dataset.kind === 'intro';
+      const wasOutro = card.dataset.kind === 'outro';
+      card.remove();
+      if (wasIntro) { wizard.selectedIntroId = null; }
+      if (wasOutro) { wizard.selectedOutroId = null; }
+      // If removed a clip, unhide the source card back in the clips row
+      const cid = card.dataset.clipId;
+      if (cid){ const source = document.querySelector(`.clip-card[data-clip-id="${cid}"]`); if (source) source.classList.remove('d-none'); }
+      // Uncheck arranged if timeline is empty
+      if (tl && tl.querySelectorAll('.card').length === 0){ const chk = document.getElementById('arranged-confirm'); if (chk){ chk.checked = false; chk.dispatchEvent(new Event('change')); } }
+    });
+    body.appendChild(t); body.appendChild(rm); card.appendChild(body);
+    return card;
+  }
+
+  function addIntroToTimeline(it){
+    wizard.selectedIntroId = it.id;
+    const tl = document.getElementById('timeline');
+    // Remove existing intro if present
+    const existing = tl.querySelector('.card[data-kind="intro"]'); if (existing) existing.remove();
+    const card = createTimelineCard({ title: it.original_filename || it.filename || 'Intro', thumb: it.thumbnail_url || '', kind: 'intro', mediaId: it.id });
+    // Place at the very beginning
+    if (tl.firstChild) tl.insertBefore(card, tl.firstChild); else tl.appendChild(card);
+    const chk = document.getElementById('arranged-confirm'); if (chk){ chk.checked = true; chk.dispatchEvent(new Event('change')); }
+  }
+
+  function addOutroToTimeline(it){
+    wizard.selectedOutroId = it.id;
+    const tl = document.getElementById('timeline');
+    // Remove existing outro if present
+    const existing = tl.querySelector('.card[data-kind="outro"]'); if (existing) existing.remove();
+    const card = createTimelineCard({ title: it.original_filename || it.filename || 'Outro', thumb: it.thumbnail_url || '', kind: 'outro', mediaId: it.id });
+    // Place at the very end
+    tl.appendChild(card);
+    const chk = document.getElementById('arranged-confirm'); if (chk){ chk.checked = true; chk.dispatchEvent(new Event('change')); }
+  }
+
+  function addClipToTimeline(item, sourceCard){
+    const tl = document.getElementById('timeline');
+    const card = createTimelineCard({ title: item.title || 'Clip', thumb: (item.media && item.media.thumbnail_url) || '', kind: 'clip', clipId: item.id });
+    // Insert after intro (if any) and before outro (if any)
+    const intro = tl.querySelector('.card[data-kind="intro"]');
+    const outro = tl.querySelector('.card[data-kind="outro"]');
+    if (outro){
+      tl.insertBefore(card, outro);
+    } else if (intro && intro.nextSibling){
+      tl.insertBefore(card, intro.nextSibling);
+    } else {
+      tl.appendChild(card);
+    }
+    if (sourceCard) sourceCard.classList.add('d-none');
+    const chk = document.getElementById('arranged-confirm'); if (chk){ chk.checked = true; chk.dispatchEvent(new Event('change')); }
+  }
 })();
 </script>
 {% endblock %}
