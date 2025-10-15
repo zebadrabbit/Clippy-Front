@@ -269,12 +269,61 @@ def create_and_download_clips_api(project_id: int):
     try:
         order_base = project.clips.count() or 0
         idx = 0
+
+        # Build a normalized set of URLs to avoid duplicates within this batch
+        def normalize_url(u: str) -> str:
+            try:
+                u = (u or "").strip()
+                if not u:
+                    return ""
+                # Drop query/hash and trailing slash for basic normalization
+                base = u.split("?")[0].split("#")[0]
+                if base.endswith("/"):
+                    base = base[:-1]
+                return base
+            except Exception:
+                return (u or "").strip()
+
+        seen = set()
+
+        # Helper to try reuse: returns (reused: bool, media_file, source_platform)
+        def try_reuse(url_s: str):
+            # Check if clip already exists in this project
+            # Check if clip already exists in this project
+            existing_here = (
+                Clip.query.filter_by(project_id=project.id, source_url=url_s)
+                .order_by(Clip.created_at.desc())
+                .first()
+            )
+            if existing_here and existing_here.media_file_id:
+                return True, existing_here.media_file, existing_here.source_platform
+            # Find any previously downloaded clip by this user with same URL
+            prev = (
+                db.session.query(Clip)
+                .join(Project, Project.id == Clip.project_id)
+                .filter(
+                    Project.user_id == current_user.id,
+                    Clip.source_url == url_s,
+                    Clip.media_file_id.isnot(None),
+                )
+                .order_by(Clip.created_at.desc())
+                .first()
+            )
+            if prev and prev.media_file_id:
+                return True, prev.media_file, prev.source_platform
+            return False, None, None
+
         # Structured clips if provided
         for obj in provided_clips[:effective_limit]:
             try:
                 url_s = (obj.get("url") or "").strip()
                 if not url_s:
                     continue
+                norm = normalize_url(url_s)
+                if not norm or norm in seen:
+                    # Duplicate in this batch
+                    continue
+                seen.add(norm)
                 platform = (
                     "twitch"
                     if "twitch" in url_s
@@ -284,31 +333,68 @@ def create_and_download_clips_api(project_id: int):
                 creator_name = obj.get("creator_name")
                 game_name = obj.get("game_name")
                 clip_created_at = obj.get("created_at")
-                clip = Clip(
-                    title=title,
-                    description=None,
-                    source_platform=platform,
-                    source_url=url_s,
-                    project_id=project.id,
-                    order_index=order_base + idx,
-                    creator_name=creator_name,
-                    game_name=game_name,
-                )
-                # Parse created_at if present
-                if clip_created_at:
-                    try:
-                        from datetime import datetime
+                # Attempt reuse
+                reused, media_file, src_platform = try_reuse(norm)
+                if reused and media_file:
+                    clip = Clip(
+                        title=title,
+                        description=None,
+                        source_platform=src_platform or platform,
+                        source_url=url_s,
+                        project_id=project.id,
+                        order_index=order_base + idx,
+                        creator_name=creator_name,
+                        game_name=game_name,
+                        media_file_id=media_file.id,
+                        is_downloaded=True,
+                        duration=media_file.duration,
+                    )
+                    # Parse created_at if present
+                    if clip_created_at:
+                        try:
+                            from datetime import datetime
 
-                        clip.clip_created_at = datetime.fromisoformat(
-                            clip_created_at.replace("Z", "+00:00")
-                        )
-                    except Exception:
-                        pass
-                db.session.add(clip)
-                db.session.flush()
-                task = download_clip_task.delay(clip.id, url_s)
-                items.append({"clip_id": clip.id, "task_id": task.id, "url": url_s})
-                idx += 1
+                            clip.clip_created_at = datetime.fromisoformat(
+                                clip_created_at.replace("Z", "+00:00")
+                            )
+                        except Exception:
+                            pass
+                    db.session.add(clip)
+                    db.session.flush()
+                    items.append(
+                        {
+                            "clip_id": clip.id,
+                            "task_id": None,
+                            "url": url_s,
+                            "reused": True,
+                        }
+                    )
+                    idx += 1
+                else:
+                    clip = Clip(
+                        title=title,
+                        description=None,
+                        source_platform=platform,
+                        source_url=url_s,
+                        project_id=project.id,
+                        order_index=order_base + idx,
+                        creator_name=creator_name,
+                        game_name=game_name,
+                    )
+                    if clip_created_at:
+                        try:
+                            from datetime import datetime
+
+                            clip.clip_created_at = datetime.fromisoformat(
+                                clip_created_at.replace("Z", "+00:00")
+                            )
+                        except Exception:
+                            pass
+                    db.session.add(clip)
+                    db.session.flush()
+                    task = download_clip_task.delay(clip.id, url_s)
+                    items.append({"clip_id": clip.id, "task_id": task.id, "url": url_s})
+                    idx += 1
             except Exception:
                 continue
 
@@ -317,24 +403,54 @@ def create_and_download_clips_api(project_id: int):
             url_s = (url or "").strip()
             if not url_s:
                 continue
+            norm = normalize_url(url_s)
+            if not norm or norm in seen:
+                continue
+            seen.add(norm)
             platform = (
                 "twitch"
                 if "twitch" in url_s
                 else ("discord" if "discord" in url_s else "external")
             )
-            clip = Clip(
-                title=f"Clip {order_base + idx + 1}",
-                description=None,
-                source_platform=platform,
-                source_url=url_s,
-                project_id=project.id,
-                order_index=order_base + idx,
-            )
-            db.session.add(clip)
-            db.session.flush()
-            task = download_clip_task.delay(clip.id, url_s)
-            items.append({"clip_id": clip.id, "task_id": task.id, "url": url_s})
-            idx += 1
+            # Attempt reuse
+            reused, media_file, src_platform = try_reuse(norm)
+            if reused and media_file:
+                clip = Clip(
+                    title=f"Clip {order_base + idx + 1}",
+                    description=None,
+                    source_platform=src_platform or platform,
+                    source_url=url_s,
+                    project_id=project.id,
+                    order_index=order_base + idx,
+                    media_file_id=media_file.id,
+                    is_downloaded=True,
+                    duration=media_file.duration,
+                )
+                db.session.add(clip)
+                db.session.flush()
+                items.append(
+                    {
+                        "clip_id": clip.id,
+                        "task_id": None,
+                        "url": url_s,
+                        "reused": True,
+                    }
+                )
+                idx += 1
+            else:
+                clip = Clip(
+                    title=f"Clip {order_base + idx + 1}",
+                    description=None,
+                    source_platform=platform,
+                    source_url=url_s,
+                    project_id=project.id,
+                    order_index=order_base + idx,
+                )
+                db.session.add(clip)
+                db.session.flush()
+                task = download_clip_task.delay(clip.id, url_s)
+                items.append({"clip_id": clip.id, "task_id": task.id, "url": url_s})
+                idx += 1
 
         db.session.commit()
         return jsonify({"items": items, "count": len(items)}), 202
@@ -570,23 +686,26 @@ def list_project_media_api(project_id: int):
     if not project:
         return jsonify({"error": "Project not found"}), 404
 
-    from app.models import MediaType, MediaFile
+    from app.models import MediaType
 
     type_q = (request.args.get("type") or "").strip().lower()
+    q = project.media_files
     type_map = {
         "intro": MediaType.INTRO,
         "outro": MediaType.OUTRO,
         "transition": MediaType.TRANSITION,
         "clip": MediaType.CLIP,
     }
-    # Show current user's media library items (not limited to this project)
-    q = MediaFile.query.filter_by(user_id=current_user.id)
     if type_q in type_map:
         q = q.filter_by(media_type=type_map[type_q])
-    q = q.order_by(MediaFile.uploaded_at.desc())
 
     items = []
-    records = q.all()
+    # Order by uploaded_at desc when available
+    try:
+        records = q.order_by(type("T", (), {})().uploaded_at.desc())  # type: ignore[attr-defined]
+        records = records.all()
+    except Exception:
+        records = q.all()
     for mf in records:
         items.append(
             {
