@@ -152,6 +152,30 @@
         <h5 class="mb-3">Step 3: Arrange Timeline</h5>
         <div class="row g-3">
           <div class="col-12">
+            <div class="card mb-2">
+              <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Intro selection (optional)</span>
+                <button class="btn btn-sm btn-outline-secondary" id="refresh-intros">Refresh</button>
+              </div>
+              <div class="card-body">
+                <div id="intro-list" class="d-flex flex-wrap gap-2">
+                  <div class="text-muted">No intros found. Upload one under Upload Media.</div>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Outro selection (optional)</span>
+                <button class="btn btn-sm btn-outline-secondary" id="refresh-outros">Refresh</button>
+              </div>
+              <div class="card-body">
+                <div id="outro-list" class="d-flex flex-wrap gap-2">
+                  <div class="text-muted">No outros found. Upload one under Upload Media.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="col-12">
             <div class="card">
               <div class="card-header">Downloaded Clips</div>
               <div class="card-body" id="clips-grid" style="min-height: 220px;">
@@ -531,7 +555,10 @@
     document.getElementById('cancel-compile').disabled = false;
     log.textContent = 'Starting compilation...';
     try {
-      const r = await api(`/api/projects/${wizard.projectId}/compile`, { method: 'POST' });
+      const body = { };
+      if (wizard.selectedIntroId) body.intro_id = wizard.selectedIntroId;
+      if (wizard.selectedOutroId) body.outro_id = wizard.selectedOutroId;
+      const r = await api(`/api/projects/${wizard.projectId}/compile`, { method: 'POST', body: JSON.stringify(body) });
       wizard.compileTaskId = r.task_id;
       async function poll(){
         try {
@@ -590,6 +617,73 @@
       }
     } catch (_) {}
   }
+
+  // Intro/Outro listing and selection
+  async function loadMediaList(kind){
+    if (!wizard.projectId) return [];
+    try {
+      const res = await fetch(`/api/projects/${wizard.projectId}/media?type=${encodeURIComponent(kind)}`);
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      return data.items || [];
+    } catch (_) { return []; }
+  }
+  function renderMediaList(containerId, items, selectHandler){
+    const el = document.getElementById(containerId);
+    el.innerHTML = '';
+    if (!items.length){ el.innerHTML = '<div class="text-muted">No media found.</div>'; return; }
+    items.forEach(it => {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.style.width = '160px';
+      card.style.cursor = 'pointer';
+      const img = document.createElement('img');
+      img.className = 'card-img-top';
+      img.alt = it.original_filename || it.filename;
+      img.src = it.thumbnail_url || '';
+      img.onerror = () => { img.classList.add('d-none'); };
+      const body = document.createElement('div');
+      body.className = 'card-body p-2';
+      const title = document.createElement('div');
+      title.className = 'small text-truncate';
+      title.textContent = it.original_filename || it.filename;
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-sm btn-primary w-100 mt-1';
+      btn.textContent = 'Add to timeline';
+      btn.addEventListener('click', (e) => { e.stopPropagation(); selectHandler(it); });
+      card.addEventListener('click', () => {
+        if (it.preview_url) window.open(it.preview_url, '_blank');
+      });
+      body.appendChild(title);
+      body.appendChild(btn);
+      card.appendChild(img);
+      card.appendChild(body);
+      el.appendChild(card);
+    });
+  }
+  async function refreshIntros(){
+    const items = await loadMediaList('intro');
+    renderMediaList('intro-list', items, (it) => {
+      wizard.selectedIntroId = it.id;
+      // Visual indicator: highlight selected
+      document.querySelectorAll('#intro-list .card').forEach(c => c.classList.remove('border-primary'));
+      const found = Array.from(document.querySelectorAll('#intro-list .card')).find(c => c.querySelector('.small')?.textContent === (it.original_filename || it.filename));
+      if (found) found.classList.add('border', 'border-primary');
+    });
+  }
+  async function refreshOutros(){
+    const items = await loadMediaList('outro');
+    renderMediaList('outro-list', items, (it) => {
+      wizard.selectedOutroId = it.id;
+      document.querySelectorAll('#outro-list .card').forEach(c => c.classList.remove('border-primary'));
+      const found = Array.from(document.querySelectorAll('#outro-list .card')).find(c => c.querySelector('.small')?.textContent === (it.original_filename || it.filename));
+      if (found) found.classList.add('border', 'border-primary');
+    });
+  }
+  document.getElementById('refresh-intros').addEventListener('click', (e) => { e.preventDefault(); refreshIntros(); });
+  document.getElementById('refresh-outros').addEventListener('click', (e) => { e.preventDefault(); refreshOutros(); });
+  // Load lists when entering Arrange step
+  document.getElementById('step3-tab').addEventListener('click', () => { refreshIntros(); refreshOutros(); });
 })();
 </script>
 {% endblock %}

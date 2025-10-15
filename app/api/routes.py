@@ -360,10 +360,17 @@ def compile_project_api(project_id: int):
     try:
         from app.tasks.video_processing import compile_video_task
 
+        # Optional selections from client
+        data = request.get_json(silent=True) or {}
+        intro_id = data.get("intro_id")
+        outro_id = data.get("outro_id")
+
         project.status = ProjectStatus.PROCESSING
         db.session.commit()
 
-        task = compile_video_task.delay(project_id)
+        task = compile_video_task.delay(
+            project_id, intro_id=intro_id, outro_id=outro_id
+        )
         return jsonify({"task_id": task.id, "status": "started"}), 202
     except Exception as e:
         db.session.rollback()
@@ -549,3 +556,58 @@ def get_project_details_api(project_id: int):
             "download_url": download_url,
         }
     )
+
+
+@api_bp.route("/projects/<int:project_id>/media", methods=["GET"])
+@login_required
+def list_project_media_api(project_id: int):
+    """List media files for a project, optionally filtered by media type.
+
+    Query params:
+      - type: one of intro, outro, transition, clip (optional)
+    """
+    project = Project.query.filter_by(id=project_id, user_id=current_user.id).first()
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+
+    from app.models import MediaType
+
+    type_q = (request.args.get("type") or "").strip().lower()
+    q = project.media_files
+    type_map = {
+        "intro": MediaType.INTRO,
+        "outro": MediaType.OUTRO,
+        "transition": MediaType.TRANSITION,
+        "clip": MediaType.CLIP,
+    }
+    if type_q in type_map:
+        q = q.filter_by(media_type=type_map[type_q])
+
+    items = []
+    # Order by uploaded_at desc when available
+    try:
+        records = q.order_by(type("T", (), {})().uploaded_at.desc())  # type: ignore[attr-defined]
+        records = records.all()
+    except Exception:
+        records = q.all()
+    for mf in records:
+        items.append(
+            {
+                "id": mf.id,
+                "filename": mf.filename,
+                "original_filename": mf.original_filename,
+                "duration": mf.duration,
+                "width": mf.width,
+                "height": mf.height,
+                "framerate": mf.framerate,
+                "media_type": mf.media_type.value
+                if hasattr(mf.media_type, "value")
+                else str(mf.media_type),
+                "thumbnail_url": url_for("main.media_thumbnail", media_id=mf.id)
+                if mf.thumbnail_path
+                else None,
+                "preview_url": url_for("main.media_preview", media_id=mf.id),
+            }
+        )
+
+    return jsonify({"items": items, "count": len(items)})

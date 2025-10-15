@@ -43,7 +43,9 @@ def get_db_session():
 
 
 @celery_app.task(bind=True)
-def compile_video_task(self, project_id: int) -> dict[str, Any]:
+def compile_video_task(
+    self, project_id: int, intro_id: int | None = None, outro_id: int | None = None
+) -> dict[str, Any]:
     """
     Compile video clips into a final compilation.
 
@@ -162,7 +164,14 @@ def compile_video_task(self, project_id: int) -> dict[str, Any]:
                 session.rollback()
 
             # Add intro/outro if available
-            final_clips = add_intro_outro(session, project, processed_clips, temp_dir)
+            final_clips = add_intro_outro(
+                session,
+                project,
+                processed_clips,
+                temp_dir,
+                intro_id=intro_id,
+                outro_id=outro_id,
+            )
 
             self.update_state(
                 state="PROGRESS",
@@ -563,7 +572,12 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
 
 
 def add_intro_outro(
-    session, project: Project, clips: list[str], temp_dir: str
+    session,
+    project: Project,
+    clips: list[str],
+    temp_dir: str,
+    intro_id: int | None = None,
+    outro_id: int | None = None,
 ) -> list[str]:
     """
     Add intro and outro videos to the clip list.
@@ -580,11 +594,18 @@ def add_intro_outro(
     final_clips = []
 
     # Add intro if available
-    intro = (
-        session.query(MediaFile)
-        .filter_by(project_id=project.id, media_type=MediaType.INTRO)
-        .first()
-    )
+    if intro_id:
+        intro = (
+            session.query(MediaFile)
+            .filter_by(id=intro_id, project_id=project.id)
+            .first()
+        )
+    else:
+        intro = (
+            session.query(MediaFile)
+            .filter_by(project_id=project.id, media_type=MediaType.INTRO)
+            .first()
+        )
 
     if intro:
         intro_processed = os.path.join(temp_dir, "intro_processed.mp4")
@@ -611,11 +632,18 @@ def add_intro_outro(
         final_clips.extend(clips)
 
     # Add outro if available
-    outro = (
-        session.query(MediaFile)
-        .filter_by(project_id=project.id, media_type=MediaType.OUTRO)
-        .first()
-    )
+    if outro_id:
+        outro = (
+            session.query(MediaFile)
+            .filter_by(id=outro_id, project_id=project.id)
+            .first()
+        )
+    else:
+        outro = (
+            session.query(MediaFile)
+            .filter_by(project_id=project.id, media_type=MediaType.OUTRO)
+            .first()
+        )
 
     if outro:
         outro_processed = os.path.join(temp_dir, "outro_processed.mp4")
