@@ -254,6 +254,10 @@
   function gotoStep(n){
     steps.forEach(s => s.classList.toggle('d-none', s.dataset.step !== String(n)));
     document.querySelectorAll('#wizard-steps .nav-link').forEach(btn => btn.classList.toggle('active', btn.dataset.step === String(n)));
+    // When entering Arrange step via Next, auto-load intro/outro lists
+    if (String(n) === '3' && wizard.projectId) {
+      try { refreshIntros(); refreshOutros(); } catch (_) {}
+    }
     if (String(n) === '5' && wizard.projectId) { refreshExportInfo().catch(() => {}); }
   }
   document.querySelectorAll('#wizard-steps .nav-link').forEach(btn => btn.addEventListener('click', (e) => {

@@ -570,26 +570,23 @@ def list_project_media_api(project_id: int):
     if not project:
         return jsonify({"error": "Project not found"}), 404
 
-    from app.models import MediaType
+    from app.models import MediaType, MediaFile
 
     type_q = (request.args.get("type") or "").strip().lower()
-    q = project.media_files
     type_map = {
         "intro": MediaType.INTRO,
         "outro": MediaType.OUTRO,
         "transition": MediaType.TRANSITION,
         "clip": MediaType.CLIP,
     }
+    # Show current user's media library items (not limited to this project)
+    q = MediaFile.query.filter_by(user_id=current_user.id)
     if type_q in type_map:
         q = q.filter_by(media_type=type_map[type_q])
+    q = q.order_by(MediaFile.uploaded_at.desc())
 
     items = []
-    # Order by uploaded_at desc when available
-    try:
-        records = q.order_by(type("T", (), {})().uploaded_at.desc())  # type: ignore[attr-defined]
-        records = records.all()
-    except Exception:
-        records = q.all()
+    records = q.all()
     for mf in records:
         items.append(
             {
