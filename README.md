@@ -156,6 +156,19 @@ ClippyFront/
 - Invalid login for admin/admin123: run `python init_db.py --reset-admin --password admin123`.
 - Missing ffmpeg/yt-dlp: run `scripts/install_local_binaries.sh` and set `FFMPEG_BINARY`/`YT_DLP_BINARY` in your environment.
 
+### Media files exist on disk but don't show up
+
+If you see files under `instance/uploads/<user_id>/...` but they aren't listed in the UI (Arrange, Media Library), the DB may be missing their rows. Reindex the media library:
+
+Optional commands (run inside the venv):
+
+```bash
+python scripts/reindex_media.py            # backfill DB rows from disk
+python scripts/reindex_media.py --regen-thumbnails  # also rebuild missing video thumbnails
+```
+
+The script infers media type from subfolders (intros/, outros/, transitions/, compilations/, images/, clips/).
+
 ## Contributing
 
 See CONTRIBUTING.md for guidelines.
