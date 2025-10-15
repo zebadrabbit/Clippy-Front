@@ -160,6 +160,18 @@ ClippyFront/
 
 See CONTRIBUTING.md for guidelines.
 
+## AI agents
+
+Project-specific guidance for AI coding agents lives in `.github/copilot-instructions.md`. It covers:
+
+- Architecture overview (Flask blueprints, Celery tasks, models)
+- Wizard data flow (create → fetch/queue → dedup/reuse → compile → export)
+- Media handling conventions (per-user storage, thumbnails, previews)
+- Integration points (Twitch, Discord) and long-running task polling
+- Dev workflows (setup, run, lint/test) and gotchas (CSP/vendor assets)
+
+Agents should read that file first to follow established patterns and avoid duplicating downloads or breaking the wizard UI.
+
 ## License
 
 [Add your license here]
