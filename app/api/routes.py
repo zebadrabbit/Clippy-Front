@@ -481,6 +481,30 @@ def compile_project_api(project_id: int):
         intro_id = data.get("intro_id")
         outro_id = data.get("outro_id")
 
+        # Defense-in-depth: verify intro/outro ownership if provided
+        if intro_id is not None:
+            try:
+                from app.models import MediaFile
+
+                intro = MediaFile.query.filter_by(
+                    id=intro_id, user_id=current_user.id
+                ).first()
+                if not intro:
+                    return jsonify({"error": "Invalid intro selection"}), 400
+            except Exception:
+                return jsonify({"error": "Invalid intro selection"}), 400
+        if outro_id is not None:
+            try:
+                from app.models import MediaFile
+
+                outro = MediaFile.query.filter_by(
+                    id=outro_id, user_id=current_user.id
+                ).first()
+                if not outro:
+                    return jsonify({"error": "Invalid outro selection"}), 400
+            except Exception:
+                return jsonify({"error": "Invalid outro selection"}), 400
+
         project.status = ProjectStatus.PROCESSING
         db.session.commit()
 

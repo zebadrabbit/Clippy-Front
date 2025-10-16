@@ -595,9 +595,10 @@ def add_intro_outro(
 
     # Add intro if available
     if intro_id:
+        # Accept user-library media (not necessarily bound to this project)
         intro = (
             session.query(MediaFile)
-            .filter_by(id=intro_id, project_id=project.id)
+            .filter_by(id=intro_id, user_id=project.user_id)
             .first()
         )
     else:
@@ -633,9 +634,10 @@ def add_intro_outro(
 
     # Add outro if available
     if outro_id:
+        # Accept user-library media (not necessarily bound to this project)
         outro = (
             session.query(MediaFile)
-            .filter_by(id=outro_id, project_id=project.id)
+            .filter_by(id=outro_id, user_id=project.user_id)
             .first()
         )
     else:

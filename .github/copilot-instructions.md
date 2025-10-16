@@ -21,11 +21,10 @@ Keep changes safe, reproducible, and easy to review. Follow these concise rules 
 - Commits must pass lint + tests locally; let pre-commit hooks run to enforce.
 
 ### Git workflow & push policy
-- Work on feature branches; avoid committing directly to `main`.
 - Branch names: `feat/<slug>`, `fix/<slug>`, `chore/<slug>`, `docs/<slug>`.
 - Conventional Commits for messages: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`, `perf:`, `build:`, `ci:`.
   - Subject ≤72 chars; body explains why before what; reference issues in footer.
-- Do not push automatically. Open a PR from your branch when ready for review. Manual push required.
+- Do not push automatically.
 
 ### How to propose changes
 - Provide a minimal diff and a short reasoning note (1–3 lines).

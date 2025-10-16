@@ -30,6 +30,10 @@ from app.models import (
     UserRole,
     db,
 )
+from app.tasks.media_maintenance import (
+    regenerate_thumbnails_task,
+    reindex_media_task,
+)
 from app.version import get_changelog, get_version
 
 # Create admin blueprint
@@ -436,3 +440,28 @@ def logs():
             },
         ],
     )
+
+
+@admin_bp.route("/maintenance", methods=["GET", "POST"])
+@login_required
+@admin_required
+def maintenance():
+    """Admin-only maintenance actions: reindex media and regenerate thumbnails."""
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "reindex":
+            regen = request.form.get("regen_thumbnails") == "1"
+            task = reindex_media_task.delay(regen)
+            flash(
+                f"Started reindex task ({task.id}). Check Jobs in the UI to monitor.",
+                "info",
+            )
+        elif action == "regen_thumbs":
+            user_id = request.form.get("user_id", type=int)
+            limit = request.form.get("limit", type=int)
+            task = regenerate_thumbnails_task.delay(user_id=user_id, limit=limit)
+            flash(f"Started thumbnail regeneration task ({task.id}).", "info")
+        return redirect(url_for("admin.maintenance"))
+
+    # GET: show simple form
+    return render_template("admin/maintenance.html", title="Maintenance")
