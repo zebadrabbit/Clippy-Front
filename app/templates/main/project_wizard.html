@@ -28,7 +28,13 @@
           align-content: start;
         }
         .clip-card .card-img-top { height: 110px; object-fit: cover; }
-        .timeline-item { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+        /* Timeline uses card-style items */
+        #timeline { min-height: 160px; }
+        .timeline-list { display: flex; flex-direction: column; gap: 0.5rem; }
+        .timeline-card { cursor: move; }
+        .timeline-card.dragging { opacity: 0.6; }
+        .timeline-drop-indicator { height: 8px; background: rgba(13,110,253,.35); border-radius: 4px; margin: 2px 0; display: none; }
+        .timeline-drop-indicator.active { display: block; }
       </style>
       <!-- Step 1: Setup -->
       <div class="wizard-step" data-step="1">
@@ -152,25 +158,52 @@
         <h5 class="mb-3">Step 3: Arrange Timeline</h5>
         <div class="row g-3">
           <div class="col-12">
-            <div class="card mb-2">
-              <div class="card-header d-flex justify-content-between align-items-center">
-                <span>Intro selection (optional)</span>
-                <button class="btn btn-sm btn-outline-secondary" id="refresh-intros">Refresh</button>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <div class="card h-100">
+                  <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>Intro (optional)</span>
+                    <button class="btn btn-sm btn-outline-secondary" id="refresh-intros">Refresh</button>
+                  </div>
+                  <div class="card-body">
+                    <div id="intro-list" class="d-flex flex-wrap gap-2">
+                      <div class="text-muted">No intros found. Upload one under Upload Media.</div>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div class="card-body">
-                <div id="intro-list" class="d-flex flex-wrap gap-2">
-                  <div class="text-muted">No intros found. Upload one under Upload Media.</div>
+              <div class="col-md-6">
+                <div class="card h-100">
+                  <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>Outro (optional)</span>
+                    <button class="btn btn-sm btn-outline-secondary" id="refresh-outros">Refresh</button>
+                  </div>
+                  <div class="card-body">
+                    <div id="outro-list" class="d-flex flex-wrap gap-2">
+                      <div class="text-muted">No outros found. Upload one under Upload Media.</div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-            <div class="card">
+          </div>
+          <div class="col-12">
+            <div class="card mb-2">
               <div class="card-header d-flex justify-content-between align-items-center">
-                <span>Outro selection (optional)</span>
-                <button class="btn btn-sm btn-outline-secondary" id="refresh-outros">Refresh</button>
+                <span>Transitions (optional)</span>
+                <div class="d-flex align-items-center gap-2">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="transitions-randomize">
+                    <label class="form-check-label" for="transitions-randomize">Randomize</label>
+                  </div>
+                  <button class="btn btn-sm btn-outline-primary" id="select-all-transitions">Select All</button>
+                  <button class="btn btn-sm btn-outline-danger" id="clear-all-transitions">Clear All</button>
+                  <button class="btn btn-sm btn-outline-secondary" id="refresh-transitions">Refresh</button>
+                </div>
               </div>
               <div class="card-body">
-                <div id="outro-list" class="d-flex flex-wrap gap-2">
-                  <div class="text-muted">No outros found. Upload one under Upload Media.</div>
+                <div id="transition-list" class="d-flex flex-wrap gap-2">
+                  <div class="text-muted">No transitions found. Upload under Upload Media.</div>
                 </div>
               </div>
             </div>
@@ -187,8 +220,11 @@
         <div class="mt-3">
           <div class="card">
             <div class="card-header">Timeline</div>
-            <div class="card-body" id="timeline" style="min-height: 160px;">
-              <div class="text-muted">Drag clips here to arrange order (stub).</div>
+            <div class="card-body" id="timeline">
+              <div class="text-muted">Drag clips here to arrange order.</div>
+              <div class="timeline-drop-indicator" id="timeline-drop-top"></div>
+              <div class="timeline-list" id="timeline-list"></div>
+              <div class="timeline-drop-indicator" id="timeline-drop-bottom"></div>
             </div>
           </div>
         </div>
@@ -205,15 +241,6 @@
       <!-- Step 4: Compile -->
       <div class="wizard-step d-none" data-step="4">
         <h5 class="mb-3">Step 4: Compile Video</h5>
-        <div class="mb-2 small text-muted">Intro (optional) → Clips (with transitions) → Outro (optional)</div>
-        <div class="form-check form-check-inline">
-          <input class="form-check-input" type="checkbox" id="use-intro">
-          <label class="form-check-label" for="use-intro">Include Intro</label>
-        </div>
-        <div class="form-check form-check-inline">
-          <input class="form-check-input" type="checkbox" id="use-outro">
-          <label class="form-check-label" for="use-outro">Include Outro</label>
-        </div>
         <!-- Auto-start compile option removed -->
         <div class="mt-3">
           <button class="btn btn-primary" id="start-compile"><i class="bi bi-play-circle"></i> Start Compile</button>
@@ -270,7 +297,7 @@
   }));
 
   // Next/Back buttons and helpers
-  let wizard = { projectId: null, downloadTasks: [], compileTaskId: null };
+  let wizard = { projectId: null, downloadTasks: [], compileTaskId: null, selectedTransitionIds: [] };
   const USER_HAS_TWITCH = (document.getElementById('wizard-data')?.dataset.userHasTwitch === '1');
   async function api(path, opts={}){
     const res = await fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts));
@@ -331,8 +358,8 @@
             document.getElementById('next-2').disabled = false;
             try {
               const lst = await api(`/api/projects/${wizard.projectId}/clips`);
-              const row = document.getElementById('clips-row');
-              row.innerHTML = '';
+              const grid = document.getElementById('clips-grid');
+              grid.innerHTML = '';
               (lst.items || []).forEach(item => {
                 const card = document.createElement('div');
                 card.className = 'card clip-card';
@@ -362,7 +389,7 @@
                 body.appendChild(meta);
                 body.appendChild(btn);
                 card.appendChild(body);
-                row.appendChild(card);
+                grid.appendChild(card);
               });
             } catch (_) {}
           }
@@ -604,7 +631,126 @@
   const next3Btn = document.getElementById('next-3');
   const arrangedConfirm = document.getElementById('arranged-confirm');
   arrangedConfirm.addEventListener('change', () => { next3Btn.disabled = !arrangedConfirm.checked; });
-  document.getElementById('next-3').addEventListener('click', () => gotoStep(4));
+  document.getElementById('next-3').addEventListener('click', async () => {
+    try { await saveTimelineOrder(); } catch (_) {}
+    gotoStep(4);
+  });
+
+  // Timeline helpers
+  function makeTimelineCard({title, subtitle, thumbUrl, clipId, kind}){
+    const card = document.createElement('div');
+    card.className = 'card timeline-card';
+    card.draggable = true;
+    if (clipId) card.dataset.clipId = String(clipId);
+    if (kind) card.dataset.kind = kind; // intro/outro/transition/clip labels if needed
+    const row = document.createElement('div');
+    row.className = 'row g-0 align-items-center';
+    if (thumbUrl){
+      const colImg = document.createElement('div');
+      colImg.className = 'col-auto';
+      const img = document.createElement('img');
+      img.src = thumbUrl; img.alt = title || 'thumb';
+      img.style.width = '64px'; img.style.height = '48px'; img.style.objectFit = 'cover';
+      img.className = 'rounded-start';
+      colImg.appendChild(img); row.appendChild(colImg);
+    }
+    const colBody = document.createElement('div'); colBody.className = 'col';
+    const body = document.createElement('div'); body.className = 'card-body py-2 px-3';
+    const h6 = document.createElement('div'); h6.className = 'fw-semibold text-truncate'; h6.textContent = title || 'Item';
+    const small = document.createElement('div'); small.className = 'small text-muted text-truncate'; small.textContent = subtitle || '';
+    body.appendChild(h6); body.appendChild(small); colBody.appendChild(body); row.appendChild(colBody);
+    const colBtn = document.createElement('div'); colBtn.className = 'col-auto pe-2';
+    const rm = document.createElement('button'); rm.className = 'btn btn-sm btn-outline-danger'; rm.textContent = 'Remove';
+    rm.addEventListener('click', () => {
+      card.remove();
+      if (clipId){
+        const src = document.querySelector(`.clip-card[data-clip-id="${clipId}"]`);
+        if (src) src.classList.remove('d-none');
+      }
+      const list = document.getElementById('timeline-list');
+      if (list && list.querySelectorAll('.timeline-card[data-clip-id]').length === 0) {
+        const chk = document.getElementById('arranged-confirm');
+        if (chk) { chk.checked = false; chk.dispatchEvent(new Event('change')); }
+      }
+    });
+    colBtn.appendChild(rm); row.appendChild(colBtn);
+    card.appendChild(row);
+
+    // DnD handlers
+    card.addEventListener('dragstart', (e) => {
+      card.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    card.addEventListener('dragend', () => { card.classList.remove('dragging'); saveTimelineOrder().catch(()=>{}); });
+    return card;
+  }
+
+  function addClipToTimeline(item, sourceCard){
+    const list = document.getElementById('timeline-list');
+    const card = makeTimelineCard({
+      title: item.title || 'Clip',
+      subtitle: [item.creator_name ? `By ${item.creator_name}` : '', item.game_name ? `• ${item.game_name}` : ''].filter(Boolean).join(' '),
+      thumbUrl: (item.media && item.media.thumbnail_url) || '',
+      clipId: item.id,
+      kind: 'clip'
+    });
+    list.appendChild(card);
+    if (sourceCard) sourceCard.classList.add('d-none');
+    const chk = document.getElementById('arranged-confirm');
+    if (chk) { chk.checked = true; chk.dispatchEvent(new Event('change')); }
+  }
+  function addIntroToTimeline(item){
+    const list = document.getElementById('timeline-list');
+    const existing = list.querySelector('.timeline-card.timeline-intro');
+    if (existing) existing.remove();
+    const card = makeTimelineCard({ title: `Intro`, subtitle: item.original_filename || item.filename, thumbUrl: item.thumbnail_url || '', kind: 'intro' });
+    card.classList.add('timeline-intro');
+    list.prepend(card);
+  }
+  function addOutroToTimeline(item){
+    const list = document.getElementById('timeline-list');
+    const existing = list.querySelector('.timeline-card.timeline-outro');
+    if (existing) existing.remove();
+    const card = makeTimelineCard({ title: `Outro`, subtitle: item.original_filename || item.filename, thumbUrl: item.thumbnail_url || '', kind: 'outro' });
+    card.classList.add('timeline-outro');
+    list.appendChild(card);
+  }
+
+  // Drag and drop container behavior
+  (function initTimelineDnD(){
+    const list = document.getElementById('timeline-list');
+    const topInd = document.getElementById('timeline-drop-top');
+    const botInd = document.getElementById('timeline-drop-bottom');
+    function getDragAfterElement(container, y){
+      const els = [...container.querySelectorAll('.timeline-card:not(.dragging)')];
+      return els.reduce((closest, child) => {
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+        if (offset < 0 && offset > closest.offset) return { offset, element: child };
+        else return closest;
+      }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
+    }
+    list.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      const after = getDragAfterElement(list, e.clientY);
+      const dragging = document.querySelector('.timeline-card.dragging');
+      if (!dragging) return;
+      if (after == null) list.appendChild(dragging);
+      else list.insertBefore(dragging, after);
+      // indicators
+      topInd.classList.toggle('active', list.firstChild === dragging);
+      botInd.classList.toggle('active', list.lastChild === dragging);
+    });
+    list.addEventListener('drop', () => { topInd.classList.remove('active'); botInd.classList.remove('active'); });
+  })();
+
+  async function saveTimelineOrder(){
+    if (!wizard.projectId) return;
+    const list = document.getElementById('timeline-list');
+    const ids = Array.from(list.querySelectorAll('.timeline-card[data-clip-id]')).map(el => parseInt(el.dataset.clipId, 10)).filter(Boolean);
+    if (!ids.length) return;
+    await api(`/api/projects/${wizard.projectId}/clips/order`, { method: 'POST', body: JSON.stringify({ clip_ids: ids }) });
+  }
 
   // Compile and poll
   let compTimer = null;
@@ -619,6 +765,10 @@
       const body = { };
       if (wizard.selectedIntroId) body.intro_id = wizard.selectedIntroId;
       if (wizard.selectedOutroId) body.outro_id = wizard.selectedOutroId;
+      if (Array.isArray(wizard.selectedTransitionIds) && wizard.selectedTransitionIds.length) {
+        body.transition_ids = wizard.selectedTransitionIds;
+        body.randomize_transitions = !!document.getElementById('transitions-randomize')?.checked;
+      }
       const r = await api(`/api/projects/${wizard.projectId}/compile`, { method: 'POST', body: JSON.stringify(body) });
       wizard.compileTaskId = r.task_id;
       async function poll(){
@@ -726,6 +876,7 @@
     const items = await loadMediaList('intro');
     renderMediaList('intro-list', items, (it) => {
       wizard.selectedIntroId = it.id;
+      addIntroToTimeline(it);
       // Visual indicator: highlight selected
       document.querySelectorAll('#intro-list .card').forEach(c => c.classList.remove('border-primary'));
       const found = Array.from(document.querySelectorAll('#intro-list .card')).find(c => c.querySelector('.small')?.textContent === (it.original_filename || it.filename));
@@ -736,15 +887,91 @@
     const items = await loadMediaList('outro');
     renderMediaList('outro-list', items, (it) => {
       wizard.selectedOutroId = it.id;
+      addOutroToTimeline(it);
       document.querySelectorAll('#outro-list .card').forEach(c => c.classList.remove('border-primary'));
       const found = Array.from(document.querySelectorAll('#outro-list .card')).find(c => c.querySelector('.small')?.textContent === (it.original_filename || it.filename));
       if (found) found.classList.add('border', 'border-primary');
     });
   }
+  async function refreshTransitions(){
+    const items = await loadMediaList('transition');
+    const container = document.getElementById('transition-list');
+    container.innerHTML = '';
+    wizard.selectedTransitionIds = wizard.selectedTransitionIds || [];
+    wizard.availableTransitionIds = (items || []).map(it => it.id);
+    if (!items.length){ container.innerHTML = '<div class="text-muted">No transitions found.</div>'; return; }
+    items.forEach(it => {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.style.width = '160px';
+      const img = document.createElement('img');
+      img.className = 'card-img-top';
+      img.alt = it.original_filename || it.filename;
+      img.src = it.thumbnail_url || '';
+      img.onerror = () => { img.classList.add('d-none'); };
+      const body = document.createElement('div');
+      body.className = 'card-body p-2';
+      const row = document.createElement('div');
+      row.className = 'd-flex align-items-center gap-2';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.className = 'form-check-input';
+      cb.dataset.transitionId = String(it.id);
+      cb.checked = wizard.selectedTransitionIds.includes(it.id);
+      cb.addEventListener('change', () => {
+        if (cb.checked) {
+          if (!wizard.selectedTransitionIds.includes(it.id)) wizard.selectedTransitionIds.push(it.id);
+        } else {
+          wizard.selectedTransitionIds = wizard.selectedTransitionIds.filter(x => x !== it.id);
+        }
+        renderTransitionsBadge();
+      });
+      const title = document.createElement('div');
+      title.className = 'small text-truncate';
+      title.textContent = it.original_filename || it.filename;
+      row.appendChild(cb);
+      row.appendChild(title);
+      body.appendChild(row);
+      card.appendChild(img);
+      card.appendChild(body);
+      container.appendChild(card);
+    });
+  }
+  function renderTransitionsBadge(){
+    const tl = document.getElementById('timeline');
+    let badge = tl.querySelector('.timeline-transitions');
+    if (!badge) {
+      badge = document.createElement('div');
+      badge.className = 'timeline-item alert alert-info py-1 px-2 mb-1 timeline-transitions';
+      tl.appendChild(badge);
+    }
+    const count = (wizard.selectedTransitionIds || []).length;
+    const rand = document.getElementById('transitions-randomize')?.checked;
+    badge.textContent = count ? `Transitions selected: ${count}${count>1 ? (rand ? ' (randomized)' : ' (cycled)') : ''}` : 'No transitions selected';
+  }
+  document.getElementById('refresh-transitions').addEventListener('click', (e) => { e.preventDefault(); refreshTransitions(); });
+  document.getElementById('transitions-randomize').addEventListener('change', renderTransitionsBadge);
+  document.getElementById('select-all-transitions').addEventListener('click', (e) => {
+    e.preventDefault();
+    const list = document.getElementById('transition-list');
+    const boxes = Array.from(list.querySelectorAll('input.form-check-input[type="checkbox"]'));
+    const ids = new Set(wizard.availableTransitionIds || []);
+    boxes.forEach(cb => { cb.checked = true; const id = parseInt(cb.dataset.transitionId || '0', 10); if (id) ids.add(id); });
+    wizard.selectedTransitionIds = Array.from(ids);
+    renderTransitionsBadge();
+  });
+  document.getElementById('clear-all-transitions').addEventListener('click', (e) => {
+    e.preventDefault();
+    const list = document.getElementById('transition-list');
+    const boxes = Array.from(list.querySelectorAll('input.form-check-input[type="checkbox"]'));
+    boxes.forEach(cb => { cb.checked = false; });
+    wizard.selectedTransitionIds = [];
+    renderTransitionsBadge();
+  });
   document.getElementById('refresh-intros').addEventListener('click', (e) => { e.preventDefault(); refreshIntros(); });
   document.getElementById('refresh-outros').addEventListener('click', (e) => { e.preventDefault(); refreshOutros(); });
   // Load lists when entering Arrange step
-  document.getElementById('step3-tab').addEventListener('click', () => { refreshIntros(); refreshOutros(); });
+  document.getElementById('step3-tab').addEventListener('click', () => { refreshIntros(); refreshOutros(); refreshTransitions(); renderTransitionsBadge(); });
 })();
 </script>
 {% endblock %}

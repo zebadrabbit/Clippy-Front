@@ -480,6 +480,8 @@ def compile_project_api(project_id: int):
         data = request.get_json(silent=True) or {}
         intro_id = data.get("intro_id")
         outro_id = data.get("outro_id")
+        transition_ids = data.get("transition_ids") or []
+        randomize_transitions = bool(data.get("randomize_transitions") or False)
 
         # Defense-in-depth: verify intro/outro ownership if provided
         if intro_id is not None:
@@ -505,11 +507,36 @@ def compile_project_api(project_id: int):
             except Exception:
                 return jsonify({"error": "Invalid outro selection"}), 400
 
+        # Verify transitions ownership if provided
+        valid_transition_ids: list[int] = []
+        if isinstance(transition_ids, list) and transition_ids:
+            try:
+                from app.models import MediaFile, MediaType
+
+                # Coerce to ints and dedupe
+                try:
+                    tid_list = list({int(t) for t in transition_ids})
+                except Exception:
+                    tid_list = []
+                if tid_list:
+                    q = MediaFile.query.filter(
+                        MediaFile.id.in_(tid_list),
+                        MediaFile.user_id == current_user.id,
+                        MediaFile.media_type == MediaType.TRANSITION,
+                    )
+                    valid_transition_ids = [m.id for m in q.all()]
+            except Exception:
+                valid_transition_ids = []
+
         project.status = ProjectStatus.PROCESSING
         db.session.commit()
 
         task = compile_video_task.delay(
-            project_id, intro_id=intro_id, outro_id=outro_id
+            project_id,
+            intro_id=intro_id,
+            outro_id=outro_id,
+            transition_ids=valid_transition_ids,
+            randomize_transitions=randomize_transitions,
         )
         return jsonify({"task_id": task.id, "status": "started"}), 202
     except Exception as e:
@@ -563,6 +590,53 @@ def list_project_clips_api(project_id: int):
         )
 
     return jsonify({"items": items, "count": len(items)})
+
+
+@api_bp.route("/projects/<int:project_id>/clips/order", methods=["POST"])
+@login_required
+def reorder_project_clips_api(project_id: int):
+    """Reorder clips for a project.
+
+    Expected JSON body: { clip_ids: [int, int, ...] } where clip_ids is the desired
+    order for the clips. Any project clips not listed will be appended after in their
+    existing relative order.
+    """
+    project = Project.query.filter_by(id=project_id, user_id=current_user.id).first()
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+    ids = data.get("clip_ids") or []
+    try:
+        ids = [int(x) for x in ids]
+    except Exception:
+        return jsonify({"error": "clip_ids must be a list of integers"}), 400
+
+    # Fetch current clips
+    clips = project.clips.order_by(Clip.order_index.asc(), Clip.created_at.asc()).all()
+    if not clips:
+        return jsonify({"error": "No clips to reorder"}), 400
+
+    # Map id -> clip, filter ids to those belonging to this project
+    clip_map = {c.id: c for c in clips}
+    desired = [cid for cid in ids if cid in clip_map]
+
+    # Append any missing clips in original order
+    existing_set = set(desired)
+    tail = [c.id for c in clips if c.id not in existing_set]
+    new_order = desired + tail
+
+    # Update order_index sequentially
+    try:
+        for idx, cid in enumerate(new_order):
+            clip_map[cid].order_index = idx
+        db.session.commit()
+        return jsonify(
+            {"status": "ok", "ordered_ids": new_order, "count": len(new_order)}
+        )
+    except Exception:
+        db.session.rollback()
+        return jsonify({"error": "Failed to update order"}), 500
 
 
 @api_bp.route("/twitch/clips", methods=["GET"])

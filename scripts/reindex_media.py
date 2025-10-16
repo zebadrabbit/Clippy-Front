@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E402,I001
 """
 Reindex media library from the filesystem into the database.
 
@@ -7,18 +8,26 @@ MediaFile rows for files that exist on disk but are missing in the DB.
 
 It detects MIME (python-magic fallback to mimetypes) and generates thumbnails for
 video files if missing. It infers media_type from the folder:
-  intros/ → intro, outros/ → outro, transitions/ → transition,
-  compilations/ → compilation, images/ → clip (image), clips/ → clip (video)
+    intros/ → intro, outros/ → outro, transitions/ → transition,
+    compilations/ → compilation, images/ → clip (image), clips/ → clip (video)
 
 Usage:
-  source venv/bin/activate
-  python scripts/reindex_media.py [--regen-thumbnails]
+    source venv/bin/activate
+    python scripts/reindex_media.py [--regen-thumbnails]
 """
 import argparse
 import mimetypes
 import os
+import sys
 from uuid import uuid4
 
+# Ensure repository root is on sys.path so `import app` works when running directly
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.abspath(os.path.join(_THIS_DIR, os.pardir))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+from dotenv import load_dotenv
 from app import create_app
 from app.models import MediaFile, MediaType, db
 
@@ -107,6 +116,12 @@ def _ensure_thumbnail(app, media: MediaFile):
 
 
 def reindex(regen_thumbs: bool = False) -> int:
+    # Load environment variables from .env if present
+    try:
+        load_dotenv()
+    except Exception:
+        pass
+
     app = create_app()
     with app.app_context():
         base_upload = os.path.join(app.instance_path, app.config["UPLOAD_FOLDER"])
