@@ -11,6 +11,11 @@ ClippyFront is a Flask-based web application for organizing media and assembling
 - Admin panel for users, projects, and system info
 - Security: CSRF, CORS, secure headers (Talisman), rate limiting
 - Optional async jobs via Celery + Redis
+- Project Wizard: consolidated flow with robust task polling
+- Arrange step: Intro/Outro selection, Transitions with multi-select, Randomize, Select All/Clear All
+- Timeline: card-style items with thumbnails and native drag-and-drop reordering with persistence
+- Compile pipeline: interleaves transitions and inserts a static bumper between all segments; clearer logs
+- Branded overlays: author and game text with optional avatar; NVENC detection with CPU fallback
 - Tests with pytest and coverage; linting (Ruff) and formatting (Black)
 
 ## Quickstart
@@ -94,6 +99,8 @@ Adjust via environment variables (see `.env.example`):
 
 - SECRET_KEY, DATABASE_URL, REDIS_URL
 - FFMPEG_BINARY, YT_DLP_BINARY (resolves local ./bin first if provided)
+- FFMPEG_DISABLE_NVENC (set to 1/true to force CPU encoding)
+- FFMPEG_NVENC_PRESET (override NVENC preset if supported by your ffmpeg)
 - RATELIMIT_DEFAULT/RATELIMIT_STORAGE_URL
 - UPLOAD_FOLDER, MAX_CONTENT_LENGTH
 - FLASK_HOST, FLASK_PORT, FLASK_DEBUG
@@ -111,6 +118,17 @@ Notes:
 - Tag editing and bulk operations (type change, delete, set tags)
 
 If a format isn't supported by the browser, the UI gracefully offers a direct file open. Consider transcoding inputs with ffmpeg for maximum compatibility.
+
+## Arrange and Compile
+
+- Arrange: Pick an Intro and Outro from your Media Library; choose Transitions (multi-select) and optionally toggle Randomize. Use Select All or Clear All to quickly manage transitions.
+- Timeline: Drag cards to reorder clips; the new order is saved to the server. Remove items with the X on each card.
+- Compile: Starts a background job that builds the sequence, interleaves transitions, and inserts a short static bumper between segments for a channel-switching effect.
+- Logs: The log window now shows which segment is processed next, e.g., “Concatenating: <name> (2 of 6)”.
+
+Avatars: To show a creator avatar next to the overlay text, place a PNG/JPG under `instance/assets/avatars/` named after a sanitized creator name (e.g., `pokimane.png`). A fallback avatar is used if present (e.g., `avatar.png`).
+
+NVENC: The app detects NVENC availability and performs a tiny test encode; if unavailable or failing (e.g., missing CUDA), it automatically falls back to CPU (libx264). You can force CPU via `FFMPEG_DISABLE_NVENC=1`. See `scripts/check_nvenc.py` to diagnose.
 
 ## Testing and Quality
 
@@ -168,6 +186,10 @@ python scripts/reindex_media.py --regen-thumbnails  # also rebuild missing video
 ```
 
 The script infers media type from subfolders (intros/, outros/, transitions/, compilations/, images/, clips/).
+
+### Static bumper
+
+To customize the inter-segment “static” bumper, replace `instance/assets/static.mp4` with your own short clip. It will be inserted between every segment including transitions, intro, and outro.
 
 ## Contributing
 

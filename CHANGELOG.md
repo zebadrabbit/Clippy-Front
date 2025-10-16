@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2025-10-16
+
+### Added
+- Compile pipeline now supports interleaving user-selected transitions between every segment and inserts a static bumper (`instance/assets/static.mp4`) between all segments (intro↔clip↔outro and transitions).
+- NVENC detection with automatic CPU fallback: attempts hardware encoding when available and falls back to libx264 if unavailable or failing; includes a `scripts/check_nvenc.py` diagnostic.
+- Branded overlays on clips: drawbox + drawtext with “Clip by <author> • <game>” and optional author avatar overlay to the left when available under `instance/assets/avatars/`.
+- Timeline UI upgraded to card-style items with thumbnails and native drag-and-drop reordering; backend endpoint persists `order_index`.
+- Transitions panel includes multi-select with Randomize plus bulk actions: Select All and Clear All.
+
+### Changed
+- Compile step UI cleaned up: removed hint text and intro/outro checkboxes; progress log now shows “Concatenating: <name> (i of N)”.
+- Centralized FFmpeg configuration with quality presets, font resolution, and encoder selection; better logging and labels sidecar for concatenation.
+
+### Fixed
+- Improved Celery task polling reliability with richer status metadata and progress reporting.
+- Addressed overlay text overlap by adjusting y-offsets and drawbox placement; fixed a thumbnail generation command in the compile flow.
+
 ## [0.3.1] - 2025-10-15
 
 ### Added
