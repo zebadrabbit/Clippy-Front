@@ -188,6 +188,24 @@ def detect_nvenc(ffmpeg_bin: str) -> tuple[bool, str]:
     return available, (_NVENC_REASON or ("ok" if available else "unavailable"))
 
 
+def _env_nvenc_preset() -> str:
+    """Return NVENC preset honoring environment override if provided."""
+    p = os.getenv("FFMPEG_NVENC_PRESET")
+    if p:
+        return p
+    return str(DEFAULTS.get("nvenc_preset", "slow"))
+
+
+def overlay_enabled() -> bool:
+    """Return True if overlay is enabled (default) and not disabled via env.
+
+    Recognizes DISABLE_OVERLAY as a truthy flag to disable overlays.
+    """
+    if str(os.getenv("DISABLE_OVERLAY", "")).lower() in {"1", "true", "yes"}:
+        return False
+    return bool(DEFAULTS.get("enable_overlay", True))
+
+
 def encoder_args(ffmpeg_bin: str) -> list[str]:
     """Return encoder argument list favoring NVENC when available."""
     if _detect_nvenc(ffmpeg_bin):
@@ -195,7 +213,7 @@ def encoder_args(ffmpeg_bin: str) -> list[str]:
             "-c:v",
             "h264_nvenc",
             "-preset",
-            str(DEFAULTS["nvenc_preset"]),
+            _env_nvenc_preset(),
             "-rc",
             "vbr",
             "-cq",

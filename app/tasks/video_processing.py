@@ -18,6 +18,7 @@ from app.ffmpeg_config import (
     build_overlay_filter,
     cpu_encoder_args,
     encoder_args,
+    overlay_enabled,
     parse_resolution,
     resolve_fontfile,
 )
@@ -588,7 +589,7 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
     # Overlay chain handled via filter_complex above when available
     author = (clip.creator_name or "").strip() if clip.creator_name else ""
     game = (clip.game_name or "").strip() if clip.game_name else ""
-    if font and (author or game):
+    if font and (author or game) and overlay_enabled():
         ov = build_overlay_filter(author=author, game=game, fontfile=font)
         # Inject scale in front of overlay chain to normalize dimensions
         if ov.startswith("[0:v]"):
@@ -602,7 +603,12 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
                 from app import create_app  # local import to avoid top-level coupling
 
                 app = create_app()
-                base = os.path.join(app.instance_path, "assets")
+                base_override = os.getenv("AVATARS_PATH")
+                base = (
+                    base_override
+                    if base_override
+                    else os.path.join(app.instance_path, "assets")
+                )
                 # Specific per-author avatar: instance/assets/avatars/<sanitized>.png|jpg
                 if author:
                     import re as _re
@@ -831,7 +837,11 @@ def build_timeline_with_transitions(
         from app import create_app
 
         app = create_app()
-        static_src = os.path.join(app.instance_path, "assets", "static.mp4")
+        # Allow override via env STATIC_BUMPER_PATH
+        static_src = os.getenv(
+            "STATIC_BUMPER_PATH",
+            os.path.join(app.instance_path, "assets", "static.mp4"),
+        )
         if os.path.exists(static_src):
             static_out = os.path.join(temp_dir, "static_processed.mp4")
             # Process once to match project settings and codecs
