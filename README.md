@@ -264,6 +264,11 @@ Windows/WSL2 + network shares:
 - Bind the app's `instance/` directory from the Linux server into WSL2 using CIFS, then mount that into the container (`-v /mnt/clippy:/app/instance`).
 - Set `TMPDIR=/app/instance/tmp` on the worker to keep temp and final files on the same filesystem.
 
+For full network and storage setup guides, see:
+
+- docs/wireguard.md — Secure cross-host networking over WireGuard
+- docs/samba-and-mounts.md — Sharing `instance/` via Samba; mounts for Windows/WSL2 and Linux
+
 ## Contributing
 
 See CONTRIBUTING.md for guidelines.

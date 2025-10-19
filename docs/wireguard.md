@@ -96,7 +96,42 @@ sudo wg show
 - Activate the tunnel on Windows and ensure both sides show latest handshake.
 - Test ping from Windows: `ping 10.8.0.1`; from Linux: `ping 10.8.0.2`.
 
-## 3) Point ClippyFront services at the VPN IPs
+## 3) Linux client alternative
+
+On another Linux machine (e.g., a headless GPU host), install WireGuard:
+
+```bash
+sudo apt-get update && sudo apt-get install -y wireguard
+
+sudo wg genkey | tee ~/client_private.key | wg pubkey | tee ~/client_public.key
+CLIENT_PRIV=$(cat ~/client_private.key)
+CLIENT_PUB=$(cat ~/client_public.key)
+
+sudo tee /etc/wireguard/wg0.conf > /dev/null <<EOF
+[Interface]
+PrivateKey = $CLIENT_PRIV
+Address = 10.8.0.3/24
+DNS = 1.1.1.1
+
+[Peer]
+PublicKey = <SERVER_PUBLIC_KEY>
+AllowedIPs = 10.8.0.0/24
+Endpoint = <LINUX_PUBLIC_IP_OR_DDNS>:51820
+PersistentKeepalive = 25
+EOF
+
+# Add client to server peer list
+echo "Remember to add the client public key on the server:"
+echo "sudo wg set wg0 peer $CLIENT_PUB allowed-ips 10.8.0.3/32"
+
+sudo systemctl enable wg-quick@wg0 --now
+sudo wg show
+```
+
+### Optional: IP forwarding / NAT
+If you need the server to route traffic from the VPN to other networks (rare in this setup), enable IP forwarding and add NAT rules. For our use (service-to-service over VPN), it’s typically unnecessary.
+
+## 4) Point ClippyFront services at the VPN IPs
 
 Update environment variables so all components talk over the VPN subnet.
 
@@ -138,11 +173,11 @@ PY
 ```
 If you still see localhost in errors, re-check your run command and .env precedence. Prefer passing DATABASE_URL directly on the docker run line.
 
-## 4) Database choice
+## 5) Database choice
 
 Use PostgreSQL for all environments (recommended/required outside unit tests). The previous SQLite-over-SMB option is discouraged and no longer supported in default configs.
 
-## 5) Test end-to-end
+## 6) Test end-to-end
 - Ensure `wg show` reports handshakes on both ends.
 - From the Windows container, verify Redis connectivity:
 ```
@@ -150,7 +185,7 @@ docker exec -it clippy-gpu-worker python -c "import redis; print(redis.Redis.fro
 ```
 - Trigger a compile in the app; watch the worker logs. You should see tasks picked up from the `gpu` queue and the DB queries succeeding against 10.8.0.1.
 
-## Security notes
+## 7) Security notes
 - Keep WireGuard keys secret. Restrict UDP 51820 on the Linux host to your client IPs if possible.
 - Do not expose Redis/Postgres publicly; bind to localhost and the wg0 address only.
 - Rotate credentials regularly; prefer strong Postgres passwords and disable unused accounts.
