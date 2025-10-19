@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [0.5.2] - 2025-10-19
+
+### Added
+- Helper scripts: `scripts/wg_setup_server.sh`, `scripts/wg_add_client.sh`, and `scripts/setup_samba_share.sh` for easy WireGuard and Samba setup.
+- `scripts/bootstrap_infra.sh`: One-shot orchestration of WireGuard server + Samba + optional client creation, prints worker run examples.
+- Docker example: `docker/docker-compose.gpu-worker.example.yml` for a VPN-backed GPU worker using a CIFS mount.
+
+### Changed
+- README updated with links to scripts and example compose; GPU worker docs cross-reference.
+
 
 ### Changed
 - Removed dev-only demo Celery task and `/api/tasks/start` endpoint; task status API remains for real jobs.

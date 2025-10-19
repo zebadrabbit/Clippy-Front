@@ -2,8 +2,8 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "0.5.1"
-__version_info__ = (0, 5, 1)
+__version__ = "0.5.2"
+__version_info__ = (0, 5, 2)
 
 # Version history tracking
 VERSION_HISTORY = {
@@ -30,6 +30,11 @@ VERSION_HISTORY = {
         "Media preview/thumbnail now resolve cross-host file paths (GPU worker → web server) via instance-path remap and MEDIA_PATH_ALIAS_FROM/TO; "
         "added docs for TMPDIR=/app/instance/tmp to avoid EXDEV on network shares; clarified Celery queues (gpu,cpu,celery) and routing (gpu>cpu>celery); "
         "minor docs refresh for WireGuard and GPU worker run examples."
+    ),
+    "0.5.2": (
+        "Infra tooling and docs: added helper scripts for WireGuard server/client and Samba share setup; "
+        "bootstrap script to orchestrate WG + Samba and emit worker run examples; docker compose example for GPU worker; "
+        "README cross-links and guide enhancements."
     ),
 }
 
