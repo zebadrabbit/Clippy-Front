@@ -70,8 +70,16 @@ export YT_DLP_BINARY="$(pwd)/bin/yt-dlp"
 6) Initialize the database and admin user
 
 ```bash
+# Ensure your DATABASE_URL points to PostgreSQL (runtime uses Postgres; SQLite is test-only)
+# export DATABASE_URL=postgresql://postgres:postgres@localhost/clippy_front
+
+# Optionally create the database if it doesn't exist
+python scripts/create_database.py
+
+# Initialize tables and seed an admin + sample data (drops and recreates tables)
 python init_db.py --all --password admin123
-# Or incrementally:
+
+# Or incrementally
 python init_db.py --drop
 python init_db.py --admin --password admin123
 ```
@@ -98,6 +106,7 @@ Visit http://localhost:5000 and log in with the admin user if created.
 Adjust via environment variables (see `.env.example`):
 
 - SECRET_KEY, DATABASE_URL, REDIS_URL
+- Database env precedence in dev: `DATABASE_URL` (if set) > `DEV_DATABASE_URL` > default. Runtime enforces PostgreSQL outside tests; SQLite is reserved for pytest only. Set one stable Postgres URL and keep it consistent across runs.
 - FFMPEG_BINARY, YT_DLP_BINARY (resolves local ./bin first if provided)
 - FFMPEG_DISABLE_NVENC (set to 1/true to force CPU encoding)
 - FFMPEG_NVENC_PRESET (override NVENC preset if supported by your ffmpeg)
@@ -138,6 +147,9 @@ pytest --cov=app     # with coverage
 ruff check .         # lint
 black .              # format
 pre-commit install   # set up hooks
+
+# Connectivity probes (optional)
+python scripts/health_check.py --db "$DATABASE_URL" --redis "$REDIS_URL"
 ```
 
 ## Project Structure (abridged)
@@ -174,22 +186,63 @@ ClippyFront/
 - Invalid login for admin/admin123: run `python init_db.py --reset-admin --password admin123`.
 - Missing ffmpeg/yt-dlp: run `scripts/install_local_binaries.sh` and set `FFMPEG_BINARY`/`YT_DLP_BINARY` in your environment.
 
+### Admin password seems to change daily
+
+If your admin password appears to “change,” it was typically due to multiple SQLite files being created with relative paths. We now standardize on PostgreSQL to avoid this class of issue. If you still hit issues:
+
+- Ensure you’re using the same environment variables (`FLASK_ENV`, `DATABASE_URL`) for each run.
+- Avoid re-running `init_db.py --all` unless you intend to drop/recreate tables.
+- Reset the admin password explicitly when needed:
+	- `python init_db.py --reset-admin --password <newpassword>`
+
 ### Media files exist on disk but don't show up
 
 If you see files under `instance/uploads/<user_id>/...` but they aren't listed in the UI (Arrange, Media Library), the DB may be missing their rows. Reindex the media library:
 
-Optional commands (run inside the venv):
+Optional command (run inside the venv):
 
 ```bash
-python scripts/reindex_media.py            # backfill DB rows from disk
-python scripts/reindex_media.py --regen-thumbnails  # also rebuild missing video thumbnails
+python scripts/reindex_media.py            # backfill DB rows from disk (read-only)
 ```
 
 The script infers media type from subfolders (intros/, outros/, transitions/, compilations/, images/, clips/).
+It never modifies files on disk and does not regenerate thumbnails.
+
+### Data persistence and sidecars
+
+- The database is the single source of truth for media and projects. We no longer write or rely on per-file sidecar `.meta.json` metadata during uploads.
+- If you previously had sidecars, the reindexer ignores them. It will still restore DB rows based on actual files on disk.
+- In development, you can optionally enable an automatic reindex on startup if the DB is empty:
+	- Set `AUTO_REINDEX_ON_STARTUP=true` in your environment (or `.env`).
+	- By default this is disabled to avoid masking database issues.
+
+We recommend PostgreSQL exclusively outside tests. At startup, the app logs the resolved database target safely (e.g., `postgresql://host:port/db (redacted)`), which helps diagnose accidental DB misconfiguration.
 
 ### Static bumper
 
 To customize the inter-segment “static” bumper, replace `instance/assets/static.mp4` with your own short clip. It will be inserted between every segment including transitions, intro, and outro.
+
+### Remote GPU workers (optional)
+
+Offload compilation to remote machines with GPUs via Celery queues.
+
+- This project defines a dedicated `gpu` queue for `compile_video_task`.
+- Start your GPU worker on the powerful machine (with NVENC):
+
+```bash
+source venv/bin/activate
+export FFMPEG_DISABLE_NVENC=
+celery -A app.tasks.celery_app worker -Q gpu --loglevel=info
+```
+
+- Keep your default worker (downloads, light tasks) on the main server:
+
+```bash
+source venv/bin/activate
+celery -A app.tasks.celery_app worker -Q celery --loglevel=info
+```
+
+Ensure both workers point to the same Redis broker/backends (CELERY_BROKER_URL, CELERY_RESULT_BACKEND) and can reach each other over the network. Compile jobs will automatically route to the GPU queue.
 
 ## Contributing
 

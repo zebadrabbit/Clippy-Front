@@ -95,26 +95,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    const togglePassword = document.querySelector('#togglePassword');
-    const password = document.querySelector('#password');
-    const togglePasswordIcon = document.querySelector('#togglePasswordIcon');
-
-    togglePassword.addEventListener('click', function (e) {
-        // Toggle the type attribute
-        const type = password.getAttribute('type') === 'password' ? 'text' : 'password';
-        password.setAttribute('type', type);
-
-        // Toggle the eye icon
-        if (type === 'password') {
-            togglePasswordIcon.classList.remove('bi-eye-slash');
-            togglePasswordIcon.classList.add('bi-eye');
-        } else {
-            togglePasswordIcon.classList.remove('bi-eye');
-            togglePasswordIcon.classList.add('bi-eye-slash');
-        }
-    });
-});
-</script>
+<script src="{{ url_for('static', filename='js/auth_login.js') }}"></script>
 {% endblock %}

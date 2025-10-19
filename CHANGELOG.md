@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Removed dev-only demo Celery task and `/api/tasks/start` endpoint; task status API remains for real jobs.
+- Added tests for opaque project URLs and compiled output preview/download with HTTP Range support.
+
+## [0.5.0] - 2025-10-19
+
+### Added
+- scripts/create_database.py: create the PostgreSQL database from DATABASE_URL if missing.
+- scripts/health_check.py: quick connectivity probes for DATABASE_URL and REDIS_URL.
+
+### Changed
+- Default to PostgreSQL in all environments except tests; enforce Postgres-only at runtime outside TESTING.
+- Improved database logging to show driver/host/port/db (secrets redacted) and warn on localhost in containers.
+- TESTING stability: always initialize Flask-Login in tests; disable runtime schema ALTERs during tests.
+- Docs: README, docs/gpu-worker.md, and docs/wireguard.md updated to reflect Postgres-only runtime and VPN guidance.
+
+### Fixed
+- Pytest failing due to Postgres auth when defaults switched: early pytest-aware overrides now force SQLite in-memory; schema updates are skipped in tests.
+
+## [0.4.1] - 2025-10-19
+
+### Added
+- Wizard Step 2 now uses a chevron-style progress UI with a focal progress bar.
+- Project details page redesigned: clip cards with metadata, featured compilation card with download link, and used intros/outros/transitions list.
+- Admin maintenance flow for checksum-based media deduplication.
+
+### Changed
+- Externalized inline JS/CSS from templates into static files: base layout, wizard, media library, and auth pages (login/register/account settings).
+- Safer compile API: enqueue task first, then set PROCESSING status; configurable Celery queue routing.
+- Development: relax cryptography pin to ">=42,<43" for wider Python compatibility.
+- Persistence: database is now the source of truth for uploads and project media. Removed sidecar `.meta.json` writes during uploads; metadata (checksum, duration, dimensions, framerate) is stored in DB.
+- Startup behavior: automatic media reindex on startup is disabled by default to avoid masking DB state. You can opt-in via `AUTO_REINDEX_ON_STARTUP=true`.
+
+### Fixed
+- Compile button not proceeding due to Celery queue mismatch; added a queue routing toggle and corrected status handling.
+- Avatar overlay now only shows during the intended time window and is positioned correctly (~30px upward).
+
 ## [0.4.0] - 2025-10-16
 
 ### Added

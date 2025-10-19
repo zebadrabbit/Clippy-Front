@@ -19,7 +19,8 @@ psycopg2-binary==2.9.9
 # Authentication and security
 bcrypt==4.1.2
 PyJWT==2.8.0
-cryptography==41.0.8
+# cryptography pin: 41.x fails to build on some newer Pythons; allow 42.x
+cryptography>=42,<43
 
 # Media processing
 yt-dlp==2023.11.16

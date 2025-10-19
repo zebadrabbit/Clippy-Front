@@ -7,35 +7,33 @@
   <div class="card mb-3">
     <div class="card-body">
       <h5 class="card-title">Reindex Media Library</h5>
-      <p class="card-text">Scan <code>instance/uploads/</code> and backfill missing database rows for media files. Optionally regenerate thumbnails.</p>
+      <p class="card-text">Scan <code>instance/uploads/</code> and backfill missing database rows for media files. This will never modify or rename files on disk.</p>
       <form method="post">
         <input type="hidden" name="action" value="reindex" />
-        <div class="form-check mb-2">
-          <input class="form-check-input" type="checkbox" value="1" id="regen_thumbnails" name="regen_thumbnails">
-          <label class="form-check-label" for="regen_thumbnails">Regenerate thumbnails for videos</label>
-        </div>
         <button type="submit" class="btn btn-primary">Start Reindex</button>
       </form>
     </div>
   </div>
 
-  <div class="card">
+  <div class="card mt-3">
     <div class="card-body">
-      <h5 class="card-title">Regenerate Thumbnails</h5>
-      <p class="card-text">Regenerate missing thumbnails for video media. Optionally scope to a user and limit count.</p>
+      <h5 class="card-title">Deduplicate Media</h5>
+      <p class="card-text">Remove duplicate media rows per user based on checksum and exact same file path. Keeps the newest entry, deletes older duplicates.</p>
       <form method="post">
-        <input type="hidden" name="action" value="regen_thumbs" />
+        <input type="hidden" name="action" value="dedupe_media" />
         <div class="row g-2 align-items-end">
           <div class="col-md-3">
-            <label class="form-label" for="user_id">User ID (optional)</label>
-            <input type="number" class="form-control" id="user_id" name="user_id" placeholder="All users" />
+            <label class="form-label" for="dupe_user_id">User ID (optional)</label>
+            <input type="number" class="form-control" id="dupe_user_id" name="user_id" placeholder="All users" />
           </div>
           <div class="col-md-3">
-            <label class="form-label" for="limit">Limit (optional)</label>
-            <input type="number" class="form-control" id="limit" name="limit" placeholder="e.g., 100" />
+            <div class="form-check mt-4">
+              <input class="form-check-input" type="checkbox" value="1" id="dry_run" name="dry_run" />
+              <label class="form-check-label" for="dry_run">Dry run (no deletes)</label>
+            </div>
           </div>
           <div class="col-md-3">
-            <button type="submit" class="btn btn-secondary">Start Regeneration</button>
+            <button type="submit" class="btn btn-warning">Start Deduplication</button>
           </div>
         </div>
       </form>

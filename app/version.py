@@ -2,8 +2,8 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "0.4.0"
-__version_info__ = (0, 4, 0)
+__version__ = "0.5.0"
+__version_info__ = (0, 5, 0)
 
 # Version history tracking
 VERSION_HISTORY = {
@@ -15,6 +15,16 @@ VERSION_HISTORY = {
         "Compile pipeline upgrades: transitions interleaving + static bumper insertion, "
         "NVENC detection with CPU fallback, branded overlays incl. creator/game and optional avatar, "
         "timeline cards with drag-and-drop + order persistence, compile UI cleanup, and clearer concat logging."
+    ),
+    "0.4.1": (
+        "Wizard Step 2 chevron progress UI; Celery compile routing fix with enqueue-first status; "
+        "checksum-based media dedupe and admin UI; avatar overlay time-window + position fix; "
+        "project details page redesign with download; externalized inline JS/CSS to static files."
+    ),
+    "0.5.0": (
+        "Runtime now standardizes on PostgreSQL (SQLite reserved for tests); app enforces Postgres when not testing; "
+        "improved DB logging; added scripts/create_database.py to provision DB and scripts/health_check.py to verify DB/Redis connectivity; "
+        "test stability fixes (Flask-Login init in TESTING, runtime schema updates disabled in tests); docs updated (README, GPU worker, WireGuard)."
     ),
 }
 

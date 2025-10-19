@@ -5,7 +5,7 @@ This module contains WTForms classes for handling user authentication
 including registration, login, and password reset functionality.
 """
 from flask_wtf import FlaskForm
-from wtforms import BooleanField, PasswordField, StringField, SubmitField
+from wtforms import BooleanField, PasswordField, SelectField, StringField, SubmitField
 from wtforms.validators import (
     DataRequired,
     Email,
@@ -203,6 +203,17 @@ class ProfileForm(FlaskForm):
     twitch_username = StringField(
         "Twitch Username",
         validators=[Optional(), Length(max=100)],
+    )
+    date_format = SelectField(
+        "Date Format",
+        choices=[
+            ("auto", "Auto (browser locale)"),
+            ("mdy", "MM/DD/YYYY"),
+            ("dmy", "DD/MM/YYYY"),
+            ("ymd", "YYYY-MM-DD"),
+            ("long", "Month Day, Year"),
+        ],
+        validators=[Optional()],
     )
     submit = SubmitField("Update Profile")
 

@@ -404,35 +404,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Password confirmation validation
-    const newPassword = document.getElementById('newPassword');
-    const confirmPassword = document.getElementById('confirmPassword');
-
-    function validatePasswords() {
-        if (newPassword.value !== confirmPassword.value) {
-            confirmPassword.setCustomValidity("Passwords don't match");
-        } else {
-            confirmPassword.setCustomValidity('');
-        }
-    }
-
-    newPassword.addEventListener('input', validatePasswords);
-    confirmPassword.addEventListener('input', validatePasswords);
-
-    // Username confirmation for account deletion
-    const confirmUsername = document.getElementById('confirmUsername');
-    const deleteAccountBtn = document.getElementById('deleteAccountBtn');
-    const expectedUsername = '{{ current_user.username }}';
-
-    confirmUsername.addEventListener('input', function() {
-        if (this.value === expectedUsername) {
-            deleteAccountBtn.disabled = false;
-        } else {
-            deleteAccountBtn.disabled = true;
-        }
-    });
-});
-</script>
+<script id="account-settings-config" type="application/json">{ "expectedUsername": "{{ current_user.username }}" }</script>
+<script src="{{ url_for('static', filename='js/account_settings.js') }}"></script>
 {% endblock %}

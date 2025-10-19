@@ -1,9 +1,9 @@
 """
-Media maintenance tasks: reindex DB from filesystem and regenerate thumbnails.
+Media maintenance tasks: reindex DB from filesystem and maintenance utilities.
 """
 import os
-import subprocess
-from datetime import datetime
+import sys
+from collections import defaultdict
 
 from sqlalchemy.orm import scoped_session, sessionmaker
 
@@ -28,78 +28,120 @@ def _resolve_binary(app, name: str) -> str:
 
 @celery_app.task(bind=True)
 def reindex_media_task(self, regen_thumbnails: bool = False) -> dict:
-    """Scan instance/uploads and backfill MediaFile rows. Optionally regenerate thumbnails."""
+    """Scan instance/uploads and backfill MediaFile rows (read-only).
+
+    Note: Thumbnail regeneration is disabled by policy; on-disk media will not be modified.
+    The regen_thumbnails flag is ignored and retained only for backward compatibility.
+    """
     # Run the existing reindex implementation from scripts
     try:
+        # Warn if a caller tried to enable regeneration (no-op)
+        if regen_thumbnails:
+            try:
+                import warnings as _warnings
+
+                _warnings.warn(
+                    "reindex_media_task: regen_thumbnails is ignored; reindex is read-only",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+            except Exception:
+                pass
+        # Ensure project root is on sys.path so 'scripts' can be imported when worker is started via
+        # 'celery -A app.tasks.celery_app worker' (which may not include CWD)
+        _here = os.path.dirname(os.path.abspath(__file__))
+        _repo_root = os.path.abspath(os.path.join(_here, "..", ".."))
+        if _repo_root not in sys.path:
+            sys.path.insert(0, _repo_root)
         from scripts.reindex_media import reindex as run_reindex
 
-        created = int(run_reindex(regen_thumbs=regen_thumbnails) or 0)
+        # Always run in read-only mode (no thumbnail regeneration)
+        created = int(run_reindex(regen_thumbs=False) or 0)
         return {
             "status": "completed",
             "created": created,
-            "regen_thumbnails": bool(regen_thumbnails),
+            "regen_thumbnails": False,
         }
     except Exception as e:
         raise RuntimeError(f"Reindex failed: {e}") from e
 
 
+## Thumbnail regeneration has been removed by policy: filenames and on-disk media will not be modified.
+
+
 @celery_app.task(bind=True)
-def regenerate_thumbnails_task(
-    self, user_id: int | None = None, limit: int | None = None
-) -> dict:
-    """Regenerate missing thumbnails for video media. Optionally scoped to a user."""
-    session, app = _get_db_session()
+def dedupe_media_task(self, dry_run: bool = False, user_id: int | None = None) -> dict:
+    """Deduplicate MediaFile rows by per-user checksum and by duplicate file_path.
+
+    Strategy:
+      - For each user (or a specific user_id), group rows by (checksum) where checksum is not null.
+      - Within each group, keep the most recent uploaded_at, delete others.
+      - Also group by identical file_path per user and collapse duplicates.
+    Returns a summary with counts of deleted rows.
+    """
+    session, _app = _get_db_session()
+    deleted = 0
+    examined = 0
     try:
-        q = session.query(MediaFile).filter(MediaFile.mime_type.like("video%"))
+        # Scope query
+        q = session.query(MediaFile)
         if user_id:
             q = q.filter(MediaFile.user_id == user_id)
-        # Missing or non-existent thumbnails
-        items = [
-            m
-            for m in q.order_by(MediaFile.uploaded_at.desc()).all()
-            if not m.thumbnail_path or not os.path.exists(m.thumbnail_path)
-        ]
-        if limit is not None:
-            items = items[: max(0, int(limit))]
-
-        base_upload = os.path.join(
-            app.instance_path, app.config.get("UPLOAD_FOLDER", "uploads")
+        items = q.order_by(MediaFile.user_id.asc(), MediaFile.uploaded_at.desc()).all()
+        # Group by user -> checksum -> list
+        by_user_checksum: dict[int, dict[str, list[MediaFile]]] = defaultdict(
+            lambda: defaultdict(list)
         )
-        updated = 0
+        by_user_path: dict[int, dict[str, list[MediaFile]]] = defaultdict(
+            lambda: defaultdict(list)
+        )
         for m in items:
+            examined += 1
             try:
-                thumbs_dir = os.path.join(base_upload, str(m.user_id), "thumbnails")
-                os.makedirs(thumbs_dir, exist_ok=True)
-                ts = int(datetime.utcnow().timestamp())
-                thumb_path = os.path.join(thumbs_dir, f"regen_{m.id}_{ts}.jpg")
-                subprocess.run(
-                    [
-                        _resolve_binary(app, "ffmpeg"),
-                        "-y",
-                        "-ss",
-                        "1",
-                        "-i",
-                        m.file_path,
-                        "-frames:v",
-                        "1",
-                        "-vf",
-                        "scale=480:-1",
-                        thumb_path,
-                    ],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=True,
-                )
-                m.thumbnail_path = thumb_path
-                session.add(m)
-                updated += 1
+                if m.checksum:
+                    by_user_checksum[int(m.user_id)][m.checksum].append(m)
+                if m.file_path:
+                    by_user_path[int(m.user_id)][m.file_path].append(m)
             except Exception:
-                session.rollback()
                 continue
-        session.commit()
-        return {"status": "completed", "updated": updated, "scoped_user": user_id}
+
+        def _delete_list(dups: list[MediaFile]):
+            nonlocal deleted
+            if not dups or len(dups) < 2:
+                return
+            # Keep the newest by uploaded_at, delete others
+            dups_sorted = sorted(dups, key=lambda x: x.uploaded_at or 0, reverse=True)
+            _keep = dups_sorted[0]
+            for x in dups_sorted[1:]:
+                try:
+                    if not dry_run:
+                        session.delete(x)
+                    deleted += 1
+                except Exception:
+                    session.rollback()
+
+        # Deduplicate by checksum
+        for _uid, cmap in by_user_checksum.items():
+            for _cs, rows in cmap.items():
+                _delete_list(rows)
+
+        # Deduplicate exact duplicate file_path entries too
+        for _uid, pmap in by_user_path.items():
+            for _fp, rows in pmap.items():
+                _delete_list(rows)
+
+        if not dry_run:
+            session.commit()
+
+        return {
+            "status": "completed",
+            "deleted": deleted,
+            "examined": examined,
+            "dry_run": bool(dry_run),
+            "scoped_user": user_id,
+        }
     except Exception as e:
         session.rollback()
-        raise RuntimeError(f"Thumbnail regeneration failed: {e}") from e
+        raise RuntimeError(f"Deduplication failed: {e}") from e
     finally:
         session.close()

@@ -272,27 +272,29 @@ def compile_video_task(
                         base_upload, str(project.user_id), "thumbnails"
                     )
                     os.makedirs(thumbs_dir, exist_ok=True)
-                    thumb_name = f"compilation_{project.id}_{int(datetime.utcnow().timestamp())}.jpg"
-                    thumb_path = os.path.join(thumbs_dir, thumb_name)
-                    ffmpeg_bin = resolve_binary(app, "ffmpeg")
-                    subprocess.run(
-                        [
-                            ffmpeg_bin,
-                            "-y",
-                            "-ss",
-                            "1",
-                            "-i",
-                            final_output_path,
-                            "-frames:v",
-                            "1",
-                            "-vf",
-                            "scale=480:-1",
-                            thumb_path,
-                        ],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        check=True,
-                    )
+                    # Deterministic name based on final output filename
+                    stem = os.path.splitext(os.path.basename(final_output_path))[0]
+                    thumb_path = os.path.join(thumbs_dir, f"{stem}.jpg")
+                    if not os.path.exists(thumb_path):
+                        ffmpeg_bin = resolve_binary(app, "ffmpeg")
+                        subprocess.run(
+                            [
+                                ffmpeg_bin,
+                                "-y",
+                                "-ss",
+                                "1",
+                                "-i",
+                                final_output_path,
+                                "-frames:v",
+                                "1",
+                                "-vf",
+                                "scale=480:-1",
+                                thumb_path,
+                            ],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            check=True,
+                        )
                     media.thumbnail_path = thumb_path
                 except Exception:
                     pass
@@ -358,7 +360,7 @@ def compile_video_task(
         raise
 
 
-@celery_app.task(bind=True)
+@celery_app.task(bind=True, queue="celery")
 def download_clip_task(self, clip_id: int, source_url: str) -> dict[str, Any]:
     """
     Download a clip from external source using yt-dlp.
@@ -467,28 +469,30 @@ def download_clip_task(self, clip_id: int, source_url: str) -> dict[str, Any]:
                 base_upload, str(clip.project.user_id), "thumbnails"
             )
             os.makedirs(thumbs_dir, exist_ok=True)
-            thumb_name = f"clip_{clip.id}_{int(datetime.utcnow().timestamp())}.jpg"
-            thumb_path = os.path.join(thumbs_dir, thumb_name)
+            # Deterministic thumbnail name to avoid duplicates across restarts
+            stem = os.path.splitext(os.path.basename(output_path))[0]
+            thumb_path = os.path.join(thumbs_dir, f"{stem}.jpg")
 
-            ffmpeg_bin = resolve_binary(app, "ffmpeg")
-            subprocess.run(
-                [
-                    ffmpeg_bin,
-                    "-y",
-                    "-ss",
-                    "1",
-                    "-i",
-                    output_path,
-                    "-frames:v",
-                    "1",
-                    "-vf",
-                    "scale=480:-1",
-                    thumb_path,
-                ],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=True,
-            )
+            if not os.path.exists(thumb_path):
+                ffmpeg_bin = resolve_binary(app, "ffmpeg")
+                subprocess.run(
+                    [
+                        ffmpeg_bin,
+                        "-y",
+                        "-ss",
+                        "1",
+                        "-i",
+                        output_path,
+                        "-frames:v",
+                        "1",
+                        "-vf",
+                        "scale=480:-1",
+                        thumb_path,
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=True,
+                )
             media_file.thumbnail_path = thumb_path
         except Exception as thumb_err:
             # Do not fail the task if thumbnail creation fails
@@ -570,7 +574,7 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
 
     app = create_app()
     ffmpeg_bin = resolve_binary(app, "ffmpeg")
-    cmd = [ffmpeg_bin, "-i", input_path]
+    cmd = [ffmpeg_bin]
 
     # Add clip trimming if specified
     if clip.start_time is not None and clip.end_time is not None:
@@ -590,12 +594,9 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
     author = (clip.creator_name or "").strip() if clip.creator_name else ""
     game = (clip.game_name or "").strip() if clip.game_name else ""
     if font and (author or game) and overlay_enabled():
-        ov = build_overlay_filter(author=author, game=game, fontfile=font)
-        # Inject scale in front of overlay chain to normalize dimensions
-        if ov.startswith("[0:v]"):
-            ov = ov.replace("[0:v]", f"[0:v]{scale_filter},", 1)
-        # build_overlay_filter returns [0:v]... [v]; since we already provided -i, use filter_complex and map
-        cmd.extend(["-filter_complex", ov, "-map", "[v]", "-map", "0:a?"])
+        # Build the overlay chain, with optional avatar as a second input.
+        # Inputs must precede any filter definitions.
+        cmd.extend(["-i", input_path])
 
         # Try to add an author avatar to the left area of the overlay
         def _resolve_avatar_path() -> str | None:
@@ -603,13 +604,23 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
                 from app import create_app  # local import to avoid top-level coupling
 
                 app = create_app()
-                base_override = os.getenv("AVATARS_PATH")
+                # First preference: a cached path stored on the clip
+                try:
+                    if getattr(clip, "creator_avatar_path", None):
+                        if os.path.exists(clip.creator_avatar_path):
+                            return clip.creator_avatar_path
+                except Exception:
+                    pass
+                # Allow env or app.config override for avatars base directory
+                base_override = os.getenv("AVATARS_PATH") or app.config.get(
+                    "AVATARS_PATH"
+                )
                 base = (
                     base_override
                     if base_override
                     else os.path.join(app.instance_path, "assets")
                 )
-                # Specific per-author avatar: instance/assets/avatars/<sanitized>.png|jpg
+                # Specific per-author avatar: <base>/avatars/<sanitized>.png|jpg|jpeg|webp
                 if author:
                     import re as _re
 
@@ -618,9 +629,23 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
                         cand = os.path.join(base, "avatars", safe + ext)
                         if os.path.exists(cand):
                             return cand
-                # Default avatar placeholder
+                # Default avatar placeholder in base directory
                 for name in ("avatar.png", "avatar.jpg", "default_avatar.png"):
                     cand = os.path.join(base, name)
+                    if os.path.exists(cand):
+                        return cand
+                # Fallback to app static folder if present: app/static/avatars/
+                static_base = os.path.join(app.root_path, "static")
+                for ext in (".png", ".jpg", ".jpeg", ".webp"):
+                    if author:
+                        import re as _re
+
+                        safe = _re.sub(r"[^a-z0-9_-]+", "_", author.strip().lower())
+                        cand = os.path.join(static_base, "avatars", safe + ext)
+                        if os.path.exists(cand):
+                            return cand
+                for name in ("avatar.png", "avatar.jpg", "default_avatar.png"):
+                    cand = os.path.join(static_base, "avatars", name)
                     if os.path.exists(cand):
                         return cand
             except Exception:
@@ -629,22 +654,32 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
 
         avatar_path = _resolve_avatar_path()
 
+        ov = build_overlay_filter(author=author, game=game, fontfile=font)
+        # Inject scale in front of overlay chain to normalize dimensions
+        if ov.startswith("[0:v]"):
+            ov = ov.replace("[0:v]", f"[0:v]{scale_filter},", 1)
+
         if avatar_path:
-            # Add second input for avatar image
+            # Include avatar as a second input before filter_complex
             cmd.extend(["-i", avatar_path])
-            # We need to change the ending label of the text chain to [bg] and overlay avatar onto it
+            # Replace final [v] with [bg], then overlay avatar onto background
             text_chain = ov
             if text_chain.endswith("[v]"):
                 text_chain = text_chain[:-3] + "[bg]"
-            # Scale avatar to 128x128 and overlay at x=40, y=main_h-224 inside the bottom box area
-            full_chain = f"{text_chain};[1:v]scale=128:128[ava];[bg][ava]overlay=x=40:y=main_h-224[v]"
+            # Scale avatar to 128x128 and overlay near the left side of the box
+            # Show avatar only during the same window as the text/box (t=3..10) and raise ~30px
+            full_chain = (
+                f"{text_chain};"
+                f"[1:v]scale=128:128[ava];"
+                f"[bg][ava]overlay=x=40:y=main_h-254:enable='between(t,3,10)'[v]"
+            )
             cmd.extend(["-filter_complex", full_chain, "-map", "[v]", "-map", "0:a?"])
         else:
             # No avatar; use text-only overlay chain
             cmd.extend(["-filter_complex", ov, "-map", "[v]", "-map", "0:a?"])
     else:
         # No overlay; simple scale on video
-        cmd.extend(["-vf", scale_filter])
+        cmd.extend(["-i", input_path, "-vf", scale_filter])
 
     # Encoder args (NVENC preferred), audio args
     cmd.extend(encoder_args(ffmpeg_bin))

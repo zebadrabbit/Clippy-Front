@@ -9,6 +9,7 @@ from functools import wraps
 
 from flask import (
     Blueprint,
+    abort,
     current_app,
     flash,
     jsonify,
@@ -30,8 +31,9 @@ from app.models import (
     UserRole,
     db,
 )
+from app.tasks.celery_app import celery_app
 from app.tasks.media_maintenance import (
-    regenerate_thumbnails_task,
+    dedupe_media_task,
     reindex_media_task,
 )
 from app.version import get_changelog, get_version
@@ -191,7 +193,9 @@ def user_details(user_id):
     Returns:
         Response: Rendered user details template
     """
-    user = User.query.get_or_404(user_id)
+    user = db.session.get(User, user_id)
+    if not user:
+        return abort(404)
 
     # Get user statistics
     user_stats = {
@@ -243,7 +247,9 @@ def toggle_user_status(user_id):
     if user_id == current_user.id:
         return jsonify({"error": "Cannot deactivate your own account"}), 400
 
-    user = User.query.get_or_404(user_id)
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
 
     try:
         user.is_active = not user.is_active
@@ -284,7 +290,9 @@ def promote_user(user_id):
     if user_id == current_user.id:
         return jsonify({"error": "Cannot modify your own admin status"}), 400
 
-    user = User.query.get_or_404(user_id)
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
 
     try:
         if user.role == UserRole.ADMIN:
@@ -446,22 +454,102 @@ def logs():
 @login_required
 @admin_required
 def maintenance():
-    """Admin-only maintenance actions: reindex media and regenerate thumbnails."""
+    """Admin-only maintenance actions: reindex media and deduplicate entries."""
     if request.method == "POST":
         action = request.form.get("action")
         if action == "reindex":
-            regen = request.form.get("regen_thumbnails") == "1"
-            task = reindex_media_task.delay(regen)
+            task = reindex_media_task.delay(False)
             flash(
                 f"Started reindex task ({task.id}). Check Jobs in the UI to monitor.",
                 "info",
             )
-        elif action == "regen_thumbs":
+        elif action == "dedupe_media":
             user_id = request.form.get("user_id", type=int)
-            limit = request.form.get("limit", type=int)
-            task = regenerate_thumbnails_task.delay(user_id=user_id, limit=limit)
-            flash(f"Started thumbnail regeneration task ({task.id}).", "info")
+            dry_run = request.form.get("dry_run") == "1"
+            task = dedupe_media_task.delay(dry_run=dry_run, user_id=user_id)
+            flash(
+                f"Started media deduplication task ({task.id}). This keeps newest entries and removes duplicates.",
+                "warning",
+            )
         return redirect(url_for("admin.maintenance"))
 
     # GET: show simple form
     return render_template("admin/maintenance.html", title="Maintenance")
+
+
+@admin_bp.route("/workers")
+@login_required
+@admin_required
+def workers():
+    """Show Celery worker nodes and queues.
+
+    Uses Celery's inspect API to display connected workers, their active queues,
+    and basic runtime statistics. Useful when running remote GPU workers.
+    """
+    info = {
+        "stats": {},
+        "active": {},
+        "registered": {},
+        "scheduled": {},
+        "active_queues": {},
+        "errors": [],
+    }
+    try:
+        insp = celery_app.control.inspect(timeout=2)
+        info["stats"] = insp.stats() or {}
+        info["active"] = insp.active() or {}
+        info["registered"] = insp.registered() or {}
+        info["scheduled"] = insp.scheduled() or {}
+        info["active_queues"] = insp.active_queues() or {}
+    except Exception as e:
+        info["errors"].append(str(e))
+
+    # Normalize into a list of workers for easier rendering
+    workers_list = []
+    keys = set()
+    for d in (
+        info["stats"],
+        info["active"],
+        info["registered"],
+        info["scheduled"],
+        info["active_queues"],
+    ):
+        if isinstance(d, dict):
+            keys.update(d.keys())
+    for name in sorted(keys):
+        workers_list.append(
+            {
+                "name": name,
+                "stats": (info["stats"] or {}).get(name) or {},
+                "active": (info["active"] or {}).get(name) or [],
+                "registered": (info["registered"] or {}).get(name) or [],
+                "scheduled": (info["scheduled"] or {}).get(name) or [],
+                "queues": (info["active_queues"] or {}).get(name) or [],
+            }
+        )
+
+    return render_template(
+        "admin/workers.html",
+        title="Workers",
+        workers=workers_list,
+        raw=info,
+    )
+
+
+@admin_bp.route("/workers.json")
+@login_required
+@admin_required
+def workers_json():
+    """JSON view of Celery workers and queues."""
+    try:
+        insp = celery_app.control.inspect(timeout=2)
+        payload = {
+            "stats": insp.stats() or {},
+            "active": insp.active() or {},
+            "registered": insp.registered() or {},
+            "scheduled": insp.scheduled() or {},
+            "active_queues": insp.active_queues() or {},
+        }
+        return jsonify(payload)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502

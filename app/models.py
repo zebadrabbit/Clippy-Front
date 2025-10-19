@@ -4,6 +4,7 @@ Database models for Clippy application.
 This module contains all SQLAlchemy models defining the database schema
 for users, projects, media files, clips, and related entities.
 """
+import secrets
 from datetime import datetime
 from enum import Enum
 
@@ -91,6 +92,14 @@ class User(UserMixin, db.Model):
     discord_user_id = db.Column(db.String(100), unique=True)
     twitch_username = db.Column(db.String(100))
 
+    # Preferences
+    date_format = db.Column(
+        db.String(32),
+        default="auto",
+        nullable=False,
+        doc="Preferred date format: auto|mdy|dmy|ymd|long",
+    )
+
     # Relationships
     projects = db.relationship(
         "Project", backref="owner", lazy="dynamic", cascade="all, delete-orphan"
@@ -165,6 +174,8 @@ class Project(db.Model):
     __tablename__ = "projects"
 
     id = db.Column(db.Integer, primary_key=True)
+    # Short, opaque identifier for URL usage (non-sequential, URL-safe)
+    public_id = db.Column(db.String(32), unique=True, index=True)
     name = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text)
 
@@ -218,6 +229,14 @@ class Project(db.Model):
     def __repr__(self) -> str:
         return f"<Project {self.name}>"
 
+    @staticmethod
+    def generate_public_id() -> str:
+        """Generate a short, URL-safe opaque identifier.
+
+        12-16 chars from token_urlsafe provides ~72-96 bits of entropy.
+        """
+        return secrets.token_urlsafe(12)
+
 
 class MediaFile(db.Model):
     """
@@ -232,9 +251,13 @@ class MediaFile(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     filename = db.Column(db.String(255), nullable=False)
     original_filename = db.Column(db.String(255), nullable=False)
+    # Optional human description/title for library listing
+    description = db.Column(db.Text)
 
     # File metadata
     file_path = db.Column(db.String(500), nullable=False)
+    # Content checksum for dedupe/reuse (sha256 hex)
+    checksum = db.Column(db.String(64), index=True)
     file_size = db.Column(db.BigInteger, nullable=False)
     mime_type = db.Column(db.String(100), nullable=False)
     media_type = db.Column(db.Enum(MediaType), nullable=False)
@@ -308,6 +331,10 @@ class Clip(db.Model):
 
     # Optional enriched metadata for UI and rendering
     creator_name = db.Column(db.String(120))  # who clipped it / creator
+    creator_id = db.Column(db.String(64))  # platform user id (e.g., Twitch user id)
+    creator_avatar_path = db.Column(
+        db.String(500)
+    )  # cached avatar file path if downloaded
     game_name = db.Column(db.String(120))  # game title if available
     clip_created_at = db.Column(db.DateTime)  # when clip was created on platform
 

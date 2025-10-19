@@ -1,0 +1,401 @@
+/* Arrange step layout tweaks */
+#clips-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0.75rem;
+    align-content: start;
+}
+
+.clip-card .card-img-top {
+    height: 110px;
+    object-fit: cover;
+}
+/* Ensure clip cards stretch and place button at the bottom */
+.clip-card { display: flex; flex-direction: column; }
+.clip-card .card-body { display: flex; flex-direction: column; }
+.clip-card .card-body .btn { margin-top: auto; }
+
+/* Timeline uses card-style items */
+#timeline {
+    min-height: 160px;
+}
+
+.timeline-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.timeline-card {
+    cursor: move;
+}
+
+.timeline-card.dragging {
+    opacity: 0.6;
+}
+
+.timeline-drop-indicator {
+    height: 8px;
+    background: rgba(13, 110, 253, 0.35);
+    border-radius: 4px;
+    margin: 2px 0;
+    display: none;
+}
+
+.timeline-drop-indicator.active {
+    display: block;
+}
+
+/* Focal progress (renamed to chevron-*) and chevron steps */
+.chevron-progress {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 20px 10px;
+}
+
+.chevron-bar-wrap {
+    width: min(860px, 100%);
+    margin: 0 auto;
+}
+
+.chevron-bar {
+    position: relative;
+    height: 26px;
+    background: #1f2937;
+    border-radius: 999px;
+    overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.chevron-bar .fill {
+    position: absolute;
+    inset: 0;
+    width: 0%;
+    background: linear-gradient(90deg, #0d6efd 0%, #22c55e 50%, #9b59b6 100%);
+    transition: width 0.35s ease-in-out;
+}
+
+.chevron-label {
+    font-weight: 600;
+    font-size: 1.15rem;
+    color: #cbd5e1;
+    text-align: center;
+}
+
+.chevron-steps {
+    text-align: center;
+    width: 100%;
+}
+
+/* Chevron progress list styling (shared for inner and top wizard steps) */
+.chevron-steps ul.progress {
+    list-style: none;
+    margin: 0.5em auto;
+    padding: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    display: inline-block;
+}
+
+.chevron-steps ul.progress li {
+    background-color: #7e7e7e;
+    color: #fff;
+    display: inline-block;
+    line-height: 28px;
+    height: 28px;
+    min-width: 150px;
+    position: relative;
+    text-indent: 0.5em;
+    transition: min-width 0.5s;
+    font-size: 1rem;
+}
+
+.chevron-steps ul.progress li.active {
+    background-color: #dc9305;
+}
+
+.chevron-steps ul.progress li a {
+    padding: 0 0 0 6px;
+    color: #fff;
+    text-decoration: none;
+}
+
+/* step-check icons removed for cleaner alignment */
+
+.chevron-steps ul.progress li:after {
+    content: "";
+    position: absolute;
+    right: 100%;
+    margin-right: 0.5em;
+    width: 1.6em;
+    padding-top: 1.6em;
+    border: solid white;
+    z-index: 1;
+    transform: rotate(45deg);
+    border-bottom: 0;
+    border-left: 0;
+    box-shadow: 7px -7px 0 3px #7e7e7e;
+}
+
+.chevron-steps ul.progress li.active:after {
+    box-shadow: 8px -8px 0 3px #dc9305;
+}
+
+/* Top wizard chevrons container */
+.chevron-steps {
+    text-align: center;
+}
+
+.step-progress {
+    display: flex;
+    gap: 6px;
+    align-items: stretch;
+}
+
+.step-progress .step {
+    position: relative;
+    padding: 12px 18px 12px 22px;
+    background: #2a2f3a;
+    color: #cbd5e1;
+    font-size: 1.05rem;
+    display: flex;
+    align-items: center;
+}
+
+.step-progress .step + .step {
+    margin-left: 14px;
+}
+
+.step-progress .step:before {
+    content: "";
+    position: absolute;
+    left: -16px;
+    top: 0;
+    width: 0;
+    height: 0;
+    border-top: 28px solid transparent;
+    border-bottom: 28px solid transparent;
+    border-right: 16px solid #2a2f3a;
+}
+
+.step-progress .step:after {
+    content: "";
+    position: absolute;
+    right: -16px;
+    top: 0;
+    width: 0;
+    height: 0;
+    border-top: 28px solid transparent;
+    border-bottom: 28px solid transparent;
+    border-left: 16px solid #2a2f3a;
+}
+
+.step-progress .step:first-child:before {
+    display: none;
+}
+
+.step-progress .step.active {
+    background: #0d6efd;
+    color: #fff;
+}
+
+.step-progress .step.active:before {
+    border-right-color: #0d6efd;
+}
+
+.step-progress .step.active:after {
+    border-left-color: #0d6efd;
+}
+
+.step-progress .step.done {
+    background: #16a34a;
+    color: #fff;
+}
+
+.step-progress .step.done:before {
+    border-right-color: #16a34a;
+}
+
+.step-progress .step.done:after {
+    border-left-color: #16a34a;
+}
+
+.step-progress .step.error {
+    background: #dc3545;
+    color: #fff;
+}
+
+.step-progress .step.error:before {
+    border-right-color: #dc3545;
+}
+
+.step-progress .step.error:after {
+    border-left-color: #dc3545;
+}
+
+.step .icon {
+    margin-right: 10px;
+    display: inline-flex;
+    align-items: center;
+}
+
+/* Inner chevron list sizing to prevent clipping inside the bar */
+.chevron-bar {
+    height: 40px;
+    display: flex;
+    align-items: center;
+}
+
+.chevron-steps ul.progress li {
+    height: 32px;
+    line-height: 32px;
+    min-width: 160px;
+    font-size: 1.05rem;
+}
+
+.chevron-steps ul.progress li:after {
+    margin-right: 0.6em;
+    width: 1.9em;
+    padding-top: 1.9em;
+    box-shadow: 10px -10px 0 3px #7e7e7e;
+}
+
+.chevron-steps ul.progress li.active:after {
+    box-shadow: 10px -10px 0 3px #dc9305;
+}
+
+/* Final overrides to ensure top chevrons render taller and unclipped */
+.chevron-steps ul.progress {
+    height: 36px;
+}
+
+.chevron-steps ul.progress li {
+    height: 36px;
+    line-height: 36px;
+    min-width: 180px;
+    font-size: 1.05rem;
+    font-weight: 600;
+}
+
+.chevron-steps ul.progress li:after {
+    margin-right: 0; /* no gap between arrow and step */
+    width: 2.15em; /* slightly larger to overlap seam */
+    padding-top: 2.15em;
+    box-shadow: 10px -10px 0 3px #7e7e7e;
+    background-color: #7e7e7e;
+    border-width: 4px; /* thicker white dart */
+}
+
+.chevron-steps ul.progress li.active:after {
+    box-shadow: 12px -12px 0 3px #7e7e7e;
+    background-color: #7e7e7e;
+    border-width: 4px; /* thicker white dart */
+}
+
+/* Use active color for the next step's left wedge so it blends with the active step */
+/* default: no orange on active left wedge; apply orange tip only when explicitly desired */
+
+/* Hide the left-pointing wedge on the first item and round outer corners */
+.chevron-steps ul.progress li:first-child:after {
+    display: none;
+}
+
+.chevron-steps ul.progress li:first-child {
+    border-top-left-radius: 10px;
+    border-bottom-left-radius: 10px;
+    text-indent: 0.75em;
+}
+
+.chevron-steps ul.progress li:last-child {
+    border-top-right-radius: 10px;
+    border-bottom-right-radius: 10px;
+}
+
+/* Focal progress (renamed to chevron-*) and chevron steps */
+.chevron-progress { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.75rem; padding: 20px 10px; }
+.chevron-bar-wrap { width: min(860px, 100%); margin: 0 auto; }
+.chevron-bar { position: relative; height: 26px; background: #1f2937; border-radius: 999px; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }
+.chevron-bar .fill { position:absolute; inset:0; width:0%; background: linear-gradient(90deg, #0d6efd 0%, #22c55e 50%, #9b59b6 100%); transition: width .35s ease-in-out; }
+.chevron-label { font-weight:600; font-size: 1.15rem; color: #cbd5e1; text-align:center; }
+.chevron-steps { text-align:center; width:100%; }
+/* Chevron progress list styling (shared for inner and top wizard steps) */
+.chevron-steps ul.progress { list-style: none; margin: 0.5em auto; padding: 0; overflow:hidden; white-space:nowrap; display:inline-block; }
+.chevron-steps ul.progress li { background-color: #7e7e7e; color:#fff; display:inline-block; line-height: 28px; height: 28px; min-width: 150px; position: relative; text-indent:0.5em; transition:min-width 0.5s; font-size: 1rem; }
+
+.chevron-steps ul.progress li.active { background-color: #dc9305; }
+.chevron-steps ul.progress li a { padding: 0 0 0 6px; color: #FFF; text-decoration: none; }
+.chevron-steps ul.progress li .step-check { display: none; margin-right: 6px; vertical-align: -0.125em; }
+.chevron-steps ul.progress li.done .step-check { display: inline-block; }
+.chevron-steps ul.progress li:after { content:''; position:absolute; right:100%; margin-right:0.5em; width:1.6em; padding-top:1.6em; border:solid white; z-index:1; transform:rotate(45deg); border-bottom:0; border-left:0; box-shadow:7px -7px 0 3px  #7e7e7e }
+.chevron-steps ul.progress li.active:after { box-shadow:8px -8px 0 3px #dc9305; }
+
+/* Top wizard chevrons container */
+.chevron-steps { text-align:center; }
+.step-progress { display: flex; gap: 6px; align-items: stretch; }
+.step-progress .step { position: relative; padding: 12px 18px 12px 22px; background: #2a2f3a; color: #cbd5e1; font-size: 1.05rem; display: flex; align-items: center; }
+.step-progress .step + .step { margin-left: 14px; }
+.step-progress .step:before { content: ""; position: absolute; left: -16px; top: 0; width: 0; height: 0; border-top: 28px solid transparent; border-bottom: 28px solid transparent; border-right: 16px solid #2a2f3a; }
+.step-progress .step:after { content: ""; position: absolute; right: -16px; top: 0; width: 0; height: 0; border-top: 28px solid transparent; border-bottom: 28px solid transparent; border-left: 16px solid #2a2f3a; }
+.step-progress .step:first-child:before { display: none; }
+.step-progress .step.active { background: #0d6efd; color: #fff; }
+.step-progress .step.active:before { border-right-color: #0d6efd; }
+.step-progress .step.active:after { border-left-color: #0d6efd; }
+.step-progress .step.done { background: #16a34a; color: #fff; }
+.step-progress .step.done:before { border-right-color: #16a34a; }
+.step-progress .step.done:after { border-left-color: #16a34a; }
+.step-progress .step.error { background: #dc3545; color: #fff; }
+.step-progress .step.error:before { border-right-color: #dc3545; }
+.step-progress .step.error:after { border-left-color: #dc3545; }
+.step .icon { margin-right: 10px; display: inline-flex; align-items: center; }
+
+/* Inner chevron list sizing to prevent clipping inside the bar */
+.chevron-bar { height: 40px; display: flex; align-items: center; }
+.chevron-steps ul.progress li { height: 32px; line-height: 32px; min-width: 160px; font-size: 1.05rem; }
+.chevron-steps ul.progress li:after { margin-right: 0.6em; width: 1.9em; padding-top: 1.9em; box-shadow: 10px -10px 0 3px #7e7e7e; }
+.chevron-steps ul.progress li.active:after { box-shadow: 10px -10px 0 3px #dc9305; }
+
+/* Final overrides to ensure top chevrons render taller and unclipped */
+.chevron-steps ul.progress {
+  height: 36px;
+}
+.chevron-steps ul.progress li {
+  height: 36px;
+  line-height: 36px;
+  min-width: 180px;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+.chevron-steps ul.progress li:after {
+  margin-right: 0; /* no gap between arrow and step */
+  width: 2.15em; /* slightly larger to overlap seam */
+  padding-top: 2.15em;
+  box-shadow: 10px -10px 0 3px #7e7e7e;
+  background-color: #7e7e7e;
+  border-width: 8px; /* thicker white dart */
+}
+.chevron-steps ul.progress li.active:after {
+    box-shadow: 12px -12px 0 3px #7e7e7e; /* left divider grey */
+    background-color: #7e7e7e;
+    border-width: 8px; /* thicker white dart */
+}
+/* Right-facing orange tip: color the next step's left divider */
+.chevron-steps ul.progress li.active + li:after {
+    box-shadow: 12px -12px 0 3px #dc9305;
+    background-color: #dc9305;
+}
+/* No orange carryover onto the next step's left wedge */
+
+/* Hide the left-pointing wedge on the first item and round outer corners */
+.chevron-steps ul.progress li:first-child:after { display: none; }
+.chevron-steps ul.progress li:first-child {
+  border-top-left-radius: 10px;
+  border-bottom-left-radius: 10px;
+  text-indent: 0.75em;
+}
+.chevron-steps ul.progress li:last-child {
+  border-top-right-radius: 10px;
+  border-bottom-right-radius: 10px;
+}

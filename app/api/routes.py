@@ -9,9 +9,10 @@ from app.integrations.discord import extract_clip_urls, get_channel_messages
 from app.integrations.twitch import (
     get_clips as twitch_get_clips,
     get_user_id as twitch_get_user_id,
+    get_user_profile_image_url as twitch_get_user_profile_image_url,
 )
 from app.models import db, Clip, ProcessingJob, Project, ProjectStatus
-from app.tasks.background_tasks import example_long_task
+import os
 
 api_bp = Blueprint("api", __name__)
 
@@ -22,22 +23,7 @@ def health_check():
     return jsonify({"status": "healthy", "message": "Clippy API is running"})
 
 
-@api_bp.route("/tasks/start", methods=["POST"])
-def start_task():
-    """Start a background task."""
-    data = request.get_json() or {}
-    task_name = data.get("task_name", "default")
-
-    # Start background task
-    task = example_long_task.delay(task_name)
-
-    return jsonify(
-        {
-            "task_id": task.id,
-            "status": "started",
-            "message": f"Task {task_name} started",
-        }
-    )
+## Demo background task endpoint removed; no longer supported.
 
 
 @api_bp.route("/tasks/<task_id>", methods=["GET"])
@@ -159,8 +145,11 @@ def job_details_api(job_id: int):
     rd = job.result_data or {}
     project_name = None
     if job.project_id:
-        proj = Project.query.get(job.project_id)
-        project_name = proj.name if proj else None
+        try:
+            proj = db.session.get(Project, job.project_id)
+            project_name = proj.name if proj else None
+        except Exception:
+            project_name = None
 
     return jsonify(
         {
@@ -206,6 +195,12 @@ def create_project_api():
     max_clip_duration = int(data.get("max_clip_duration") or 30)
 
     try:
+        # Ensure project has an opaque public_id
+        pid = None
+        try:
+            pid = Project.generate_public_id()
+        except Exception:
+            pid = None
         project = Project(
             name=name,
             description=description,
@@ -213,6 +208,7 @@ def create_project_api():
             max_clip_duration=max_clip_duration,
             output_resolution=output_resolution,
             output_format=output_format,
+            public_id=pid,
         )
         db.session.add(project)
         db.session.commit()
@@ -331,6 +327,7 @@ def create_and_download_clips_api(project_id: int):
                 )
                 title = (obj.get("title") or f"Clip {order_base + idx + 1}").strip()
                 creator_name = obj.get("creator_name")
+                creator_id = obj.get("creator_id")
                 game_name = obj.get("game_name")
                 clip_created_at = obj.get("created_at")
                 # Attempt reuse
@@ -344,6 +341,7 @@ def create_and_download_clips_api(project_id: int):
                         project_id=project.id,
                         order_index=order_base + idx,
                         creator_name=creator_name,
+                        creator_id=creator_id,
                         game_name=game_name,
                         media_file_id=media_file.id,
                         is_downloaded=True,
@@ -379,6 +377,7 @@ def create_and_download_clips_api(project_id: int):
                         project_id=project.id,
                         order_index=order_base + idx,
                         creator_name=creator_name,
+                        creator_id=creator_id,
                         game_name=game_name,
                     )
                     if clip_created_at:
@@ -392,6 +391,54 @@ def create_and_download_clips_api(project_id: int):
                             pass
                     db.session.add(clip)
                     db.session.flush()
+                    # Try to resolve and cache creator avatar if creator_id present
+                    try:
+                        if creator_id:
+                            avatar_url = twitch_get_user_profile_image_url(creator_id)
+                            if avatar_url:
+                                # Cache under instance/assets/avatars/
+                                base_assets = os.path.join(
+                                    current_app.instance_path, "assets", "avatars"
+                                )
+                                os.makedirs(base_assets, exist_ok=True)
+                                import re as _re
+                                import secrets
+                                import httpx as _httpx
+
+                                safe = (
+                                    _re.sub(
+                                        r"[^a-z0-9_-]+",
+                                        "_",
+                                        (creator_name or "").lower().strip(),
+                                    )
+                                    or creator_id
+                                )
+                                # Keep original extension if possible
+                                ext = (
+                                    os.path.splitext(avatar_url.split("?")[0])[1]
+                                    or ".png"
+                                )
+                                out_path = os.path.join(
+                                    base_assets, f"{safe}_{secrets.token_hex(4)}{ext}"
+                                )
+                                try:
+                                    r = _httpx.get(avatar_url, timeout=10)
+                                    if r.status_code == 200 and r.content:
+                                        with open(out_path, "wb") as fp:
+                                            fp.write(r.content)
+                                        clip.creator_avatar_path = out_path
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+
+                    # Ensure the Clip row is visible to the Celery worker
+                    try:
+                        db.session.commit()
+                    except Exception:
+                        db.session.rollback()
+                        # If commit fails, skip enqueue to avoid orphan task
+                        continue
                     task = download_clip_task.delay(clip.id, url_s)
                     items.append({"clip_id": clip.id, "task_id": task.id, "url": url_s})
                     idx += 1
@@ -448,6 +495,12 @@ def create_and_download_clips_api(project_id: int):
                 )
                 db.session.add(clip)
                 db.session.flush()
+                # Commit before enqueuing so the worker can load the Clip row
+                try:
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+                    continue
                 task = download_clip_task.delay(clip.id, url_s)
                 items.append({"clip_id": clip.id, "task_id": task.id, "url": url_s})
                 idx += 1
@@ -528,9 +581,7 @@ def compile_project_api(project_id: int):
             except Exception:
                 valid_transition_ids = []
 
-        project.status = ProjectStatus.PROCESSING
-        db.session.commit()
-
+        # Attempt to enqueue first; only mark PROCESSING if enqueue succeeds
         task = compile_video_task.delay(
             project_id,
             intro_id=intro_id,
@@ -538,9 +589,16 @@ def compile_project_api(project_id: int):
             transition_ids=valid_transition_ids,
             randomize_transitions=randomize_transitions,
         )
+        # Enqueue succeeded; mark project as processing
+        project.status = ProjectStatus.PROCESSING
+        db.session.commit()
         return jsonify({"task_id": task.id, "status": "started"}), 202
     except Exception as e:
-        db.session.rollback()
+        # Ensure project remains not-processing on failure
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
         current_app.logger.error(f"API compile start failed: {e}")
         return jsonify({"error": "Failed to start compilation"}), 500
 
@@ -752,9 +810,11 @@ def get_project_details_api(project_id: int):
     download_url = None
     if project.output_filename:
         try:
-            download_url = url_for(
-                "main.download_compiled_output", project_id=project.id
-            )
+            if project.public_id:
+                download_url = url_for(
+                    "main.download_compiled_output_by_public",
+                    public_id=project.public_id,
+                )
         except Exception:
             download_url = None
 

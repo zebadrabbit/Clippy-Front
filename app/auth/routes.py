@@ -192,6 +192,8 @@ def profile():
             current_user.last_name = form.last_name.data or None
             current_user.discord_user_id = form.discord_user_id.data or None
             current_user.twitch_username = form.twitch_username.data or None
+            if form.date_format.data:
+                current_user.date_format = form.date_format.data
 
             db.session.commit()
 
@@ -214,6 +216,7 @@ def profile():
         form.last_name.data = current_user.last_name
         form.discord_user_id.data = current_user.discord_user_id
         form.twitch_username.data = current_user.twitch_username
+        form.date_format.data = current_user.date_format or "auto"
 
     return render_template("auth/profile.html", title="Profile", form=form)
 

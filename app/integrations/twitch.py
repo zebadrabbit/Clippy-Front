@@ -72,6 +72,26 @@ def get_user_id(username: str) -> str | None:
     return data[0].get("id")
 
 
+def get_user_profile_image_url(user_id: str) -> str | None:
+    """Fetch Twitch user's profile image URL by user_id.
+
+    Uses Helix /users?id= to retrieve profile_image_url.
+    """
+    if not user_id:
+        return None
+    url = f"{TWITCH_HELIX_BASE}/users"
+    params = {"id": user_id}
+    resp = httpx.get(url, headers=_client_headers(), params=params, timeout=15.0)
+    try:
+        resp.raise_for_status()
+        data = resp.json().get("data", [])
+        if not data:
+            return None
+        return data[0].get("profile_image_url")
+    except Exception:
+        return None
+
+
 @dataclass
 class Clip:
     id: str
@@ -82,6 +102,7 @@ class Clip:
     view_count: int
     thumbnail_url: str
     creator_name: str | None = None
+    creator_id: str | None = None
     game_id: str | None = None
     game_name: str | None = None
 
@@ -148,6 +169,7 @@ def get_clips(
                 view_count=int(c.get("view_count", 0)),
                 thumbnail_url=c.get("thumbnail_url"),
                 creator_name=c.get("creator_name"),
+                creator_id=c.get("creator_id"),
                 game_id=c.get("game_id"),
                 game_name=game_map.get(c.get("game_id")) if c.get("game_id") else None,
             )
