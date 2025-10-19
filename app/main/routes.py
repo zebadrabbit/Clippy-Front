@@ -961,8 +961,37 @@ def media_preview(media_id: int):
     if media.user_id != current_user.id and not current_user.is_admin():
         # Avoid leaking file paths
         return jsonify({"error": "Not authorized"}), 403
+
+    # Resolve path that may have been created on a different host/container
+    def _resolve_media_server_path(orig_path: str) -> str:
+        try:
+            if orig_path and os.path.exists(orig_path):
+                return orig_path
+            ap = (orig_path or "").strip()
+            if not ap:
+                return orig_path
+            alias_from = os.getenv("MEDIA_PATH_ALIAS_FROM")
+            alias_to = os.getenv("MEDIA_PATH_ALIAS_TO")
+            if alias_from and alias_to and ap.startswith(alias_from):
+                cand = alias_to + ap[len(alias_from) :]
+                if os.path.exists(cand):
+                    return cand
+            marker = "/instance/"
+            if marker in ap:
+                try:
+                    suffix = ap.split(marker, 1)[1]
+                    cand = os.path.join(current_app.instance_path, suffix)
+                    if os.path.exists(cand):
+                        return cand
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return orig_path
+
+    resolved_path = _resolve_media_server_path(media.file_path)
     try:
-        return send_file(media.file_path, mimetype=media.mime_type, conditional=True)
+        return send_file(resolved_path, mimetype=media.mime_type, conditional=True)
     except FileNotFoundError:
         return jsonify({"error": "File not found"}), 404
 
@@ -976,12 +1005,39 @@ def media_thumbnail(media_id: int):
         return jsonify({"error": "Not found"}), 404
     if media.user_id != current_user.id and not current_user.is_admin():
         return jsonify({"error": "Not authorized"}), 403
-    # If we have a thumbnail, serve it
-    if media.thumbnail_path and os.path.exists(media.thumbnail_path):
+
+    # Local resolver for media paths
+    def _resolve_media_server_path(orig_path: str) -> str:
         try:
-            return send_file(
-                media.thumbnail_path, mimetype="image/jpeg", conditional=True
-            )
+            if orig_path and os.path.exists(orig_path):
+                return orig_path
+            ap = (orig_path or "").strip()
+            if not ap:
+                return orig_path
+            alias_from = os.getenv("MEDIA_PATH_ALIAS_FROM")
+            alias_to = os.getenv("MEDIA_PATH_ALIAS_TO")
+            if alias_from and alias_to and ap.startswith(alias_from):
+                cand = alias_to + ap[len(alias_from) :]
+                if os.path.exists(cand):
+                    return cand
+            marker = "/instance/"
+            if marker in ap:
+                try:
+                    suffix = ap.split(marker, 1)[1]
+                    cand = os.path.join(current_app.instance_path, suffix)
+                    if os.path.exists(cand):
+                        return cand
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return orig_path
+
+    # If we have a thumbnail, serve it
+    thumb_path = _resolve_media_server_path(media.thumbnail_path or "")
+    if thumb_path and os.path.exists(thumb_path):
+        try:
+            return send_file(thumb_path, mimetype="image/jpeg", conditional=True)
         except FileNotFoundError:
             pass
     # Lazy-generate a thumbnail for videos on-demand
@@ -989,7 +1045,7 @@ def media_thumbnail(media_id: int):
         if (
             media.mime_type
             and media.mime_type.startswith("video")
-            and os.path.exists(media.file_path)
+            and os.path.exists(_resolve_media_server_path(media.file_path))
         ):
             base_upload = os.path.join(
                 current_app.instance_path, current_app.config["UPLOAD_FOLDER"]
@@ -1006,7 +1062,7 @@ def media_thumbnail(media_id: int):
                         "-ss",
                         "1",
                         "-i",
-                        media.file_path,
+                        _resolve_media_server_path(media.file_path),
                         "-frames:v",
                         "1",
                         "-vf",

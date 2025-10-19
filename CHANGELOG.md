@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed dev-only demo Celery task and `/api/tasks/start` endpoint; task status API remains for real jobs.
 - Added tests for opaque project URLs and compiled output preview/download with HTTP Range support.
 
+## [0.5.1] - 2025-10-19
+
+### Added
+- Cross-host media path resolution for previews and thumbnails: server now remaps paths created on remote workers using `MEDIA_PATH_ALIAS_FROM`/`MEDIA_PATH_ALIAS_TO` and automatic `instance/` suffix rebasing.
+- Docs: guidance for `TMPDIR=/app/instance/tmp` to keep temp files and final outputs on the same filesystem when using SMB/WSL2 shares (avoids EXDEV cross-device moves).
+
+### Changed
+- Celery queue docs clarified: three queues (`gpu`, `cpu`, `celery`) with enqueue priority `gpu > cpu > celery`.
+
+### Fixed
+- Media Library playback 404 for newly compiled output when the worker wrote a path not valid on the web server; preview and thumbnail routes now resolve correct local paths.
+
 ## [0.5.0] - 2025-10-19
 
 ### Added

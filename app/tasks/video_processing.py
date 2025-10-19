@@ -4,8 +4,10 @@ Video processing tasks for Clippy platform.
 This module contains Celery tasks for video compilation, clip downloading,
 and media processing using ffmpeg and yt-dlp.
 """
+import errno
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 from datetime import datetime
@@ -49,6 +51,48 @@ def get_db_session():
         # Create a new session for this task
         Session = scoped_session(sessionmaker(bind=db.engine))
         return Session()
+
+
+def _resolve_media_input_path(orig_path: str) -> str:
+    """Resolve a media input path that may have been created on a different host.
+
+    Handles two strategies:
+      1) Explicit env alias: MEDIA_PATH_ALIAS_FROM + MEDIA_PATH_ALIAS_TO
+         If orig_path startswith FROM, replace with TO and use if it exists.
+      2) Automatic instance path remap: if the path contains '/instance/',
+         rebuild path under this process's app.instance_path preserving the suffix.
+
+    Returns the first existing candidate, else the original path.
+    """
+    try:
+        if orig_path and os.path.exists(orig_path):
+            return orig_path
+        ap = (orig_path or "").strip()
+        if not ap:
+            return orig_path
+        # 1) Explicit alias
+        alias_from = os.getenv("MEDIA_PATH_ALIAS_FROM")
+        alias_to = os.getenv("MEDIA_PATH_ALIAS_TO")
+        if alias_from and alias_to and ap.startswith(alias_from):
+            cand = alias_to + ap[len(alias_from) :]
+            if os.path.exists(cand):
+                return cand
+        # 2) Automatic '/instance/' remap
+        marker = "/instance/"
+        if marker in ap:
+            try:
+                from app import create_app
+
+                app = create_app()
+                suffix = ap.split(marker, 1)[1]
+                cand = os.path.join(app.instance_path, suffix)
+                if os.path.exists(cand):
+                    return cand
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return orig_path
 
 
 @celery_app.task(bind=True)
@@ -566,7 +610,7 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
     if not clip.media_file:
         raise ValueError(f"Clip {clip.id} has no associated media file")
 
-    input_path = clip.media_file.file_path
+    input_path = _resolve_media_input_path(clip.media_file.file_path)
     output_path = os.path.join(temp_dir, f"clip_{clip.id}_processed.mp4")
 
     # Build ffmpeg command for clip processing with quality + overlay
@@ -925,6 +969,8 @@ def process_media_file(input_path: str, output_path: str, project: Project) -> N
     from app import create_app
 
     app = create_app()
+    # Normalize input path if coming from a different host
+    input_path = _resolve_media_input_path(input_path)
     ffmpeg_bin = resolve_binary(app, "ffmpeg")
     cmd = [ffmpeg_bin, "-i", input_path]
 
@@ -1045,8 +1091,16 @@ def save_final_video(temp_path: str, project: Project) -> str:
 
     final_path = os.path.join(output_dir, filename)
 
-    # Move file
-    os.rename(temp_path, final_path)
+    # Move file: prefer atomic replace; if cross-device (EXDEV), fall back to copy/move
+    try:
+        # os.replace is atomic on same filesystem and overwrites if target exists
+        os.replace(temp_path, final_path)
+    except OSError as e:
+        # 18 is EXDEV on Linux; fallback to shutil.move which copies across devices
+        if getattr(e, "errno", None) in (errno.EXDEV, 18):
+            shutil.move(temp_path, final_path)
+        else:
+            raise
 
     return final_path
 

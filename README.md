@@ -70,7 +70,7 @@ export YT_DLP_BINARY="$(pwd)/bin/yt-dlp"
 6) Initialize the database and admin user
 
 ```bash
-# Ensure your DATABASE_URL points to PostgreSQL (runtime uses Postgres; SQLite is test-only)
+# Ensure your DATABASE_URL points to PostgreSQL (runtime uses Postgres; SQLite is test-only outside pytest)
 # export DATABASE_URL=postgresql://postgres:postgres@localhost/clippy_front
 
 # Optionally create the database if it doesn't exist
@@ -110,6 +110,7 @@ Adjust via environment variables (see `.env.example`):
 - FFMPEG_BINARY, YT_DLP_BINARY (resolves local ./bin first if provided)
 - FFMPEG_DISABLE_NVENC (set to 1/true to force CPU encoding)
 - FFMPEG_NVENC_PRESET (override NVENC preset if supported by your ffmpeg)
+- TMPDIR (optional): set to `/app/instance/tmp` on workers bound to a network share to avoid EXDEV cross-device moves when saving final outputs.
 - RATELIMIT_DEFAULT/RATELIMIT_STORAGE_URL
 - UPLOAD_FOLDER, MAX_CONTENT_LENGTH
 - FLASK_HOST, FLASK_PORT, FLASK_DEBUG
@@ -127,6 +128,15 @@ Notes:
 - Tag editing and bulk operations (type change, delete, set tags)
 
 If a format isn't supported by the browser, the UI gracefully offers a direct file open. Consider transcoding inputs with ffmpeg for maximum compatibility.
+
+Cross-host paths: If a remote worker writes media paths that differ from the web server, set:
+
+```
+MEDIA_PATH_ALIAS_FROM=/app/instance/
+MEDIA_PATH_ALIAS_TO=/mnt/clippy/instance/
+```
+
+The server also auto-rebases any path containing `/instance/` under its own `instance_path` if that location exists on disk.
 
 ## Arrange and Compile
 
@@ -242,7 +252,17 @@ source venv/bin/activate
 celery -A app.tasks.celery_app worker -Q celery --loglevel=info
 ```
 
-Ensure both workers point to the same Redis broker/backends (CELERY_BROKER_URL, CELERY_RESULT_BACKEND) and can reach each other over the network. Compile jobs will automatically route to the GPU queue.
+Ensure both workers point to the same Redis broker/backends (CELERY_BROKER_URL, CELERY_RESULT_BACKEND) and can reach each other over the network.
+
+Queue routing:
+
+- The API enqueues compile jobs to the best available queue in priority order: `gpu > cpu > celery`.
+- Start your workers with the queues they should consume (e.g., `-Q gpu` on GPU host, `-Q cpu` or `-Q celery` elsewhere).
+
+Windows/WSL2 + network shares:
+
+- Bind the app's `instance/` directory from the Linux server into WSL2 using CIFS, then mount that into the container (`-v /mnt/clippy:/app/instance`).
+- Set `TMPDIR=/app/instance/tmp` on the worker to keep temp and final files on the same filesystem.
 
 ## Contributing
 

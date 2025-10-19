@@ -582,12 +582,45 @@ def compile_project_api(project_id: int):
                 valid_transition_ids = []
 
         # Attempt to enqueue first; only mark PROCESSING if enqueue succeeds
-        task = compile_video_task.delay(
-            project_id,
-            intro_id=intro_id,
-            outro_id=outro_id,
-            transition_ids=valid_transition_ids,
-            randomize_transitions=randomize_transitions,
+        # Explicitly route to the GPU queue when enabled to avoid default-queue fallback
+        # Queue selection priority: gpu > cpu > celery
+        # We'll inspect known workers for declared queues via Celery's inspect API.
+        # If inspect fails (e.g., permissions/network), fall back to USE_GPU_QUEUE flag.
+        queue_name = "celery"
+        try:
+            from app.tasks.celery_app import celery_app as _celery
+
+            i = _celery.control.inspect(timeout=1.0)
+            active_queues = set()
+            if i:
+                aq = i.active_queues() or {}
+                for _worker, queues in aq.items():
+                    for q in queues or []:
+                        qname = q.get("name") if isinstance(q, dict) else None
+                        if qname:
+                            active_queues.add(qname)
+            # Choose by priority if present
+            if "gpu" in active_queues:
+                queue_name = "gpu"
+            elif "cpu" in active_queues:
+                queue_name = "cpu"
+            else:
+                # Final fallback: respect USE_GPU_QUEUE flag if set
+                if bool(current_app.config.get("USE_GPU_QUEUE")):
+                    queue_name = "gpu"
+        except Exception:
+            # On any error, keep default behavior
+            if bool(current_app.config.get("USE_GPU_QUEUE")):
+                queue_name = "gpu"
+        task = compile_video_task.apply_async(
+            args=(project_id,),
+            kwargs={
+                "intro_id": intro_id,
+                "outro_id": outro_id,
+                "transition_ids": valid_transition_ids,
+                "randomize_transitions": randomize_transitions,
+            },
+            queue=queue_name,
         )
         # Enqueue succeeded; mark project as processing
         project.status = ProjectStatus.PROCESSING

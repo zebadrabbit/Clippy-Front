@@ -21,6 +21,7 @@ docker run --rm \
   -e CELERY_BROKER_URL=redis://host.docker.internal:6379/0 \
   -e CELERY_RESULT_BACKEND=redis://host.docker.internal:6379/0 \
   -e DATABASE_URL=postgresql://<user>:<pass>@host.docker.internal/clippy_front \
+  -e TMPDIR=/app/instance/tmp \
   -e USE_GPU_QUEUE=true \
   -v $(pwd)/instance:/app/instance \
   --name clippy-gpu-worker \
@@ -38,6 +39,7 @@ docker compose -f docker/docker-compose.gpu-worker.yml run --gpus all --name cli
 - FFmpeg is installed from Ubuntu packages; NVENC will be used automatically if available. The app will fall back to CPU encode if NVENC isn’t present.
 - Override concurrency/queues via env: `CELERY_CONCURRENCY=2`, `CELERY_QUEUES=gpu,celery`.
 - Ensure the web app and worker share the same database and broker.
+ - Queue priority at enqueue is `gpu > cpu > celery`; start your worker with the appropriate `-Q` list.
 
 ## Troubleshooting: Redis connection refused inside container
 
@@ -68,6 +70,7 @@ docker run --rm --gpus all \
   -e CELERY_BROKER_URL=redis://host.docker.internal:6379/0 \
   -e CELERY_RESULT_BACKEND=redis://host.docker.internal:6379/0 \
   -e REDIS_URL=redis://host.docker.internal:6379/0 \
+  -e TMPDIR=/app/instance/tmp \
   -v $(pwd)/instance:/app/instance \
   --name clippy-gpu-worker clippyfront-gpu-worker:latest
 ```
@@ -98,6 +101,20 @@ CELERY_BROKER_URL=redis://10.8.0.1:6379/0
 CELERY_RESULT_BACKEND=redis://10.8.0.1:6379/0
 REDIS_URL=redis://10.8.0.1:6379/0
 DATABASE_URL=postgresql://<user>:<pass>@10.8.0.1/clippy_front
+TMPDIR=/app/instance/tmp
 ```
 
 Note: The worker image sets FLASK_ENV=production, so DEV_DATABASE_URL is ignored. Always set DATABASE_URL explicitly for the worker.
+
+Path aliasing for previews (optional): if the worker writes file paths with a different root than the web server, set these on the web app to translate paths when serving previews/thumbnails:
+
+```
+MEDIA_PATH_ALIAS_FROM=/app/instance/
+MEDIA_PATH_ALIAS_TO=/mnt/clippy/instance/
+```
+
+Rebuild tip: if you recently changed code and still hit EXDEV or missing path resolutions, rebuild the worker image without cache:
+
+```
+docker build --no-cache -f docker/worker.Dockerfile -t clippyfront-gpu-worker:latest .
+```

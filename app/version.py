@@ -2,8 +2,8 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "0.5.0"
-__version_info__ = (0, 5, 0)
+__version__ = "0.5.1"
+__version_info__ = (0, 5, 1)
 
 # Version history tracking
 VERSION_HISTORY = {
@@ -25,6 +25,11 @@ VERSION_HISTORY = {
         "Runtime now standardizes on PostgreSQL (SQLite reserved for tests); app enforces Postgres when not testing; "
         "improved DB logging; added scripts/create_database.py to provision DB and scripts/health_check.py to verify DB/Redis connectivity; "
         "test stability fixes (Flask-Login init in TESTING, runtime schema updates disabled in tests); docs updated (README, GPU worker, WireGuard)."
+    ),
+    "0.5.1": (
+        "Media preview/thumbnail now resolve cross-host file paths (GPU worker → web server) via instance-path remap and MEDIA_PATH_ALIAS_FROM/TO; "
+        "added docs for TMPDIR=/app/instance/tmp to avoid EXDEV on network shares; clarified Celery queues (gpu,cpu,celery) and routing (gpu>cpu>celery); "
+        "minor docs refresh for WireGuard and GPU worker run examples."
     ),
 }
 

@@ -2,8 +2,6 @@
 Celery application configuration.
 """
 
-import logging
-
 from celery import Celery
 from kombu import Queue
 
@@ -13,17 +11,6 @@ from config.settings import Config
 def make_celery(app_name=__name__):
     """Create and configure Celery application."""
     config = Config()
-
-    logger = logging.getLogger("celery.config")
-    try:
-        logger.info(
-            "Initializing Celery with broker=%s backend=%s",
-            config.CELERY_BROKER_URL,
-            config.CELERY_RESULT_BACKEND,
-        )
-    except Exception:
-        # Avoid hard failure if logging misconfigured; continue startup
-        pass
 
     celery_app = Celery(
         app_name,
@@ -48,9 +35,11 @@ def make_celery(app_name=__name__):
         enable_utc=True,
         # Celery 6+ change: explicitly retry broker connections on startup
         broker_connection_retry_on_startup=True,
-        # Define queues: default 'celery' and a dedicated 'gpu' queue for heavy video tasks
+        # Define queues: default 'celery', a dedicated 'cpu' queue for CPU renders,
+        # and a 'gpu' queue for NVENC-capable workers
         task_queues=(
             Queue("celery"),
+            Queue("cpu"),
             Queue("gpu"),
         ),
         # Route compile tasks to the GPU queue by default
