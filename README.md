@@ -269,6 +269,17 @@ For full network and storage setup guides, see:
 - docs/wireguard.md — Secure cross-host networking over WireGuard
 - docs/samba-and-mounts.md — Sharing `instance/` via Samba; mounts for Windows/WSL2 and Linux
 
+Helper scripts:
+
+- scripts/wg_setup_server.sh — Initialize the WireGuard server (keys + service)
+- scripts/wg_add_client.sh — Create a client peer and emit a config
+- scripts/setup_samba_share.sh — Create a Samba share for `instance/`
+- scripts/bootstrap_infra.sh — One-shot orchestration of the above and prints worker run examples
+
+Compose example:
+
+- docker/docker-compose.gpu-worker.example.yml — Fill in VPN_HOST_IP and user credentials; ensure `/mnt/clippy` is mounted on the host.
+
 ## Contributing
 
 See CONTRIBUTING.md for guidelines.
