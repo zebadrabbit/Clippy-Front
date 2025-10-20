@@ -675,15 +675,21 @@ def system_info():
         "by_type": {},
     }
 
-    # Storage by media type
-    for media_type in ["intro", "outro", "transition", "clip"]:
+    # Storage by media type (use Enum members so PG enum comparison works)
+    media_types = [
+        MediaType.INTRO,
+        MediaType.OUTRO,
+        MediaType.TRANSITION,
+        MediaType.CLIP,
+    ]
+    for mt in media_types:
         size = (
             db.session.query(func.sum(MediaFile.file_size))
-            .filter(MediaFile.media_type == media_type)
+            .filter(MediaFile.media_type == mt)
             .scalar()
             or 0
         )
-        storage_stats["by_type"][media_type] = size / (1024 * 1024)  # Convert to MB
+        storage_stats["by_type"][mt.value] = size / (1024 * 1024)  # Convert to MB
 
     storage_stats["total_size_mb"] = storage_stats["total_size"] / (1024 * 1024)
 
