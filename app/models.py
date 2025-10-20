@@ -447,3 +447,35 @@ class ProcessingJob(db.Model):
 
     def __repr__(self) -> str:
         return f"<ProcessingJob {self.job_type} - {self.status}>"
+
+
+class SystemSetting(db.Model):
+    """
+    System-wide settings editable from the Admin UI.
+
+    These override app.config at runtime for a curated allowlist. Secrets should
+    remain in environment/.env and are not stored here.
+    """
+
+    __tablename__ = "system_settings"
+
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    value = db.Column(db.Text, nullable=False)
+    value_type = db.Column(
+        db.String(20),
+        nullable=False,
+        default="str",
+        doc="str|int|float|bool|json",
+    )
+    group = db.Column(db.String(50), nullable=True, index=True)
+    description = db.Column(db.Text)
+
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_by = db.Column(db.Integer, db.ForeignKey("users.id"))
+    updated_by_user = db.relationship(
+        "User", backref=db.backref("settings_updates", lazy="dynamic")
+    )
+
+    def __repr__(self) -> str:
+        return f"<SystemSetting {self.key}={self.value}>"

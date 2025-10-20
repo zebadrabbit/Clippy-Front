@@ -274,7 +274,7 @@ def init_extensions(app):
         app: Flask application instance
     """
     # Database
-    from app.models import db
+    from app.models import SystemSetting, db
 
     db.init_app(app)
 
@@ -420,6 +420,36 @@ def init_extensions(app):
                         "Applied users table runtime updates: %s",
                         ", ".join(s.text for s in user_statements),
                     )
+                # Create system_settings table if missing
+                try:
+                    existing_tables = set(insp.get_table_names())
+                    if "system_settings" not in existing_tables:
+                        with engine.begin() as conn:
+                            conn.execute(
+                                text(
+                                    """
+                                    CREATE TABLE system_settings (
+                                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                        key VARCHAR(100) UNIQUE NOT NULL,
+                                        value TEXT NOT NULL,
+                                        value_type VARCHAR(20) NOT NULL DEFAULT 'str',
+                                        "group" VARCHAR(50),
+                                        description TEXT,
+                                        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                                        updated_by INTEGER REFERENCES users(id)
+                                    )
+                                    """
+                                )
+                            )
+                        app.logger.info("Created system_settings table")
+                except Exception:
+                    # The above DDL is SQLite-friendly; for PostgreSQL, fall back to ORM create_all
+                    try:
+                        with app.app_context():
+                            db.create_all()
+                        app.logger.info("Ensured system_settings via ORM create_all")
+                    except Exception as e2:
+                        app.logger.warning(f"system_settings table ensure failed: {e2}")
         except Exception as e:
             # Log and proceed; migrations should handle in production
             app.logger.warning(f"Schema check/upgrade skipped or failed: {e}")
@@ -456,6 +486,56 @@ def init_extensions(app):
             return db.session.get(User, int(user_id))
         except Exception:
             return None
+
+    # Apply settings overrides (allowlist only)
+    try:
+        if not app.config.get("TESTING"):
+            with app.app_context():
+                allowed = {
+                    "RATELIMIT_ENABLED": "bool",
+                    "RATELIMIT_DEFAULT": "str",
+                    "FORCE_HTTPS": "bool",
+                    "AUTO_REINDEX_ON_STARTUP": "bool",
+                    "USE_GPU_QUEUE": "bool",
+                    "OUTPUT_VIDEO_QUALITY": "str",
+                    "FFMPEG_BINARY": "str",
+                    "YT_DLP_BINARY": "str",
+                }
+                rows = SystemSetting.query.filter(
+                    SystemSetting.key.in_(allowed.keys())
+                ).all()
+                for row in rows:
+                    vtype = (row.value_type or allowed.get(row.key) or "str").lower()
+                    raw = row.value
+                    val = raw
+                    if vtype == "bool":
+                        val = raw.strip().lower() in {"1", "true", "yes", "on"}
+                    elif vtype == "int":
+                        try:
+                            val = int(raw)
+                        except Exception:
+                            continue
+                    elif vtype == "float":
+                        try:
+                            val = float(raw)
+                        except Exception:
+                            continue
+                    elif vtype == "json":
+                        import json as _json
+
+                        try:
+                            val = _json.loads(raw)
+                        except Exception:
+                            continue
+                    app.config[row.key] = val
+                if rows:
+                    app.logger.info(
+                        "Applied %d system setting override(s): %s",
+                        len(rows),
+                        ", ".join(r.key for r in rows),
+                    )
+    except Exception as e:
+        app.logger.warning(f"Failed applying system settings: {e}")
 
 
 def register_blueprints(app):

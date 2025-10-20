@@ -29,6 +29,7 @@ from app.models import (
     ProcessingJob,
     Project,
     ProjectStatus,
+    SystemSetting,
     User,
     UserRole,
     db,
@@ -737,6 +738,157 @@ def logs():
             },
         ],
     )
+
+
+@admin_bp.route("/config", methods=["GET", "POST"])  # System configuration UI
+@login_required
+@admin_required
+def system_config():
+    """View and update system settings from the UI.
+
+    Only a curated allowlist of settings is exposed. Secrets (tokens/passwords)
+    must remain in environment variables or the .env file.
+    """
+    # Define editable settings groups
+    groups = {
+        "General": [
+            {"key": "OUTPUT_VIDEO_QUALITY", "type": "str", "label": "Output Quality"},
+            {"key": "USE_GPU_QUEUE", "type": "bool", "label": "Prefer GPU Queue"},
+        ],
+        "Security": [
+            {"key": "FORCE_HTTPS", "type": "bool", "label": "Force HTTPS"},
+        ],
+        "Rate Limiting": [
+            {
+                "key": "RATELIMIT_ENABLED",
+                "type": "bool",
+                "label": "Enable Rate Limiting",
+            },
+            {"key": "RATELIMIT_DEFAULT", "type": "str", "label": "Default Rate Limit"},
+        ],
+        "Binaries": [
+            {"key": "FFMPEG_BINARY", "type": "str", "label": "ffmpeg Binary"},
+            {"key": "YT_DLP_BINARY", "type": "str", "label": "yt-dlp Binary"},
+        ],
+        "Maintenance": [
+            {
+                "key": "AUTO_REINDEX_ON_STARTUP",
+                "type": "bool",
+                "label": "Auto Reindex on Startup",
+            },
+        ],
+    }
+
+    # Persist updates
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "save":
+            try:
+                changed = 0
+                for section, items in groups.items():
+                    for item in items:
+                        key = item["key"]
+                        typ = item["type"]
+                        form_key = f"setting_{key}"
+                        if typ == "bool":
+                            val = (
+                                "true"
+                                if request.form.get(form_key) in ("1", "on", "true")
+                                else "false"
+                            )
+                        else:
+                            val = (request.form.get(form_key) or "").strip()
+                        if val == "" and typ != "bool":
+                            # Skip empty clears to avoid nuking config by mistake
+                            continue
+                        row = SystemSetting.query.filter_by(key=key).first()
+                        if not row:
+                            row = SystemSetting(
+                                key=key,
+                                value=val,
+                                value_type=typ,
+                                group=section,
+                                updated_by=current_user.id,
+                            )
+                            db.session.add(row)
+                        else:
+                            row.value = val
+                            row.value_type = typ
+                            row.group = section
+                            row.updated_by = current_user.id
+                        changed += 1
+                db.session.commit()
+                flash("Settings saved.", "success")
+                # Inform admin a restart may be needed
+                flash(
+                    "Some changes require a server restart to take effect.", "warning"
+                )
+            except Exception as e:
+                db.session.rollback()
+                current_app.logger.error(f"Saving settings failed: {e}")
+                flash("Failed to save settings", "danger")
+            return redirect(url_for("admin.system_config"))
+        elif action in {"restart_web", "restart_workers"}:
+            # Trigger restart endpoints
+            return redirect(url_for("admin.restart", target=action.split("_")[1]))
+
+    # Load current values (prefer overrides, fallback to app.config)
+    current_values = {}
+    for _section, items in groups.items():
+        for item in items:
+            key = item["key"]
+            row = SystemSetting.query.filter_by(key=key).first()
+            if row:
+                current_values[key] = row.value
+            else:
+                current_values[key] = str(current_app.config.get(key, ""))
+
+    return render_template(
+        "admin/system_config.html",
+        title="System Configuration",
+        groups=groups,
+        values=current_values,
+    )
+
+
+@admin_bp.route("/restart/<target>", methods=["POST", "GET"])  # restart controls
+@login_required
+@admin_required
+def restart(target: str):
+    """Restart application or workers.
+
+    Implementation notes:
+    - Web restart: touch a known file to trigger process manager reload (e.g., systemd, gunicorn --reload)
+    - Workers: enqueue a shutdown broadcast via Celery control then rely on process manager to restart
+    """
+    target = target.lower()
+    msg = None
+    try:
+        if target in {"web", "app"}:
+            # Touch a file under instance dir as a simple trigger for reload setups
+            import os
+            import time
+
+            marker = os.path.join(current_app.instance_path, ".restart-web")
+            with open(marker, "a") as f:
+                f.write(str(time.time()))
+            msg = "Web restart marker created. If supervised (systemd/docker), it should restart or reload."
+        elif target in {"workers", "worker"}:
+            # Ask Celery workers to shutdown gracefully
+            try:
+                celery_app.control.broadcast("shutdown")
+                msg = "Sent shutdown broadcast to Celery workers. Ensure your process manager restarts them."
+            except Exception as e:
+                current_app.logger.warning(f"Worker restart broadcast failed: {e}")
+                msg = "Attempted to restart workers, but broadcast failed. Check logs."
+        else:
+            flash("Unknown restart target", "danger")
+            return redirect(url_for("admin.system_config"))
+        flash(msg or "Restart action invoked", "info")
+    except Exception as e:
+        current_app.logger.error(f"Restart action failed: {e}")
+        flash("Restart failed. Check server logs.", "danger")
+    return redirect(url_for("admin.system_config"))
 
 
 @admin_bp.route("/maintenance", methods=["GET", "POST"])
