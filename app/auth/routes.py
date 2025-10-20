@@ -281,6 +281,50 @@ def account_settings():
     return render_template("auth/account_settings.html", title="Account Settings")
 
 
+@auth_bp.route("/change-password", methods=["POST"])
+@login_required
+def change_password():
+    """Handle password change from Account Settings modal."""
+    current_pw = request.form.get("current_password", "")
+    new_pw = request.form.get("new_password", "")
+    confirm_pw = request.form.get("confirm_password", "")
+
+    # Basic validations
+    if not current_user.check_password(current_pw):
+        flash("Current password is incorrect.", "danger")
+        return redirect(url_for("auth.account_settings"))
+    if not new_pw or len(new_pw) < 8:
+        flash("New password must be at least 8 characters.", "warning")
+        return redirect(url_for("auth.account_settings"))
+    if new_pw != confirm_pw:
+        flash("New password and confirmation do not match.", "warning")
+        return redirect(url_for("auth.account_settings"))
+
+    try:
+        current_user.set_password(new_pw)
+        # Record timestamp if column exists
+        try:
+            from sqlalchemy import inspect as _inspect
+
+            insp = _inspect(db.engine)
+            cols = {c["name"] for c in insp.get_columns("users")}
+            if "password_changed_at" in cols:
+                current_user.password_changed_at = db.func.now()
+        except Exception:
+            # Non-fatal; proceed without timestamp
+            pass
+        db.session.commit()
+        flash("Your password has been changed.", "success")
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(
+            f"Password change failed for user {current_user.id}: {e}"
+        )
+        flash("Failed to change password. Please try again.", "danger")
+
+    return redirect(url_for("auth.account_settings"))
+
+
 @auth_bp.route("/connect/discord", methods=["POST"])
 @login_required
 def connect_discord():
