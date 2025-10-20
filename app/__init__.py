@@ -412,6 +412,13 @@ def init_extensions(app):
                             "ALTER TABLE users ADD COLUMN date_format VARCHAR(32) DEFAULT 'auto'"
                         )
                     )
+                if "password_changed_at" not in user_cols:
+                    # Track when user last changed password
+                    user_statements.append(
+                        text(
+                            "ALTER TABLE users ADD COLUMN password_changed_at TIMESTAMP"
+                        )
+                    )
                 if user_statements:
                     with engine.begin() as conn:
                         for stmt in user_statements:
