@@ -4,6 +4,7 @@ Admin panel routes for Clippy platform management.
 This module provides administrative functionality including user management,
 system monitoring, and platform configuration for admin users only.
 """
+import secrets
 from datetime import datetime, timedelta
 from functools import wraps
 
@@ -24,6 +25,7 @@ from sqlalchemy import func
 from app.models import (
     Clip,
     MediaFile,
+    MediaType,
     ProcessingJob,
     Project,
     ProjectStatus,
@@ -114,6 +116,33 @@ def dashboard():
     total_storage = db.session.query(func.sum(MediaFile.file_size)).scalar() or 0
     total_storage_mb = total_storage / (1024 * 1024)
 
+    # Celery workers snapshot (compact)
+    workers_info = []
+    try:
+        insp = celery_app.control.inspect(timeout=2)
+        aq = insp.active_queues() or {}
+        st = insp.stats() or {}
+        for name in sorted(set(list(aq.keys()) + list(st.keys()))):
+            queues = [q.get("name") for q in (aq.get(name) or [])]
+            workers_info.append(
+                {
+                    "name": name,
+                    "queues": queues,
+                    "pid": (st.get(name) or {}).get("pid"),
+                    "pool": (st.get(name) or {}).get("pool"),
+                }
+            )
+    except Exception:
+        workers_info = []
+
+    # DB quick stats for dashboard
+    db_stats = {
+        "users": stats["total_users"],
+        "projects": stats["total_projects"],
+        "media_files": MediaFile.query.count(),
+        "clips": Clip.query.count(),
+    }
+
     return render_template(
         "admin/dashboard.html",
         title="Admin Dashboard",
@@ -122,6 +151,8 @@ def dashboard():
         recent_users=recent_users,
         recent_projects=recent_projects,
         total_storage_mb=total_storage_mb,
+        db_stats=db_stats,
+        workers=workers_info,
         version=get_version(),
     )
 
@@ -180,6 +211,56 @@ def users():
     )
 
 
+@admin_bp.route("/users/create", methods=["GET", "POST"])
+@login_required
+@admin_required
+def user_create():
+    """Create a new user (admin-only)."""
+    if request.method == "POST":
+        username = (request.form.get("username") or "").strip()
+        email = (request.form.get("email") or "").strip()
+        password = request.form.get("password") or secrets.token_urlsafe(9)
+        role_val = request.form.get("role") or UserRole.USER.value
+        first_name = (request.form.get("first_name") or "").strip()
+        last_name = (request.form.get("last_name") or "").strip()
+        if not username or not email:
+            flash("Username and email are required", "danger")
+            return redirect(url_for("admin.user_create"))
+        if User.query.filter(
+            (User.username == username) | (User.email == email)
+        ).first():
+            flash("Username or email already exists", "danger")
+            return redirect(url_for("admin.user_create"))
+        try:
+            user = User(
+                username=username,
+                email=email,
+                role=UserRole(role_val)
+                if role_val in [r.value for r in UserRole]
+                else UserRole.USER,
+                first_name=first_name or None,
+                last_name=last_name or None,
+                is_active=True,
+            )
+            user.set_password(password)
+            db.session.add(user)
+            db.session.commit()
+            flash("User created successfully", "success")
+            # Show generated password one-time if admin didn't provide one
+            if not request.form.get("password"):
+                flash(f"Temporary password for {username}: {password}", "warning")
+            return redirect(url_for("admin.users"))
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"User create failed: {e}")
+            flash("Failed to create user", "danger")
+            return redirect(url_for("admin.user_create"))
+    # GET
+    return render_template(
+        "admin/user_create.html", title="Create User", user_roles=UserRole
+    )
+
+
 @admin_bp.route("/users/<int:user_id>")
 @login_required
 @admin_required
@@ -231,6 +312,40 @@ def user_details(user_id):
     )
 
 
+@admin_bp.route("/users/<int:user_id>/edit", methods=["GET", "POST"])
+@login_required
+@admin_required
+def user_edit(user_id):
+    """Edit user profile fields (admin-only)."""
+    user = db.session.get(User, user_id)
+    if not user:
+        return abort(404)
+    if request.method == "POST":
+        try:
+            user.email = (request.form.get("email") or user.email).strip()
+            user.first_name = (request.form.get("first_name") or "").strip() or None
+            user.last_name = (request.form.get("last_name") or "").strip() or None
+            role_val = request.form.get("role")
+            if role_val and role_val in [r.value for r in UserRole]:
+                user.role = UserRole(role_val)
+            is_active_val = request.form.get("is_active")
+            if is_active_val is not None:
+                user.is_active = is_active_val in ("1", "true", "on")
+            db.session.commit()
+            flash("User updated", "success")
+            return redirect(url_for("admin.user_details", user_id=user.id))
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"User update failed: {e}")
+            flash("Failed to update user", "danger")
+    return render_template(
+        "admin/user_edit.html",
+        title=f"Edit User: {user.username}",
+        user=user,
+        user_roles=UserRole,
+    )
+
+
 @admin_bp.route("/users/<int:user_id>/toggle-status", methods=["POST"])
 @login_required
 @admin_required
@@ -272,6 +387,78 @@ def toggle_user_status(user_id):
         db.session.rollback()
         current_app.logger.error(f"Error toggling user status: {str(e)}")
         return jsonify({"error": "Failed to update user status"}), 500
+
+
+@admin_bp.route("/users/<int:user_id>/reset-password", methods=["POST"])
+@login_required
+@admin_required
+def admin_reset_password(user_id):
+    """Reset a user's password; if not provided, generate a temp password and show it once."""
+    if user_id == current_user.id:
+        return jsonify({"error": "Cannot reset your own password here"}), 400
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    new_pw = request.form.get("new_password") or secrets.token_urlsafe(9)
+    try:
+        user.set_password(new_pw)
+        db.session.commit()
+        # Do not log passwords
+        return jsonify(
+            {
+                "success": True,
+                "generated": not bool(request.form.get("new_password")),
+                "temp_password": new_pw
+                if not request.form.get("new_password")
+                else None,
+            }
+        )
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Password reset failed: {e}")
+        return jsonify({"error": "Failed to reset password"}), 500
+
+
+@admin_bp.route("/users/<int:user_id>/resend-verification", methods=["POST"])
+@login_required
+@admin_required
+def resend_verification(user_id):
+    """Mark user as unverified and simulate a verification email being resent.
+
+    This endpoint does not send email by itself; integrate your mailer here.
+    """
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    try:
+        user.email_verified = False  # Mark as needing verification
+        db.session.commit()
+        current_app.logger.info(f"Verification email requested for user {user.id}")
+        return jsonify({"success": True})
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Resend verification failed: {e}")
+        return jsonify({"error": "Failed to mark verification"}), 500
+
+
+@admin_bp.route("/users/<int:user_id>/delete", methods=["POST"])
+@login_required
+@admin_required
+def user_delete(user_id):
+    """Delete a user and cascade related data; cannot delete self."""
+    if user_id == current_user.id:
+        return jsonify({"error": "Cannot delete your own account"}), 400
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    try:
+        db.session.delete(user)
+        db.session.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"User delete failed: {e}")
+        return jsonify({"error": "Failed to delete user"}), 500
 
 
 @admin_bp.route("/users/<int:user_id>/promote", methods=["POST"])
@@ -365,6 +552,102 @@ def projects():
         users_with_projects=users_with_projects,
         project_statuses=ProjectStatus,
     )
+
+
+@admin_bp.route("/projects/<int:project_id>/edit", methods=["GET", "POST"])
+@login_required
+@admin_required
+def project_edit(project_id: int):
+    """Edit a project's metadata and status; optionally reassign owner."""
+    project = db.session.get(Project, project_id)
+    if not project:
+        return abort(404)
+    if request.method == "POST":
+        try:
+            name = (request.form.get("name") or project.name).strip()
+            desc = (request.form.get("description") or "").strip()
+            status_val = request.form.get("status")
+            new_user_id = request.form.get("user_id", type=int)
+            project.name = name or project.name
+            project.description = desc or None
+            if status_val and status_val in [s.value for s in ProjectStatus]:
+                project.status = ProjectStatus(status_val)
+            if new_user_id and new_user_id != project.user_id:
+                # Reassign project owner
+                if db.session.get(User, new_user_id):
+                    project.user_id = new_user_id
+            db.session.commit()
+            flash("Project updated", "success")
+            return redirect(url_for("admin.projects"))
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Project update failed: {e}")
+            flash("Failed to update project", "danger")
+    # GET
+    users_all = User.query.order_by(User.username.asc()).all()
+    return render_template(
+        "admin/project_edit.html",
+        title=f"Edit Project: {project.name}",
+        project=project,
+        project_statuses=ProjectStatus,
+        users=users_all,
+    )
+
+
+@admin_bp.route("/projects/<int:project_id>/delete", methods=["POST"])
+@login_required
+@admin_required
+def project_delete(project_id: int):
+    """Delete a project and its associated resources (admin override)."""
+    project = db.session.get(Project, project_id)
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+    try:
+        # Remove compiled output if present
+        try:
+            if project.output_filename:
+                import os
+
+                compiled_path = os.path.join(
+                    current_app.instance_path, "compilations", project.output_filename
+                )
+                if os.path.exists(compiled_path):
+                    os.remove(compiled_path)
+        except Exception:
+            pass
+        # Detach reusable media and delete project-scoped media
+        removed = 0
+        preserved = 0
+        for m in list(project.media_files):
+            try:
+                if m.media_type in {
+                    MediaType.INTRO,
+                    MediaType.OUTRO,
+                    MediaType.TRANSITION,
+                }:
+                    m.project_id = None
+                    preserved += 1
+                    continue
+                import os
+
+                if m.file_path and os.path.exists(m.file_path):
+                    os.remove(m.file_path)
+                if m.thumbnail_path and os.path.exists(m.thumbnail_path):
+                    os.remove(m.thumbnail_path)
+                db.session.delete(m)
+                removed += 1
+            except Exception:
+                continue
+        # Delete clips
+        for c in list(project.clips):
+            db.session.delete(c)
+        db.session.delete(project)
+        db.session.commit()
+        return jsonify({"success": True, "removed": removed, "preserved": preserved})
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Project delete failed: {e}")
+        return jsonify({"error": "Failed to delete project"}), 500
 
 
 @admin_bp.route("/system")

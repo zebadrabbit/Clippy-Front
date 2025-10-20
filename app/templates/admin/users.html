@@ -2,7 +2,10 @@
 
 {% block content %}
 <div class="container py-4">
-  <h2 class="mb-3"><i class="bi bi-people"></i> Users</h2>
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h2 class="mb-0"><i class="bi bi-people"></i> Users</h2>
+    <a class="btn btn-success" href="{{ url_for('admin.user_create') }}">Create User</a>
+  </div>
   <form class="row g-2 mb-3" method="GET">
     <div class="col-auto">
       <select class="form-select" name="role">
@@ -31,7 +34,7 @@
     <table class="table table-dark table-striped align-middle">
       <thead>
         <tr>
-          <th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Joined</th>
+          <th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Joined</th><th></th>
         </tr>
       </thead>
       <tbody>
@@ -42,6 +45,7 @@
           <td>{{ u.role.name.title() }}</td>
           <td>{{ 'Active' if u.is_active else 'Inactive' }}</td>
           <td>{{ u.created_at.strftime('%Y-%m-%d') if u.created_at else '' }}</td>
+          <td class="text-end"><a class="btn btn-sm btn-primary" href="{{ url_for('admin.user_edit', user_id=u.id) }}">Edit</a></td>
         </tr>
         {% endfor %}
       </tbody>

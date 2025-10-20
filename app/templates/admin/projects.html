@@ -25,7 +25,7 @@
 
   <div class="table-responsive">
     <table class="table table-dark table-striped align-middle">
-      <thead><tr><th>Name</th><th>User</th><th>Status</th><th>Updated</th></tr></thead>
+      <thead><tr><th>Name</th><th>User</th><th>Status</th><th>Updated</th><th></th></tr></thead>
       <tbody>
         {% for p in projects %}
         <tr>
@@ -33,6 +33,7 @@
           <td>{{ p.owner.username }}</td>
           <td>{{ p.status.name.title() }}</td>
           <td>{{ p.updated_at.strftime('%Y-%m-%d') if p.updated_at else '' }}</td>
+          <td class="text-end"><a class="btn btn-sm btn-primary" href="{{ url_for('admin.project_edit', project_id=p.id) }}">Edit</a></td>
         </tr>
         {% endfor %}
       </tbody>
