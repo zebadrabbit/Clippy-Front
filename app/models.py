@@ -87,6 +87,7 @@ class User(UserMixin, db.Model):
     email_verified = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     last_login = db.Column(db.DateTime)
+    password_changed_at = db.Column(db.DateTime)
 
     # External service connections
     discord_user_id = db.Column(db.String(100), unique=True)
