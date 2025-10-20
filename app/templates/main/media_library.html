@@ -17,22 +17,30 @@
 
   <!-- Upload Zone (Dropzone) -->
   <div class="card mb-4">
-    <div class="card-header d-flex justify-content-between align-items-center">
+    <div class="card-header">
       <strong>Upload Media</strong>
-      <div class="d-flex gap-2 align-items-center">
-        <select id="dz-media-type" class="form-select form-select-sm" style="width:auto">
-          {% for t in media_types %}
-            <option value="{{ t.value }}">{{ t.name.title() }}</option>
-          {% endfor %}
-        </select>
-      </div>
     </div>
     <div class="card-body">
-      <form action="{{ url_for('main.media_upload') }}" class="dropzone" id="media-dropzone">
-        <div class="dz-message">Drop files here or click to upload</div>
-        <div class="dz-previews mt-3"></div>
-      </form>
-      <small class="text-muted">Images and videos are supported.</small>
+      <div class="row g-3 align-items-center">
+        <div class="col-lg-3">
+          <div class="mb-2"><span class="h4 mb-0 d-block">Media Type</span></div>
+          <select id="dz-media-type" class="form-select">
+            {% for t in media_types %}
+              {% if t.name in ('INTRO','OUTRO','TRANSITION') %}
+                <option value="{{ t.value }}">{{ t.name.title() }}</option>
+              {% endif %}
+            {% endfor %}
+          </select>
+          <div class="form-text">Choose how this upload will be categorized.</div>
+        </div>
+        <div class="col-lg-9">
+          <form action="{{ url_for('main.media_upload') }}" class="dropzone" id="media-dropzone">
+            <div class="dz-message">Drop files here or click to upload</div>
+            <div class="dz-previews mt-3"></div>
+          </form>
+          <small class="text-muted">Images and videos are supported.</small>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -85,12 +93,12 @@
         {% if m.mime_type.startswith('image') %}
           <img src="{{ url_for('main.media_preview', media_id=m.id) }}" class="card-img-top" alt="{{ m.original_filename }}">
         {% elif m.mime_type.startswith('video') %}
-          <button type="button" class="btn p-0 border-0 text-start w-100 video-open position-relative" data-id="{{ m.id }}" style="background:#0d1117;">
+          <button type="button" class="btn p-0 border-0 text-start w-100 video-open position-relative" data-id="{{ m.id }}" style="background: var(--bs-card-bg);">
             <img src="{{ url_for('main.media_thumbnail', media_id=m.id) }}" class="img-fluid" alt="{{ m.original_filename }}">
             <i class="bi bi-play-circle-fill position-absolute top-50 start-50 translate-middle" style="font-size:2.5rem; opacity:0.85;"></i>
           </button>
         {% else %}
-          <div class="card-img-top d-flex align-items-center justify-content-center" style="height:160px; background:#0d1117;">
+          <div class="card-img-top d-flex align-items-center justify-content-center" style="height:160px; background: var(--bs-card-bg);">
             <i class="bi bi-file-earmark-text" style="font-size:2rem;"></i>
           </div>
         {% endif %}

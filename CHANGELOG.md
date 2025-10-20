@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.6.0] - 2025-10-20
+
+### Added
+- Theme system with DB model and admin CRUD; dynamic `/theme.css` that maps theme colors to Bootstrap CSS variables.
+- Admin themes form supports native color inputs with live hex↔swatch synchronization (no external plugin).
+
+### Changed
+- Navbar updated to stacked icon+label style; centered layout with desktop search; aligned notifications and user menu to new style.
+- Media Library upload section redesigned: two-column layout with a large dashed Dropzone and a simplified “Media Type” chooser; auto-clears previews after upload.
+- Vendor colorpicker removed due to Bootstrap 5 compatibility issues; using native inputs for stability.
+- Theme activation and deletion flows: normal HTML posts redirect back to the list with flash messages; JSON reserved for AJAX.
+
+### Fixed
+- Deleting a theme no longer shows a JSON response; the page redirects with a success message.
 ## [0.5.2] - 2025-10-19
 
 ### Added

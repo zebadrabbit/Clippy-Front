@@ -27,7 +27,9 @@
     acceptedFiles: 'image/*,video/*',
     parallelUploads: 2,
     previewsContainer: dzEl.querySelector('.dz-previews'),
-    addRemoveLinks: true,
+    addRemoveLinks: false,
+    createImageThumbnails: false,
+    previewTemplate: '<div></div>',
     init: function() {
       this.on('sending', function(file, xhr, formData) {
         formData.append('media_type', mediaTypeSel.value || 'clip');
@@ -51,6 +53,8 @@
           grid = document.getElementById('media-grid') || newGrid;
         }
         if (grid && col) { grid.prepend(col); attachCardHandlers(col); updateBulkBar(); }
+        // Clear Dropzone preview/icon and reset state for a clean area
+        try { dz.removeFile(file); } catch (_) {}
       });
     }
   });
@@ -62,8 +66,8 @@
     const selWrap = document.createElement('div'); selWrap.className = 'position-absolute top-0 start-0 p-2'; selWrap.innerHTML = '<input class="form-check-input media-select" type="checkbox" value="' + item.id + '">'; card.appendChild(selWrap);
     let mediaHtml = '';
     if ((item.mime||'').startsWith('image')) mediaHtml = '<img src="' + item.preview_url + '" class="card-img-top" alt="' + escapeHtml(card.dataset.name) + '">';
-    else if ((item.mime||'').startsWith('video')) mediaHtml = '<button type="button" class="btn p-0 border-0 text-start w-100 video-open position-relative" data-id="' + item.id + '" style="background:#0d1117;"><img src="' + THUMB_URL_TPL.replace('0', item.id) + '" class="img-fluid" alt="' + escapeHtml(card.dataset.name) + '"><i class="bi bi-play-circle-fill position-absolute top-50 start-50 translate-middle" style="font-size:2.5rem; opacity:0.85;"></i></button>';
-    else mediaHtml = '<div class="card-img-top d-flex align-items-center justify-content-center" style="height:160px; background:#0d1117;"><i class="bi bi-file-earmark-text" style="font-size:2rem;"></i></div>';
+  else if ((item.mime||'').startsWith('video')) mediaHtml = '<button type="button" class="btn p-0 border-0 text-start w-100 video-open position-relative" data-id="' + item.id + '" style="background: var(--bs-card-bg);"><img src="' + THUMB_URL_TPL.replace('0', item.id) + '" class="img-fluid" alt="' + escapeHtml(card.dataset.name) + '"><i class="bi bi-play-circle-fill position-absolute top-50 start-50 translate-middle" style="font-size:2.5rem; opacity:0.85;"></i></button>';
+  else mediaHtml = '<div class="card-img-top d-flex align-items-center justify-content-center" style="height:160px; background: var(--bs-card-bg);"><i class="bi bi-file-earmark-text" style="font-size:2rem;"></i></div>';
     card.insertAdjacentHTML('beforeend', mediaHtml);
     const body = document.createElement('div'); body.className = 'card-body';
     body.innerHTML = '<div class="fw-semibold text-truncate" title="' + escapeHtml(card.dataset.name) + '">' + escapeHtml(card.dataset.name) + '</div><small class="text-muted">' + (item.type || '') + '</small>';

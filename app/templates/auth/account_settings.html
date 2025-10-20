@@ -1,26 +1,12 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="container">
+<div class="container py-4">
     <div class="row">
         <!-- Sidebar -->
         <div class="col-md-3">
-            <div class="card">
-                <div class="card-header">
-                    <h6 class="mb-0">
-                        <i class="bi bi-person-circle"></i>
-                        Account
-                    </h6>
-                </div>
-                <div class="list-group list-group-flush">
-                    <a href="{{ url_for('auth.profile') }}" class="list-group-item list-group-item-action">
-                        <i class="bi bi-person"></i> Profile
-                    </a>
-                    <a href="{{ url_for('auth.account_settings') }}" class="list-group-item list-group-item-action active">
-                        <i class="bi bi-gear"></i> Settings
-                    </a>
-                </div>
-            </div>
+            {% set active = 'settings' %}
+            {% include 'auth/_account_sidebar.html' with context %}
         </div>
 
         <!-- Main Content -->

@@ -1,32 +1,12 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="container">
+<div class="container py-4">
     <div class="row">
         <!-- Sidebar -->
         <div class="col-md-3">
-            <div class="card">
-                <div class="card-header">
-                    <h6 class="mb-0">
-                        <i class="bi bi-person-circle"></i>
-                        Account
-                    </h6>
-                </div>
-                <div class="list-group list-group-flush">
-                    <a href="{{ url_for('auth.profile') }}" class="list-group-item list-group-item-action active">
-                        <i class="bi bi-person"></i> Profile
-                    </a>
-                    <a href="{{ url_for('auth.account_settings') }}" class="list-group-item list-group-item-action">
-                        <i class="bi bi-gear"></i> Settings
-                    </a>
-                    <a href="#" class="list-group-item list-group-item-action">
-                        <i class="bi bi-shield-check"></i> Security
-                    </a>
-                    <a href="#" class="list-group-item list-group-item-action">
-                        <i class="bi bi-bell"></i> Notifications
-                    </a>
-                </div>
-            </div>
+            {% set active = 'profile' %}
+            {% include 'auth/_account_sidebar.html' with context %}
         </div>
 
         <!-- Main Content -->
@@ -45,10 +25,22 @@
                     <!-- User Info Summary -->
                     <div class="row mb-4">
                         <div class="col-md-2">
-                            <div class="bg-primary rounded-circle d-flex align-items-center justify-content-center"
-                                 style="width: 80px; height: 80px; font-size: 2rem; color: white;">
-                                {{ current_user.username[0].upper() }}
-                            </div>
+                            {% if current_user.profile_image_path %}
+                                <img src="{{ url_for('auth.profile_image') }}" alt="Profile image" class="rounded-circle mb-2" style="width:80px;height:80px;object-fit:cover;">
+                                <form method="POST" action="{{ url_for('auth.remove_profile_image') }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger w-100">Remove</button>
+                                </form>
+                            {% else %}
+                                <div class="bg-primary rounded-circle d-flex align-items-center justify-content-center mb-2" style="width: 80px; height: 80px; font-size: 2rem; color: white;">
+                                    {{ current_user.username[0].upper() }}
+                                </div>
+                                <form method="POST" action="{{ url_for('auth.upload_profile_image') }}" enctype="multipart/form-data">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <input class="form-control form-control-sm mb-2" type="file" name="file" accept="image/*" required>
+                                    <button type="submit" class="btn btn-sm btn-outline-primary w-100">Upload</button>
+                                </form>
+                            {% endif %}
                         </div>
                         <div class="col-md-10">
                             <h4>{{ current_user.get_display_name() }}</h4>

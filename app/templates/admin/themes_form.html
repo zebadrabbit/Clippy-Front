@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="row">
+    <h2 class="mb-3"><i class="bi bi-gear"></i> Admin Dashboard</h2>
+    <div class="col-12 col-lg-3 mb-3 mb-lg-0">
+      {% set active_page = 'themes' %}
+      {% include 'admin/_includes/sidebar.html' with context %}
+    </div>
+    <div class="col-12 col-lg-9">
+      <h3 class="mb-3">{{ 'Edit Theme' if theme else 'Create Theme' }}</h3>
+  <form method="POST" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row">
+      <div class="col-md-6">
+        <div class="card mb-3">
+          <div class="card-header">Details</div>
+          <div class="card-body">
+            <div class="mb-3">
+              <label class="form-label">Name</label>
+              <input class="form-control" name="name" value="{{ theme.name if theme else '' }}" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Description</label>
+              <textarea class="form-control" name="description" rows="2">{{ theme.description if theme else '' }}</textarea>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Theme Mode</label>
+              {% set mode = theme.mode if theme and theme.mode else 'auto' %}
+              <select class="form-select" name="mode">
+                <option value="auto" {% if mode=='auto' %}selected{% endif %}>Auto (based on background)</option>
+                <option value="light" {% if mode=='light' %}selected{% endif %}>Light</option>
+                <option value="dark" {% if mode=='dark' %}selected{% endif %}>Dark</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="card mb-3">
+          <div class="card-header">Assets</div>
+          <div class="card-body">
+            <div class="mb-3">
+              <label class="form-label">Logo</label>
+              <input class="form-control" type="file" name="logo" accept="image/*">
+              {% if theme and theme.logo_path %}
+              <small class="text-muted">Current: {{ theme.logo_path }}</small>
+              {% endif %}
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Favicon</label>
+              <input class="form-control" type="file" name="favicon" accept="image/x-icon,image/png">
+              {% if theme and theme.favicon_path %}
+              <small class="text-muted">Current: {{ theme.favicon_path }}</small>
+              {% endif %}
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Watermark</label>
+              <input class="form-control" type="file" name="watermark" accept="image/*">
+              {% if theme and theme.watermark_path %}
+              <small class="text-muted">Current: {{ theme.watermark_path }}</small>
+              {% endif %}
+            </div>
+            <div class="row">
+              <div class="col-md-6 mb-3">
+                <label class="form-label">Watermark Opacity (0-1)</label>
+                <input class="form-control" type="number" name="watermark_opacity" step="0.05" min="0" max="1" value="{{ theme.watermark_opacity if theme else 0.1 }}">
+              </div>
+              <div class="col-md-6 mb-3">
+                <label class="form-label">Watermark Position</label>
+                <select class="form-select" name="watermark_position">
+                  {% set pos = theme.watermark_position if theme else 'bottom-right' %}
+                  {% for p in ['top-left','top-right','bottom-left','bottom-right','center'] %}
+                  <option value="{{ p }}" {% if pos==p %}selected{% endif %}>{{ p }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card mb-3">
+          <div class="card-header">Colors</div>
+          <div class="card-body">
+            {% macro color_input(label, name, default, thm) -%}
+            {% set val = (thm|attr(name)) if thm else default %}
+            <div class="row align-items-center mb-3">
+              <div class="col-5"><label class="form-label mb-0" for="color-{{ name }}">{{ label }}</label></div>
+              <div class="col-4">
+                <input class="form-control color-input" id="color-{{ name }}" type="color" name="{{ name }}" value="{{ val }}">
+              </div>
+              <div class="col-3">
+                <input class="form-control color-text-input" type="text" name="{{ name }}_text" value="{{ val }}" placeholder="#RRGGBB" data-target-name="{{ name }}">
+              </div>
+            </div>
+            {%- endmacro %}
+            {{ color_input('Primary', 'color_primary', '#0d6efd', theme) }}
+            {{ color_input('Secondary', 'color_secondary', '#6c757d', theme) }}
+            {{ color_input('Accent', 'color_accent', '#6610f2', theme) }}
+            {{ color_input('Background', 'color_background', '#121212', theme) }}
+            {{ color_input('Surface', 'color_surface', '#1e1e1e', theme) }}
+            {{ color_input('Text', 'color_text', '#e9ecef', theme) }}
+            {{ color_input('Muted', 'color_muted', '#adb5bd', theme) }}
+            {{ color_input('Navbar BG', 'navbar_bg', '#212529', theme) }}
+            {{ color_input('Navbar Text', 'navbar_text', '#ffffff', theme) }}
+            <hr>
+            <p class="text-muted small mb-2">Optional: fine-tune focus/outline colors for inputs and buttons.</p>
+            {{ color_input('Outline (Focus Ring)', 'outline_color', (theme.color_accent if theme else '#6610f2'), theme) }}
+          </div>
+        </div>
+      </div>
+    </div>
+      <div class="d-flex justify-content-end gap-2">
+        <a class="btn btn-secondary" href="{{ url_for('admin.themes_list') }}">Cancel</a>
+        <button class="btn btn-primary" type="submit">Save</button>
+      </div>
+    </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script>
+    (function(){
+      function normalizeHex(val){
+        if (!val) return null;
+        var s = String(val).trim();
+        if (s[0] !== '#') s = '#' + s;
+        var m3 = /^#([0-9a-fA-F]{3})$/;
+        var m6 = /^#([0-9a-fA-F]{6})$/;
+        if (m6.test(s)) return s.toLowerCase();
+        var m = s.match(m3);
+        if (m){
+          var c = m[1];
+          return ('#' + c[0]+c[0] + c[1]+c[1] + c[2]+c[2]).toLowerCase();
+        }
+        return null;
+      }
+      function bindSync(row){
+        var text = row.querySelector('.color-text-input');
+        var colorName = text && text.getAttribute('data-target-name');
+        var color = colorName && document.getElementById('color-' + colorName);
+        if (!text || !color) return;
+        // When typing in text field, update color input live if valid
+        text.addEventListener('input', function(){
+          var norm = normalizeHex(text.value);
+          if (norm){
+            color.value = norm;
+            text.classList.remove('is-invalid');
+          } else {
+            text.classList.add('is-invalid');
+          }
+        });
+        // When using color input, reflect into text field
+        color.addEventListener('input', function(){
+          text.value = color.value;
+          text.classList.remove('is-invalid');
+        });
+      }
+      document.querySelectorAll('.card .card-header + .card-body .row.align-items-center').forEach(bindSync);
+    })();
+  </script>
+{% endblock %}

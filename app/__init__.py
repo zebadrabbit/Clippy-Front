@@ -419,6 +419,12 @@ def init_extensions(app):
                             "ALTER TABLE users ADD COLUMN password_changed_at TIMESTAMP"
                         )
                     )
+                if "profile_image_path" not in user_cols:
+                    user_statements.append(
+                        text(
+                            "ALTER TABLE users ADD COLUMN profile_image_path VARCHAR(500)"
+                        )
+                    )
                 if user_statements:
                     with engine.begin() as conn:
                         for stmt in user_statements:
@@ -457,6 +463,61 @@ def init_extensions(app):
                         app.logger.info("Ensured system_settings via ORM create_all")
                     except Exception as e2:
                         app.logger.warning(f"system_settings table ensure failed: {e2}")
+
+                # Ensure themes table exists (safe creation via ORM if needed)
+                try:
+                    existing_tables = set(insp.get_table_names())
+                    if "themes" not in existing_tables:
+                        with app.app_context():
+                            db.create_all()
+                        app.logger.info("Ensured themes table via ORM create_all")
+                    else:
+                        # Additive columns for themes if missing (works for SQLite/Postgres)
+                        theme_cols = {c["name"] for c in insp.get_columns("themes")}
+                        add_theme_stmts = []
+
+                        def _add(colspec: str):
+                            add_theme_stmts.append(
+                                text(f"ALTER TABLE themes ADD COLUMN {colspec}")
+                            )
+
+                        if "description" not in theme_cols:
+                            _add("description TEXT")
+                        if "is_active" not in theme_cols:
+                            _add("is_active BOOLEAN DEFAULT 0 NOT NULL")
+                        for col in (
+                            "color_primary VARCHAR(20)",
+                            "color_secondary VARCHAR(20)",
+                            "color_accent VARCHAR(20)",
+                            "color_background VARCHAR(20)",
+                            "color_surface VARCHAR(20)",
+                            "color_text VARCHAR(20)",
+                            "color_muted VARCHAR(20)",
+                            "navbar_bg VARCHAR(20)",
+                            "navbar_text VARCHAR(20)",
+                            "logo_path VARCHAR(500)",
+                            "favicon_path VARCHAR(500)",
+                            "watermark_path VARCHAR(500)",
+                            "watermark_opacity FLOAT",
+                            "watermark_position VARCHAR(32)",
+                            "updated_at DATETIME",
+                            "updated_by INTEGER",
+                            "mode VARCHAR(10)",
+                        ):
+                            # extract name before first space
+                            cname = col.split(" ", 1)[0]
+                            if cname not in theme_cols:
+                                _add(col)
+                        if add_theme_stmts:
+                            with engine.begin() as conn:
+                                for stmt in add_theme_stmts:
+                                    conn.execute(stmt)
+                            app.logger.info(
+                                "Applied runtime theme schema updates: %s",
+                                ", ".join(s.text for s in add_theme_stmts),
+                            )
+                except Exception as e:
+                    app.logger.warning(f"Themes table ensure failed/skipped: {e}")
         except Exception as e:
             # Log and proceed; migrations should handle in production
             app.logger.warning(f"Schema check/upgrade skipped or failed: {e}")
@@ -617,6 +678,57 @@ def register_template_filters(app: Flask) -> None:
                 return 0
 
     app.jinja_env.filters["safe_count"] = safe_count
+
+    @app.context_processor
+    def inject_active_theme():
+        """Provide active theme and CSS variables to all templates."""
+        try:
+            from app.models import Theme
+
+            theme = Theme.query.filter_by(is_active=True).first()
+        except Exception:
+            theme = None
+        css_vars = theme.as_css_vars() if theme else {}
+
+        # Heuristic to choose Bootstrap theme mode (light/dark) based on background color
+        def _hex_to_rgb(hex_color: str):
+            h = (hex_color or "").lstrip("#")
+            if len(h) in (3, 4):
+                h = "".join([c * 2 for c in h[:3]])
+            if len(h) >= 6:
+                try:
+                    return tuple(int(h[i : i + 2], 16) for i in (0, 2, 4))
+                except Exception:
+                    return (18, 18, 18)
+            return (18, 18, 18)
+
+        def _luminance(rgb):
+            r, g, b = (x / 255.0 for x in rgb)
+            # relative luminance approximation
+            return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+        bg_hex = None
+        if theme and getattr(theme, "color_background", None):
+            bg_hex = theme.color_background
+        else:
+            bg_hex = "#121212"
+        lum = _luminance(_hex_to_rgb(bg_hex))
+        # Start with heuristic, then override with explicit theme.mode if provided
+        bs_theme_mode = "light" if lum >= 0.5 else "dark"
+        try:
+            if (
+                theme
+                and getattr(theme, "mode", None)
+                and theme.mode in {"light", "dark"}
+            ):
+                bs_theme_mode = theme.mode
+        except Exception:
+            pass
+        return {
+            "active_theme": theme,
+            "theme_css_vars": css_vars,
+            "bs_theme_mode": bs_theme_mode,
+        }
 
 
 def register_error_handlers(app):

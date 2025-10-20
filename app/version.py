@@ -2,8 +2,8 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "0.5.2"
-__version_info__ = (0, 5, 2)
+__version__ = "0.6.0"
+__version_info__ = (0, 6, 0)
 
 # Version history tracking
 VERSION_HISTORY = {
@@ -35,6 +35,12 @@ VERSION_HISTORY = {
         "Infra tooling and docs: added helper scripts for WireGuard server/client and Samba share setup; "
         "bootstrap script to orchestrate WG + Samba and emit worker run examples; docker compose example for GPU worker; "
         "README cross-links and guide enhancements."
+    ),
+    "0.6.0": (
+        "Theme system and UI polish: added Theme model and admin CRUD, dynamic /theme.css mapping Bootstrap CSS variables, "
+        "and live color editing (hex input sync). Navbar alignment and stacked icon+label style, centered layout with search; "
+        "Media Library upload UX redesign with large dashed Dropzone and simplified type chooser; vendor plugin removed for stability. "
+        "Admin delete flow now redirects instead of showing raw JSON; documentation refreshed."
     ),
 }
 

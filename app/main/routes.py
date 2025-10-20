@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from flask import (
     Blueprint,
+    Response,
     current_app,
     flash,
     jsonify,
@@ -1292,6 +1293,122 @@ def license_page():
     return render_template("main/license.html", title="License")
 
 
+@main_bp.route("/theme/logo")
+def theme_logo():
+    """Serve active theme logo (no auth to allow in navbar before auth)."""
+    try:
+        from app.models import Theme
+
+        theme = Theme.query.filter_by(is_active=True).first()
+        if theme and theme.logo_path and os.path.exists(theme.logo_path):
+            guessed, _ = mimetypes.guess_type(theme.logo_path)
+            return send_file(theme.logo_path, mimetype=guessed or "image/png")
+    except Exception:
+        pass
+    return jsonify({"error": "No logo"}), 404
+
+
+@main_bp.route("/theme/favicon")
+def theme_favicon():
+    """Serve active theme favicon."""
+    try:
+        from app.models import Theme
+
+        theme = Theme.query.filter_by(is_active=True).first()
+        if theme and theme.favicon_path and os.path.exists(theme.favicon_path):
+            guessed, _ = mimetypes.guess_type(theme.favicon_path)
+            return send_file(theme.favicon_path, mimetype=guessed or "image/x-icon")
+    except Exception:
+        pass
+    return jsonify({"error": "No favicon"}), 404
+
+
+@main_bp.route("/theme/watermark")
+def theme_watermark():
+    """Serve active theme watermark image."""
+    try:
+        from app.models import Theme
+
+        theme = Theme.query.filter_by(is_active=True).first()
+        if theme and theme.watermark_path and os.path.exists(theme.watermark_path):
+            guessed, _ = mimetypes.guess_type(theme.watermark_path)
+            return send_file(theme.watermark_path, mimetype=guessed or "image/png")
+    except Exception:
+        pass
+    return jsonify({"error": "No watermark"}), 404
+
+
+@main_bp.route("/theme.css")
+def theme_css():
+    """Serve CSS variables and a few overrides for the active theme.
+
+    We keep this in a separate stylesheet to avoid inline <style> lint issues
+    in templates. If no active theme exists, return a minimal empty sheet.
+    """
+    try:
+        from app.models import Theme
+
+        theme = Theme.query.filter_by(is_active=True).first()
+        if not theme:
+            return Response("/* no active theme */", mimetype="text/css")
+
+        # Compose CSS with variables and a couple of Bootstrap overrides
+        css_vars = theme.as_css_vars()
+
+        # Safeguard lookups
+        def v(key, default):
+            return css_vars.get(key, default)
+
+        css = [
+            ":root{",
+            f"--color-primary: {v('--color-primary', '#0d6efd')};",
+            f"--color-secondary: {v('--color-secondary', '#6c757d')};",
+            f"--color-accent: {v('--color-accent', '#6610f2')};",
+            f"--color-background: {v('--color-background', '#121212')};",
+            f"--color-surface: {v('--color-surface', '#1e1e1e')};",
+            f"--color-text: {v('--color-text', '#e9ecef')};",
+            f"--color-muted: {v('--color-muted', '#adb5bd')};",
+            f"--navbar-bg: {v('--navbar-bg', '#212529')};",
+            f"--navbar-text: {v('--navbar-text', '#ffffff')};",
+            f"--outline-color: {v('--outline-color', v('--color-accent', '#6610f2'))};",
+            "}",
+            # Map theme vars to Bootstrap CSS variables for broad component support
+            ":root{",
+            "--bs-primary: var(--color-primary);",
+            "--bs-secondary: var(--color-secondary);",
+            "--bs-body-bg: var(--color-background);",
+            "--bs-body-color: var(--color-text);",
+            "--bs-card-bg: var(--color-surface);",
+            "--bs-card-color: var(--color-text);",
+            "--bs-border-color: #30363d;",
+            "--bs-link-color: var(--color-accent);",
+            "--bs-link-hover-color: var(--color-primary);",
+            # Bootstrap focus ring variables
+            "--bs-focus-ring-color: color-mix(in srgb, var(--outline-color), transparent 70%);",
+            "--bs-focus-ring-opacity: 1;",
+            "--bs-focus-ring-width: 0.25rem;",
+            "}",
+            # Base colors
+            "body{background-color: var(--color-background); color: var(--color-text);}",
+            ".card{background-color: var(--color-surface); color: var(--color-text);}",
+            ".text-muted{color: var(--color-muted)!important;}",
+            # Navbar tweaks overriding Bootstrap classes
+            ".navbar.bg-dark{background-color: var(--navbar-bg)!important;}",
+            ".navbar-dark .navbar-brand, .navbar-dark .navbar-nav .nav-link{color: var(--navbar-text)!important;}",
+            # Sidebar and footer accents
+            ".sidebar{background-color: var(--color-surface); border-right: 1px solid var(--bs-border-color);}",
+            ".footer{background-color: var(--color-background); border-top: 1px solid var(--bs-border-color);}",
+            # Buttons - override base.css hardcoded hover color
+            ".btn-primary{background-color: var(--bs-primary); border-color: var(--bs-primary);}",
+            ".btn-primary:hover{background-color: var(--bs-primary); border-color: var(--bs-primary); filter: brightness(0.9);}",
+            # Generic focus outline fallback
+            ":focus{outline-color: var(--outline-color);}",
+        ]
+        return Response("\n".join(css), mimetype="text/css")
+    except Exception:
+        return Response("/* theme css error */", mimetype="text/css")
+
+
 @main_bp.route("/p/<public_id>/download")
 @login_required
 def download_compiled_output_by_public(public_id: str):
@@ -1366,8 +1483,6 @@ def preview_compiled_output_by_public(public_id: str):
         with open(final_path, "rb") as f:
             f.seek(start)
             data = f.read(length)
-
-        from flask import Response
 
         rv = Response(data, 206, mimetype=mimetype, direct_passthrough=True)
         rv.headers.add("Content-Range", f"bytes {start}-{end}/{file_size}")

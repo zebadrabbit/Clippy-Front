@@ -2,14 +2,20 @@
 
 {% block content %}
 <div class="container py-4">
-  <h2 class="mb-3"><i class="bi bi-hdd-network"></i> System Information</h2>
-  <div class="row g-3 mb-4">
+  <div class="row">
+    <h2 class="mb-3"><i class="bi bi-gear"></i> Admin Dashboard</h2>
+    <div class="col-12 col-lg-3 mb-3 mb-lg-0">
+      {% set active_page = 'system' %}
+      {% include 'admin/_includes/sidebar.html' with context %}
+    </div>
+    <div class="col-12 col-lg-9">
+      <div class="row g-3 mb-4">
     <div class="col-md-3"><div class="card text-center"><div class="card-body"><div class="h4 mb-0">{{ db_stats.users }}</div><small class="text-muted">Users</small></div></div></div>
     <div class="col-md-3"><div class="card text-center"><div class="card-body"><div class="h4 mb-0">{{ db_stats.projects }}</div><small class="text-muted">Projects</small></div></div></div>
     <div class="col-md-3"><div class="card text-center"><div class="card-body"><div class="h4 mb-0">{{ db_stats.media_files }}</div><small class="text-muted">Media Files</small></div></div></div>
     <div class="col-md-3"><div class="card text-center"><div class="card-body"><div class="h4 mb-0">{{ db_stats.clips }}</div><small class="text-muted">Clips</small></div></div></div>
   </div>
-  <div class="card mb-4"><div class="card-header"><strong>Storage</strong></div>
+      <div class="card mb-4"><div class="card-header"><strong>Storage</strong></div>
     <div class="card-body">
       <p>Total: {{ '%.1f'|format(storage_stats.total_size_mb) }} MB</p>
       <ul class="mb-0">
@@ -19,11 +25,13 @@
       </ul>
     </div>
   </div>
-  <div class="card"><div class="card-header"><strong>Jobs</strong></div>
+      <div class="card"><div class="card-header"><strong>Jobs</strong></div>
     <div class="card-body">
       <ul class="mb-0">
         {% for k,v in job_stats.items() %}<li>{{ k.title() }}: {{ v }}</li>{% endfor %}
       </ul>
+    </div>
+  </div>
     </div>
   </div>
 </div>

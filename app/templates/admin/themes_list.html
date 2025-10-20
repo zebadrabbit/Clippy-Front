@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="row">
+    <h2 class="mb-3"><i class="bi bi-gear"></i> Admin Dashboard</h2>
+    <div class="col-12 col-lg-3 mb-3 mb-lg-0">
+      {% set active_page = 'themes' %}
+      {% include 'admin/_includes/sidebar.html' with context %}
+    </div>
+    <div class="col-12 col-lg-9">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <a class="btn btn-primary" href="{{ url_for('admin.theme_create') }}">
+          <i class="bi bi-plus"></i> New Theme
+        </a>
+      </div>
+
+      <div class="row">
+    {% for t in themes %}
+    <div class="col-md-6 col-lg-4">
+  <div id="theme-card-{{ t.id }}" class="card mb-3 border-{{ 'success' if t.is_active else 'secondary' }}">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <strong>{{ t.name }}</strong>
+          {% if t.is_active %}
+            <span class="badge bg-success">Active</span>
+          {% endif %}
+        </div>
+        <div class="card-body">
+          <p class="text-muted small">{{ t.description or 'No description' }}</p>
+          <div class="d-flex gap-2 mb-2">
+            <span class="badge rounded-pill theme-swatch" title="Primary" data-color="{{ t.color_primary or '#0d6efd' }}">&nbsp;</span>
+            <span class="badge rounded-pill theme-swatch" title="Secondary" data-color="{{ t.color_secondary or '#6c757d' }}">&nbsp;</span>
+            <span class="badge rounded-pill theme-swatch" title="Accent" data-color="{{ t.color_accent or '#6610f2' }}">&nbsp;</span>
+            <span class="badge rounded-pill theme-swatch" title="Background" data-color="{{ t.color_background or '#121212' }}">&nbsp;</span>
+            <span class="badge rounded-pill theme-swatch" title="Surface" data-color="{{ t.color_surface or '#1e1e1e' }}">&nbsp;</span>
+          </div>
+          <div class="d-flex gap-2">
+            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.theme_edit', theme_id=t.id) }}">
+              <i class="bi bi-pencil"></i> Edit
+            </a>
+            {% if not t.is_active %}
+            <form method="POST" action="{{ url_for('admin.theme_activate', theme_id=t.id) }}" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-sm btn-outline-success">
+                <i class="bi bi-check2-circle"></i> Activate
+              </button>
+            </form>
+            <form method="POST" action="{{ url_for('admin.theme_delete', theme_id=t.id) }}" class="d-inline ms-1" onsubmit="return confirm('Delete theme {{ t.name }}?')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-trash"></i> Delete
+              </button>
+            </form>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+  (function(){
+    try {
+      document.querySelectorAll('.theme-swatch').forEach(function(el){
+        var c = el.getAttribute('data-color');
+        if (c) { el.style.backgroundColor = c; }
+      });
+    } catch (e) { /* no-op */ }
+  })();
+  </script>
+{% endblock %}

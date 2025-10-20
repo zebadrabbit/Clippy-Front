@@ -4,8 +4,9 @@ Admin panel routes for Clippy platform management.
 This module provides administrative functionality including user management,
 system monitoring, and platform configuration for admin users only.
 """
+import os
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime
 from functools import wraps
 
 from flask import (
@@ -21,6 +22,7 @@ from flask import (
 )
 from flask_login import current_user, login_required
 from sqlalchemy import func
+from werkzeug.utils import secure_filename
 
 from app.models import (
     Clip,
@@ -30,15 +32,13 @@ from app.models import (
     Project,
     ProjectStatus,
     SystemSetting,
+    Theme,
     User,
     UserRole,
     db,
 )
 from app.tasks.celery_app import celery_app
-from app.tasks.media_maintenance import (
-    dedupe_media_task,
-    reindex_media_task,
-)
+from app.tasks.media_maintenance import dedupe_media_task, reindex_media_task
 from app.version import get_changelog, get_version
 
 # Create admin blueprint
@@ -96,64 +96,13 @@ def dashboard():
         "pending_jobs": ProcessingJob.query.filter_by(status="pending").count(),
     }
 
-    # Get recent activity (last 24 hours)
-    yesterday = datetime.utcnow() - timedelta(days=1)
-    recent_stats = {
-        "new_users": User.query.filter(User.created_at >= yesterday).count(),
-        "new_projects": Project.query.filter(Project.created_at >= yesterday).count(),
-        "new_media_files": MediaFile.query.filter(
-            MediaFile.uploaded_at >= yesterday
-        ).count(),
-        "completed_jobs": ProcessingJob.query.filter(
-            ProcessingJob.completed_at >= yesterday, ProcessingJob.status == "success"
-        ).count(),
-    }
-
-    # Get recent users and projects
-    recent_users = User.query.order_by(User.created_at.desc()).limit(5).all()
-    recent_projects = Project.query.order_by(Project.created_at.desc()).limit(5).all()
-
-    # Calculate storage usage
-    total_storage = db.session.query(func.sum(MediaFile.file_size)).scalar() or 0
-    total_storage_mb = total_storage / (1024 * 1024)
-
-    # Celery workers snapshot (compact)
-    workers_info = []
-    try:
-        insp = celery_app.control.inspect(timeout=2)
-        aq = insp.active_queues() or {}
-        st = insp.stats() or {}
-        for name in sorted(set(list(aq.keys()) + list(st.keys()))):
-            queues = [q.get("name") for q in (aq.get(name) or [])]
-            workers_info.append(
-                {
-                    "name": name,
-                    "queues": queues,
-                    "pid": (st.get(name) or {}).get("pid"),
-                    "pool": (st.get(name) or {}).get("pool"),
-                }
-            )
-    except Exception:
-        workers_info = []
-
-    # DB quick stats for dashboard
-    db_stats = {
-        "users": stats["total_users"],
-        "projects": stats["total_projects"],
-        "media_files": MediaFile.query.count(),
-        "clips": Clip.query.count(),
-    }
+    # Keep the dashboard light: avoid expensive cross-service calls (Celery inspect)
+    # and large aggregates here. Defer details to dedicated pages.
 
     return render_template(
         "admin/dashboard.html",
         title="Admin Dashboard",
         stats=stats,
-        recent_stats=recent_stats,
-        recent_users=recent_users,
-        recent_projects=recent_projects,
-        total_storage_mb=total_storage_mb,
-        db_stats=db_stats,
-        workers=workers_info,
         version=get_version(),
     )
 
@@ -994,3 +943,256 @@ def workers_json():
         return jsonify(payload)
     except Exception as e:
         return jsonify({"error": str(e)}), 502
+
+
+# Theme Management
+
+
+@admin_bp.route("/themes")
+@login_required
+@admin_required
+def themes_list():
+    themes = Theme.query.order_by(Theme.is_active.desc(), Theme.name.asc()).all()
+    return render_template("admin/themes_list.html", title="Themes", themes=themes)
+
+
+@admin_bp.route("/themes/create", methods=["GET", "POST"])
+@login_required
+@admin_required
+def theme_create():
+    if request.method == "POST":
+        name = (request.form.get("name") or "").strip()
+        if not name:
+            flash("Theme name is required", "danger")
+            return redirect(url_for("admin.theme_create"))
+        # Collect colors
+        colors = {
+            "color_primary": request.form.get("color_primary") or "#0d6efd",
+            "color_secondary": request.form.get("color_secondary") or "#6c757d",
+            "color_accent": request.form.get("color_accent") or "#6610f2",
+            "color_background": request.form.get("color_background") or "#121212",
+            "color_surface": request.form.get("color_surface") or "#1e1e1e",
+            "color_text": request.form.get("color_text") or "#e9ecef",
+            "color_muted": request.form.get("color_muted") or "#adb5bd",
+            "navbar_bg": request.form.get("navbar_bg") or "#212529",
+            "navbar_text": request.form.get("navbar_text") or "#ffffff",
+        }
+        desc = (request.form.get("description") or "").strip() or None
+        wm_opacity = request.form.get("watermark_opacity", type=float) or 0.1
+        wm_pos = (request.form.get("watermark_position") or "bottom-right").strip()
+        mode = (request.form.get("mode") or "auto").strip().lower()
+        if mode not in {"auto", "light", "dark"}:
+            mode = "auto"
+        outline_color = (request.form.get("outline_color") or "").strip() or None
+        try:
+            theme = Theme(
+                name=name,
+                description=desc,
+                updated_by=current_user.id,
+                watermark_opacity=wm_opacity,
+                watermark_position=wm_pos,
+                mode=mode,
+                **colors,
+            )
+            if outline_color:
+                theme.color_accent = (
+                    outline_color
+                    if not colors.get("color_accent")
+                    else theme.color_accent
+                )
+            db.session.add(theme)
+            db.session.commit()
+            # Handle uploads after we have an ID
+            _handle_theme_uploads(theme)
+            db.session.commit()
+            flash("Theme created", "success")
+            return redirect(url_for("admin.themes_list"))
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Theme create failed: {e}")
+            flash("Failed to create theme", "danger")
+    return render_template("admin/themes_form.html", title="Create Theme", theme=None)
+
+
+@admin_bp.route("/themes/<int:theme_id>/edit", methods=["GET", "POST"])
+@login_required
+@admin_required
+def theme_edit(theme_id: int):
+    theme = db.session.get(Theme, theme_id)
+    if not theme:
+        return abort(404)
+    if request.method == "POST":
+        try:
+            theme.name = (request.form.get("name") or theme.name).strip()
+            theme.description = (request.form.get("description") or "").strip() or None
+            # Update colors
+            for key in (
+                "color_primary",
+                "color_secondary",
+                "color_accent",
+                "color_background",
+                "color_surface",
+                "color_text",
+                "color_muted",
+                "navbar_bg",
+                "navbar_text",
+            ):
+                val = request.form.get(key)
+                if val:
+                    setattr(theme, key, val)
+            # Watermark settings
+            wm_opacity = request.form.get("watermark_opacity", type=float)
+            wm_pos = request.form.get("watermark_position")
+            if wm_opacity is not None:
+                theme.watermark_opacity = wm_opacity
+            if wm_pos:
+                theme.watermark_position = wm_pos
+            # Mode override
+            mode = (request.form.get("mode") or "").strip().lower()
+            if mode in {"auto", "light", "dark"}:
+                theme.mode = mode
+            # Optional outline/focus override (maps to color_accent if provided)
+            outline_color = (request.form.get("outline_color") or "").strip()
+            if outline_color:
+                theme.color_accent = outline_color
+            theme.updated_by = current_user.id
+            _handle_theme_uploads(theme)
+            db.session.commit()
+            flash("Theme updated", "success")
+            return redirect(url_for("admin.themes_list"))
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Theme update failed: {e}")
+            flash("Failed to update theme", "danger")
+    return render_template(
+        "admin/themes_form.html", title=f"Edit Theme: {theme.name}", theme=theme
+    )
+
+
+@admin_bp.route("/themes/<int:theme_id>/delete", methods=["POST"])
+@login_required
+@admin_required
+def theme_delete(theme_id: int):
+    theme = db.session.get(Theme, theme_id)
+    # Detect if the client explicitly wants JSON (AJAX/fetch) vs. standard HTML form navigation
+    accept_hdr = (request.headers.get("Accept") or "").lower()
+    is_ajax = (
+        request.headers.get("X-Requested-With") or ""
+    ).lower() == "xmlhttprequest"
+    wants_json = is_ajax or (
+        "application/json" in accept_hdr and "text/html" not in accept_hdr
+    )
+    if not theme:
+        if not wants_json:
+            flash("Theme not found", "danger")
+            return redirect(url_for("admin.themes_list"))
+        return jsonify({"error": "Theme not found"}), 404
+    if theme.is_active:
+        if not wants_json:
+            flash("Cannot delete the active theme", "warning")
+            return redirect(url_for("admin.themes_list"))
+        return jsonify({"error": "Cannot delete the active theme"}), 400
+    try:
+        # Remove files on disk
+        for path in (theme.logo_path, theme.favicon_path, theme.watermark_path):
+            try:
+                if path and os.path.exists(path):
+                    os.remove(path)
+            except Exception:
+                pass
+        db.session.delete(theme)
+        db.session.commit()
+        if not wants_json:
+            flash("Theme deleted", "success")
+            return redirect(url_for("admin.themes_list"))
+        return jsonify({"success": True})
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Theme delete failed: {e}")
+        if not wants_json:
+            flash("Failed to delete theme", "danger")
+            return redirect(url_for("admin.themes_list"))
+        return jsonify({"error": "Failed to delete theme"}), 500
+
+
+@admin_bp.route("/themes/<int:theme_id>/activate", methods=["POST"])
+@login_required
+@admin_required
+def theme_activate(theme_id: int):
+    theme = db.session.get(Theme, theme_id)
+    # Detect if the client explicitly wants JSON (AJAX/fetch) vs. standard HTML form navigation
+    accept_hdr = (request.headers.get("Accept") or "").lower()
+    is_ajax = (
+        request.headers.get("X-Requested-With") or ""
+    ).lower() == "xmlhttprequest"
+    wants_json = is_ajax or (
+        "application/json" in accept_hdr and "text/html" not in accept_hdr
+    )
+    if not theme:
+        # Prefer redirect for HTML requests
+        if not wants_json:
+            flash("Theme not found", "danger")
+            return redirect(url_for("admin.themes_list"))
+        return jsonify({"error": "Theme not found"}), 404
+    try:
+        # Deactivate others
+        Theme.query.update({Theme.is_active: False})
+        theme.is_active = True
+        # Touch updated_at to ensure cache-busting param changes
+        try:
+            from datetime import datetime as _dt
+
+            theme.updated_at = _dt.utcnow()
+        except Exception:
+            pass
+        db.session.commit()
+        flash(f"Activated theme '{theme.name}'", "success")
+        # For normal form submissions (HTML), redirect back to list so the page refreshes
+        if not wants_json:
+            return redirect(url_for("admin.themes_list"))
+        # Otherwise, return JSON for API/AJAX callers
+        return jsonify({"success": True, "theme_id": theme.id, "name": theme.name})
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Theme activation failed: {e}")
+        if not wants_json:
+            flash("Failed to activate theme", "danger")
+            return redirect(url_for("admin.themes_list"))
+        return jsonify({"error": "Failed to activate theme"}), 500
+
+
+def _handle_theme_uploads(theme: Theme) -> None:
+    """Handle logo, favicon, watermark file uploads for a theme."""
+    base_upload = os.path.join(
+        current_app.instance_path,
+        current_app.config["UPLOAD_FOLDER"],
+        "system",
+        "themes",
+        str(theme.id),
+    )
+    os.makedirs(base_upload, exist_ok=True)
+    files = {
+        "logo": ("logo", ("logo.png", "logo.jpg", "logo.webp", "logo.svg")),
+        "favicon": ("favicon", ("ico", "png")),
+        "watermark": ("watermark", ("png", "webp", "svg")),
+    }
+    for key, (field, exts) in files.items():
+        f = request.files.get(field)
+        if not f or f.filename == "":
+            continue
+        ext = os.path.splitext(f.filename)[1].lower().lstrip(".")
+        if exts and ext not in exts:
+            # Allow anything image-ish for logo except enforce favicon typical exts
+            if key != "favicon":
+                pass
+            else:
+                flash(f"Unsupported {key} type", "warning")
+                continue
+        filename = secure_filename(f"{key}.{ext}") if ext else secure_filename(key)
+        path = os.path.join(base_upload, filename)
+        try:
+            f.save(path)
+            setattr(theme, f"{key}_path", path)
+        except Exception as e:
+            current_app.logger.error(f"Upload failed for {key}: {e}")
+            flash(f"Failed to upload {key}", "danger")

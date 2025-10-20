@@ -5,10 +5,11 @@ ClippyFront is a Flask-based web application for organizing media and assembling
 ## Highlights
 
 - Flask app factory with blueprints: auth, main, admin, api
+- Theme system: dynamic `/theme.css` that maps theme colors to Bootstrap variables; admin CRUD to create, edit, activate, and delete themes
 - Media Library: drag-and-drop uploads (Dropzone), per-user storage, thumbnails, tags, bulk actions
 - Robust video preview using Video.js with MIME detection and graceful fallbacks
 - Self-hosted frontend vendor assets (Dropzone, Video.js) for CSP/MIME safety
-- Admin panel for users, projects, and system info
+- Admin panel for users, projects, themes, and system info
 - Security: CSRF, CORS, secure headers (Talisman), rate limiting
 - Optional async jobs via Celery + Redis
 - Project Wizard: consolidated flow with robust task polling
@@ -119,6 +120,12 @@ Notes:
 - Vendor assets are served locally from `app/static/vendor`; re-run the fetch script if you clean the repo.
 - Content Security Policy is strict by default; local assets avoid nosniff/MIME issues.
 
+## Theming
+
+- Create and manage themes in the Admin → Themes section.
+- Activate a theme to apply it globally; the app serves `/theme.css` which maps your saved colors to Bootstrap CSS variables.
+- Edit colors via native color inputs or hex fields; changes save on submit. Hex and swatch inputs stay in sync while editing.
+
 ## Media Library Capabilities
 
 - Drag-and-drop uploads with Dropzone
@@ -169,6 +176,7 @@ ClippyFront/
 ├── app/
 │   ├── __init__.py              # Flask app factory, ext init, CSP, filters
 │   ├── admin/                   # Admin blueprint
+│   │   └── ... themes CRUD and routes
 │   ├── api/                     # API blueprint
 │   ├── auth/                    # Auth blueprint
 │   ├── main/                    # Main UI routes (media library, projects)

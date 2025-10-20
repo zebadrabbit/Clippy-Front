@@ -2,19 +2,25 @@
 
 {% block content %}
 <div class="container py-4">
-  <div class="d-flex align-items-center justify-content-between mb-3">
-    <h2 class="mb-0"><i class="bi bi-tools"></i> System Configuration</h2>
-    <div class="d-flex gap-2">
+  <div class="row">
+    <h2 class="mb-3"><i class="bi bi-gear"></i> Admin Dashboard</h2>
+    <div class="col-12 col-lg-3 mb-3 mb-lg-0">
+      {% set active_page = 'config' %}
+      {% include 'admin/_includes/sidebar.html' with context %}
+    </div>
+    <div class="col-12 col-lg-9">
+      <div class="d-flex align-items-center justify-content-between mb-3">
+        <div class="d-flex gap-2">
       <form method="post" action="{{ url_for('admin.restart', target='web') }}">
         <button class="btn btn-outline-danger" type="submit" onclick="return confirm('Restart web server?');"><i class="bi bi-arrow-repeat"></i> Restart Web</button>
       </form>
       <form method="post" action="{{ url_for('admin.restart', target='workers') }}">
         <button class="btn btn-outline-warning" type="submit" onclick="return confirm('Restart all workers?');"><i class="bi bi-cpu"></i> Restart Workers</button>
       </form>
-    </div>
-  </div>
+        </div>
+      </div>
 
-  <form method="post">
+      <form method="post">
     <input type="hidden" name="action" value="save">
 
     {% for section, items in groups.items() %}
@@ -41,9 +47,11 @@
     </div>
     {% endfor %}
 
-    <div class="d-flex justify-content-end">
-      <button class="btn btn-primary" type="submit"><i class="bi bi-save"></i> Save Changes</button>
+        <div class="d-flex justify-content-end">
+          <button class="btn btn-primary" type="submit"><i class="bi bi-save"></i> Save Changes</button>
+        </div>
+      </form>
     </div>
-  </form>
+  </div>
 </div>
 {% endblock %}

@@ -51,7 +51,7 @@ tmux split-window -v -t clippyfront:0.1
 # Set up panes
 tmux send-keys -t clippyfront:0.0 'source venv/bin/activate && set -a && source .env && set +a && python main.py' Enter
 tmux send-keys -t clippyfront:0.1 'source venv/bin/activate && set -a && source .env && set +a && celery -A app.tasks.celery_app worker --loglevel=info -Q celery -c 2 -n main@%h' Enter
-tmux send-keys -t clippyfront:0.2 'source venv/bin/activate && set -a && source .env && set +a' Enter
+tmux send-keys -t clippyfront:0.2 'source venv/bin/activate && set -a && source .env && set +a && htop' Enter
 
 # Attach to tmux session
 echo -e "${GREEN}Services started in tmux session 'clippyfront'${NC}"

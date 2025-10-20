@@ -2,8 +2,13 @@
 
 {% block content %}
 <div class="container py-4">
-  <h2 class="mb-3"><i class="bi bi-tools"></i> Maintenance</h2>
-
+  <div class="row">
+    <h2 class="mb-3"><i class="bi bi-gear"></i> Admin Dashboard</h2>
+    <div class="col-12 col-lg-3 mb-3 mb-lg-0">
+      {% set active_page = 'maintenance' %}
+      {% include 'admin/_includes/sidebar.html' with context %}
+    </div>
+    <div class="col-12 col-lg-9">
   <div class="card mb-3">
     <div class="card-body">
       <h5 class="card-title">Reindex Media Library</h5>
@@ -15,7 +20,7 @@
     </div>
   </div>
 
-  <div class="card mt-3">
+    <div class="card mt-3">
     <div class="card-body">
       <h5 class="card-title">Deduplicate Media</h5>
       <p class="card-text">Remove duplicate media rows per user based on checksum and exact same file path. Keeps the newest entry, deletes older duplicates.</p>
@@ -37,6 +42,8 @@
           </div>
         </div>
       </form>
+    </div>
+      </div>
     </div>
   </div>
 </div>
