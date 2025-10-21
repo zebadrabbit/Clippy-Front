@@ -2,8 +2,8 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "0.7.0"
-__version_info__ = (0, 7, 0)
+__version__ = "0.7.1"
+__version_info__ = (0, 7, 1)
 
 # Version history tracking
 VERSION_HISTORY = {
@@ -47,6 +47,10 @@ VERSION_HISTORY = {
         "Transitions info badge placement and separator tinting; Step 2 progress keeps Done active on reuse; defaults to 60fps & auto project name. "
         "Theme extensions: per-media-type colors (intro/clip/outro/transition) exposed via /theme.css and editable in Admin → Themes; "
         "Media Library cards color-coded by type; inline scripts extracted to static files; docs updated."
+    ),
+    "0.7.1": (
+        "Docs and DX: consolidated workers guide for Linux and Windows/WSL2 (Docker and native), clarified required vs optional flags, "
+        "and removed redundant USE_GPU_QUEUE from worker run examples; README and GPU worker docs aligned."
     ),
 }
 

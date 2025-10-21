@@ -104,7 +104,14 @@
         {% endif %}
         <div class="card-body">
           <div class="fw-semibold text-truncate" title="{{ m.original_filename }}">{{ m.original_filename }}</div>
-          <small class="text-muted">{{ m.media_type.value if m.media_type else '' }} • {{ '%.1f'|format(m.file_size_mb) }} MB</small>
+          <div class="d-flex align-items-center gap-2 mt-1">
+            {% set type_val = m.media_type.value if m.media_type else '' %}
+            {% set type_name = (m.media_type.name.title() if m.media_type and m.media_type.name else type_val) %}
+            {% if type_val %}
+              <span class="badge text-bg-{{ type_val }}">{{ type_name }}</span>
+            {% endif %}
+            <small class="text-muted">{{ '%.1f'|format(m.file_size_mb) }} MB</small>
+          </div>
           {% if m.tags %}
             <div class="mt-1 small">
               {% for tag in m.tags.split(',') %}

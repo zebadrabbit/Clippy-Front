@@ -65,7 +65,15 @@ def _resolve_media_input_path(orig_path: str) -> str:
     Returns the first existing candidate, else the original path.
     """
     try:
+        debug = os.getenv("MEDIA_PATH_DEBUG", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
         if orig_path and os.path.exists(orig_path):
+            if debug:
+                print(f"[media-path] using original path (exists): {orig_path}")
             return orig_path
         ap = (orig_path or "").strip()
         if not ap:
@@ -75,6 +83,10 @@ def _resolve_media_input_path(orig_path: str) -> str:
         alias_to = os.getenv("MEDIA_PATH_ALIAS_TO")
         if alias_from and alias_to and ap.startswith(alias_from):
             cand = alias_to + ap[len(alias_from) :]
+            if debug:
+                print(
+                    f"[media-path] alias candidate: FROM='{alias_from}' TO='{alias_to}' -> '{cand}' (exists={os.path.exists(cand)})"
+                )
             if os.path.exists(cand):
                 return cand
         # 2) Automatic '/instance/' remap
@@ -86,6 +98,10 @@ def _resolve_media_input_path(orig_path: str) -> str:
                 app = create_app()
                 suffix = ap.split(marker, 1)[1]
                 cand = os.path.join(app.instance_path, suffix)
+                if debug:
+                    print(
+                        f"[media-path] instance remap candidate: base='{app.instance_path}' suffix='/{suffix}' -> '{cand}' (exists={os.path.exists(cand)})"
+                    )
                 if os.path.exists(cand):
                     return cand
             except Exception:

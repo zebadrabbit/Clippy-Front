@@ -220,6 +220,23 @@ body {
 .media-card[data-type="outro"] { border-color: var(--media-color-outro, #f59e0b); }
 .media-card[data-type="transition"] { border-color: var(--media-color-transition, #22c55e); }
 
+/* Media type badges using theme colors */
+.badge.text-bg-intro {
+    background-color: color-mix(in srgb, var(--media-color-intro, #0ea5e9), #000 10%) !important;
+    color: #fff !important;
+}
+.badge.text-bg-clip {
+    background-color: color-mix(in srgb, var(--media-color-clip, var(--color-accent)), #000 10%) !important;
+    color: #fff !important;
+}
+.badge.text-bg-outro {
+    background-color: color-mix(in srgb, var(--media-color-outro, #f59e0b), #000 10%) !important;
+    color: #111 !important;
+}
+.badge.text-bg-transition {
+    background-color: color-mix(in srgb, var(--media-color-transition, #22c55e), #000 10%) !important;
+    color: #111 !important;
+}
 
 /* Ensure Bootstrap contextual classes map to theme variables */
 .bg-primary { background-color: var(--bs-primary) !important; }

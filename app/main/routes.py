@@ -969,7 +969,17 @@ def media_preview(media_id: int):
     # Resolve path that may have been created on a different host/container
     def _resolve_media_server_path(orig_path: str) -> str:
         try:
+            debug = os.getenv("MEDIA_PATH_DEBUG", "").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
             if orig_path and os.path.exists(orig_path):
+                if debug:
+                    current_app.logger.info(
+                        "[media-path] using original path (exists): %s", orig_path
+                    )
                 return orig_path
             ap = (orig_path or "").strip()
             if not ap:
@@ -978,6 +988,14 @@ def media_preview(media_id: int):
             alias_to = os.getenv("MEDIA_PATH_ALIAS_TO")
             if alias_from and alias_to and ap.startswith(alias_from):
                 cand = alias_to + ap[len(alias_from) :]
+                if debug:
+                    current_app.logger.info(
+                        "[media-path] alias candidate: FROM='%s' TO='%s' -> '%s' (exists=%s)",
+                        alias_from,
+                        alias_to,
+                        cand,
+                        os.path.exists(cand),
+                    )
                 if os.path.exists(cand):
                     return cand
             marker = "/instance/"
@@ -985,6 +1003,14 @@ def media_preview(media_id: int):
                 try:
                     suffix = ap.split(marker, 1)[1]
                     cand = os.path.join(current_app.instance_path, suffix)
+                    if debug:
+                        current_app.logger.info(
+                            "[media-path] instance remap candidate: base='%s' suffix='/%s' -> '%s' (exists=%s)",
+                            current_app.instance_path,
+                            suffix,
+                            cand,
+                            os.path.exists(cand),
+                        )
                     if os.path.exists(cand):
                         return cand
                 except Exception:
@@ -1013,7 +1039,17 @@ def media_thumbnail(media_id: int):
     # Local resolver for media paths
     def _resolve_media_server_path(orig_path: str) -> str:
         try:
+            debug = os.getenv("MEDIA_PATH_DEBUG", "").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
             if orig_path and os.path.exists(orig_path):
+                if debug:
+                    current_app.logger.info(
+                        "[media-path] using original path (exists): %s", orig_path
+                    )
                 return orig_path
             ap = (orig_path or "").strip()
             if not ap:
@@ -1022,6 +1058,14 @@ def media_thumbnail(media_id: int):
             alias_to = os.getenv("MEDIA_PATH_ALIAS_TO")
             if alias_from and alias_to and ap.startswith(alias_from):
                 cand = alias_to + ap[len(alias_from) :]
+                if debug:
+                    current_app.logger.info(
+                        "[media-path] alias candidate: FROM='%s' TO='%s' -> '%s' (exists=%s)",
+                        alias_from,
+                        alias_to,
+                        cand,
+                        os.path.exists(cand),
+                    )
                 if os.path.exists(cand):
                     return cand
             marker = "/instance/"
@@ -1029,6 +1073,14 @@ def media_thumbnail(media_id: int):
                 try:
                     suffix = ap.split(marker, 1)[1]
                     cand = os.path.join(current_app.instance_path, suffix)
+                    if debug:
+                        current_app.logger.info(
+                            "[media-path] instance remap candidate: base='%s' suffix='/%s' -> '%s' (exists=%s)",
+                            current_app.instance_path,
+                            suffix,
+                            cand,
+                            os.path.exists(cand),
+                        )
                     if os.path.exists(cand):
                         return cand
                 except Exception:

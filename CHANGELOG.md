@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2025-10-21
+
+### Added
+- docs/workers.md: consolidated guide for running workers on Linux and Windows/WSL2 (Docker and native), including networking/storage patterns and a required-vs-optional flag matrix.
+
+### Changed
+- docs/gpu-worker.md: links to the consolidated guide; simplified run command; clarified that USE_GPU_QUEUE affects sender routing only.
+- README: replaced the GPU-only section with a concise Remote workers section referencing the new guide.
+
 ## [0.7.0] - 2025-10-21
 
 ### Added

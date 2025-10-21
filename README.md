@@ -242,53 +242,33 @@ We recommend PostgreSQL exclusively outside tests. At startup, the app logs the 
 
 To customize the inter-segment “static” bumper, replace `instance/assets/static.mp4` with your own short clip. It will be inserted between every segment including transitions, intro, and outro.
 
-### Remote GPU workers (optional)
+### Remote workers (GPU/CPU)
 
-Offload compilation to remote machines with GPUs via Celery queues.
+Consolidated instructions live in `docs/workers.md` (Linux, Windows/WSL2, Docker and native). Quick examples:
 
-- This project defines a dedicated `gpu` queue for `compile_video_task`.
-- Start your GPU worker on the powerful machine (with NVENC):
+- GPU worker in Docker (Windows/WSL2):
 
 ```bash
-source venv/bin/activate
-export FFMPEG_DISABLE_NVENC=
-celery -A app.tasks.celery_app worker -Q gpu --loglevel=info
+docker build -f docker/worker.Dockerfile -t clippyfront-gpu-worker:latest .
+docker run --rm --gpus all \
+	-e CELERY_BROKER_URL=redis://host.docker.internal:6379/0 \
+	-e CELERY_RESULT_BACKEND=redis://host.docker.internal:6379/0 \
+	-e DATABASE_URL=postgresql://USER:PASSWORD@host.docker.internal/clippy_front \
+	-v "$(pwd)/instance:/app/instance" \
+	clippyfront-gpu-worker:latest
 ```
 
-- Keep your default worker (downloads, light tasks) on the main server:
+- Native worker on Linux (CPU/general):
 
 ```bash
 source venv/bin/activate
+export CELERY_BROKER_URL=redis://localhost:6379/0
+export CELERY_RESULT_BACKEND=redis://localhost:6379/0
+export DATABASE_URL=postgresql://USER:PASSWORD@localhost/clippy_front
 celery -A app.tasks.celery_app worker -Q celery --loglevel=info
 ```
 
-Ensure both workers point to the same Redis broker/backends (CELERY_BROKER_URL, CELERY_RESULT_BACKEND) and can reach each other over the network.
-
-Queue routing:
-
-- The API enqueues compile jobs to the best available queue in priority order: `gpu > cpu > celery`.
-- Start your workers with the queues they should consume (e.g., `-Q gpu` on GPU host, `-Q cpu` or `-Q celery` elsewhere).
-
-Windows/WSL2 + network shares:
-
-- Bind the app's `instance/` directory from the Linux server into WSL2 using CIFS, then mount that into the container (`-v /mnt/clippy:/app/instance`).
-- Set `TMPDIR=/app/instance/tmp` on the worker to keep temp and final files on the same filesystem.
-
-For full network and storage setup guides, see:
-
-- docs/wireguard.md — Secure cross-host networking over WireGuard
-- docs/samba-and-mounts.md — Sharing `instance/` via Samba; mounts for Windows/WSL2 and Linux
-
-Helper scripts:
-
-- scripts/wg_setup_server.sh — Initialize the WireGuard server (keys + service)
-- scripts/wg_add_client.sh — Create a client peer and emit a config
-- scripts/setup_samba_share.sh — Create a Samba share for `instance/`
-- scripts/bootstrap_infra.sh — One-shot orchestration of the above and prints worker run examples
-
-Compose example:
-
-- docker/docker-compose.gpu-worker.example.yml — Fill in VPN_HOST_IP and user credentials; ensure `/mnt/clippy` is mounted on the host.
+Ensure workers point to the same Redis/Postgres as the web app. For VPN/storage patterns, see `docs/wireguard.md` and `docs/samba-and-mounts.md`.
 
 ## Contributing
 

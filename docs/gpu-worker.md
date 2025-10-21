@@ -2,6 +2,8 @@
 
 This image runs the ClippyFront Celery worker in a CUDA-enabled Linux container, suitable for GPU hosts (Windows via Docker Desktop + WSL2, or Linux).
 
+For native workers, storage/path mapping, and a full flag matrix, see `docs/workers.md`.
+
 ## Prereqs
 - Docker Desktop with WSL2 (Windows) and NVIDIA GPU support enabled
 - Latest NVIDIA drivers on the host
@@ -22,7 +24,6 @@ docker run --rm \
   -e CELERY_RESULT_BACKEND=redis://host.docker.internal:6379/0 \
   -e DATABASE_URL=postgresql://<user>:<pass>@host.docker.internal/clippy_front \
   -e TMPDIR=/app/instance/tmp \
-  -e USE_GPU_QUEUE=true \
   -v $(pwd)/instance:/app/instance \
   --name clippy-gpu-worker \
   clippyfront-gpu-worker:latest
@@ -40,6 +41,7 @@ docker compose -f docker/docker-compose.gpu-worker.yml run --gpus all --name cli
 - Override concurrency/queues via env: `CELERY_CONCURRENCY=2`, `CELERY_QUEUES=gpu,celery`.
 - Ensure the web app and worker share the same database and broker.
  - Queue priority at enqueue is `gpu > cpu > celery`; start your worker with the appropriate `-Q` list.
+ - `USE_GPU_QUEUE` affects how the web app routes compile tasks. Setting it inside this worker container does not change which queues the worker consumes; use `-Q`/`CELERY_QUEUES` instead.
 
 ## Troubleshooting: Redis connection refused inside container
 
