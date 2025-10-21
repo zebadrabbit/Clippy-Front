@@ -187,7 +187,13 @@ def create_project_api():
     data = request.get_json(silent=True) or {}
     name = (data.get("name") or "").strip()
     if not name:
-        return jsonify({"error": "Project name is required"}), 400
+        # Default to "Compilation of <YYYY-MM-DD>" when name is omitted/blank
+        try:
+            from datetime import date
+
+            name = f"Compilation of {date.today().isoformat()}"
+        except Exception:
+            name = "Compilation of Today"
 
     description = (data.get("description") or "").strip() or None
     output_resolution = data.get("output_resolution") or "1080p"

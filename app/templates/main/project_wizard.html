@@ -48,7 +48,7 @@
             <div class="row g-2">
               <div class="col-md-6">
                 <label class="form-label">Project Name</label>
-                <input class="form-control" name="name" placeholder="My Compilation" required>
+                <input class="form-control" name="name" placeholder="My Compilation">
                 </div>
                 <label class="form-label">Description (optional)</label>
                 <textarea class="form-control" name="description" rows="2" placeholder="Short description..."></textarea>
@@ -75,8 +75,8 @@
               </div>
               <div class="col-md-4">
                 <select class="form-select" name="fps">
-                  <option value="30" selected>30 fps</option>
-                  <option value="60">60 fps</option>
+                  <option value="30">30 fps</option>
+                  <option value="60" selected>60 fps</option>
                   <option value="120">120 fps</option>
                 </select>
               </div>
@@ -126,9 +126,6 @@
       <div class="wizard-step d-none" data-step="2">
   <h5 class="mb-3">Step 2: Get Clips</h5>
         <div class="chevron-progress">
-          <div class="chevron-bar-wrap">
-            <div class="chevron-bar"><div class="fill" id="gc-fill" style="width:0%"></div></div>
-          </div>
           <div class="chevron-label" id="gc-status">Preparing…</div>
           <div class="chevron-steps">
             <ul class="progress" id="gc-steps">
@@ -151,29 +148,50 @@
       <!-- Step 3: Arrange -->
       <div class="wizard-step d-none" data-step="3">
         <h5 class="mb-3">Step 3: Arrange Timeline</h5>
+        <!-- Timeline on top -->
+        <div class="mb-3">
+          <div class="card">
+            <div class="card-header">Timeline</div>
+            <div class="card-body" id="timeline">
+              <div id="timeline-info" class="mb-2"></div>
+              <div class="timeline-drop-indicator" id="timeline-drop-top"></div>
+              <div class="timeline-list" id="timeline-list"></div>
+              <div class="timeline-drop-indicator" id="timeline-drop-bottom"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Downloaded Clips next -->
+        <div class="mb-3">
+          <div class="card">
+            <div class="card-header">Downloaded Clips</div>
+            <div class="card-body" id="clips-grid" style="min-height: 220px;">
+              <div class="text-muted">No clips yet. Download first.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Collapsible Intro & Outro together -->
         <div class="row g-3">
           <div class="col-12">
-            <div class="row g-3">
-              <div class="col-md-6">
-                <div class="card h-100">
-                  <div class="card-header d-flex justify-content-between align-items-center">
-                    <span>Intro (optional)</span>
-                  </div>
-                  <div class="card-body">
-                    <div id="intro-list" class="d-flex flex-wrap gap-2">
-                      <div class="text-muted">No intros found. Upload one under Upload Media.</div>
-                    </div>
-                  </div>
-                </div>
+            <div class="card h-100">
+              <div class="card-header d-flex justify-content-between align-items-center">
+                <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#inout-collapse" aria-expanded="false" aria-controls="inout-collapse">Intro &amp; Outro (optional)</button>
               </div>
-              <div class="col-md-6">
-                <div class="card h-100">
-                  <div class="card-header d-flex justify-content-between align-items-center">
-                    <span>Outro (optional)</span>
-                  </div>
-                  <div class="card-body">
-                    <div id="outro-list" class="d-flex flex-wrap gap-2">
-                      <div class="text-muted">No outros found. Upload one under Upload Media.</div>
+              <div id="inout-collapse" class="collapse">
+                <div class="card-body">
+                  <div class="row g-3">
+                    <div class="col-md-6">
+                      <div class="fw-semibold mb-2">Intro</div>
+                      <div id="intro-list" class="d-flex flex-wrap gap-2">
+                        <div class="text-muted">No intros found. Upload one under Upload Media.</div>
+                      </div>
+                    </div>
+                    <div class="col-md-6">
+                      <div class="fw-semibold mb-2">Outro</div>
+                      <div id="outro-list" class="d-flex flex-wrap gap-2">
+                        <div class="text-muted">No outros found. Upload one under Upload Media.</div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -182,10 +200,10 @@
           </div>
           <div class="col-12">
             <div class="card mb-2">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                <span>Transitions (optional)</span>
+              <div class="card-header d-flex justify-content-between align-items-center">
+                <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#transitions-collapse" aria-expanded="false" aria-controls="transitions-collapse">Transitions (optional)</button>
                 <div class="d-flex align-items-center gap-2">
-                  <div class="form-check form-switch">
+                  <div class="form-check form-switch m-0">
                     <input class="form-check-input" type="checkbox" id="transitions-randomize">
                     <label class="form-check-label" for="transitions-randomize">Randomize</label>
                   </div>
@@ -193,30 +211,13 @@
                   <button class="btn btn-sm btn-outline-danger" id="clear-all-transitions">Clear All</button>
                 </div>
               </div>
-              <div class="card-body">
-                <div id="transition-list" class="d-flex flex-wrap gap-2">
-                  <div class="text-muted">No transitions found. Upload under Upload Media.</div>
+              <div id="transitions-collapse" class="collapse">
+                <div class="card-body">
+                  <div id="transition-list" class="d-flex flex-wrap gap-2">
+                    <div class="text-muted">No transitions found. Upload under Upload Media.</div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
-          <div class="col-12">
-            <div class="card">
-              <div class="card-header">Downloaded Clips</div>
-              <div class="card-body" id="clips-grid" style="min-height: 220px;">
-                <div class="text-muted">No clips yet. Download first.</div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="mt-3">
-          <div class="card">
-            <div class="card-header">Timeline</div>
-            <div class="card-body" id="timeline">
-              <div class="text-muted">Drag clips here to arrange order.</div>
-              <div class="timeline-drop-indicator" id="timeline-drop-top"></div>
-              <div class="timeline-list" id="timeline-list"></div>
-              <div class="timeline-drop-indicator" id="timeline-drop-bottom"></div>
             </div>
           </div>
         </div>

@@ -108,7 +108,7 @@
     const fd = new FormData(form);
     const maxClips = parseInt(fd.get('max_clips') || '20', 10);
     const payload = {
-      name: (fd.get('name') || 'My Compilation').toString(),
+      name: (fd.get('name') || '').toString(),
       description: (fd.get('description') || '').toString(),
       output_resolution: (fd.get('resolution') || '1080p').toString(),
       output_format: (fd.get('format') || 'mp4').toString(),
@@ -117,11 +117,11 @@
     // Persist settings for Compile summary
     wizard.settings = {
       route: route,
-      name: payload.name,
+  name: payload.name || '',
       description: payload.description,
       resolution: payload.output_resolution,
       format: payload.output_format,
-  fps: parseInt(fd.get('fps') || '30', 10),
+  fps: parseInt(fd.get('fps') || '60', 10),
       max_clips: Math.max(1, Math.min(500, parseInt(fd.get('max_clips') || '20', 10))),
       min_len: parseInt(fd.get('min_len') || '5', 10),
       max_len: payload.max_clip_duration,
@@ -167,6 +167,7 @@
             // All reused; mark progress, enable Next, and populate clips
             setGcDone('download');
             setGcDone('done');
+            setGcActive('done');
             setGcStatus('All clips already downloaded. Reused existing media.');
             setGcFill(100);
             document.getElementById('next-2').disabled = false;
@@ -274,6 +275,7 @@
         clearInterval(dlTimer);
         setGcDone('download');
         setGcDone('done');
+        setGcActive('done');
         setGcStatus('Downloads complete.');
         setGcFill(100);
         document.getElementById('next-2').disabled = false;
@@ -290,7 +292,7 @@
   function setGcStatus(text){ const el = document.getElementById('gc-status'); if (el) el.textContent = text || ''; }
   function setGcFill(pct){ const el = document.getElementById('gc-fill'); if (el){ const v = Math.max(0, Math.min(100, Math.floor(pct||0))); el.style.width = v + '%'; el.setAttribute('aria-valuenow', String(v)); } }
   function getGcStepEl(key){ return document.querySelector(`#gc-steps li[data-key="${key}"]`); }
-  function clearGcStates(){ document.querySelectorAll('#gc-steps li').forEach(s => { s.classList.remove('active','done','error'); }); }
+  function clearGcStates(){ document.querySelectorAll('#gc-steps li').forEach(s => { s.classList.remove('active','error'); }); }
   function setGcActive(key){ clearGcStates(); const el = getGcStepEl(key); if (el) el.classList.add('active'); }
   function setGcDone(key){ const el = getGcStepEl(key); if (el){ el.classList.remove('active','error'); el.classList.add('done'); } }
   function setGcError(key){ const el = getGcStepEl(key); if (el){ el.classList.remove('active','done'); el.classList.add('error'); } }
@@ -383,33 +385,47 @@
   });
 
   // Timeline helpers
-  function makeTimelineCard({title, subtitle, thumbUrl, clipId, kind}){
+  function makeTimelineCard({title, subtitle, thumbUrl, clipId, kind, durationSec}){
     const card = document.createElement('div');
-    card.className = 'card timeline-card';
-    // Keep intro at first and outro at last by preventing their drag
+    card.className = 'timeline-card';
+    // Lock intro/outro from dragging
     card.draggable = !(kind === 'intro' || kind === 'outro');
     if (clipId) card.dataset.clipId = String(clipId);
     if (kind) card.dataset.kind = kind;
-    const row = document.createElement('div');
-    row.className = 'row g-0 align-items-center';
-    if (thumbUrl){
-      const colImg = document.createElement('div');
-      colImg.className = 'col-auto';
-      const img = document.createElement('img');
-      img.src = thumbUrl; img.alt = title || 'thumb';
-      img.style.width = '64px'; img.style.height = '48px'; img.style.objectFit = 'cover';
-      img.className = 'rounded-start';
-      colImg.appendChild(img); row.appendChild(colImg);
+    // Add semantic class for styling by type
+    if (kind) {
+      card.classList.add(`timeline-${kind}`);
     }
-    const colBody = document.createElement('div'); colBody.className = 'col';
-    const body = document.createElement('div'); body.className = 'card-body py-2 px-3';
-    const h6 = document.createElement('div'); h6.className = 'fw-semibold text-truncate'; h6.textContent = title || 'Item';
-    const small = document.createElement('div'); small.className = 'small text-muted text-truncate'; small.textContent = subtitle || '';
-    body.appendChild(h6); body.appendChild(small); colBody.appendChild(body); row.appendChild(colBody);
-    const colBtn = document.createElement('div'); colBtn.className = 'col-auto pe-2';
-    const rm = document.createElement('button'); rm.className = 'btn btn-sm btn-outline-danger'; rm.textContent = 'Remove';
-    rm.addEventListener('click', () => {
+
+    // Background thumbnail layer
+    const thumb = document.createElement('div');
+    thumb.className = 'thumb';
+    if (thumbUrl) thumb.style.backgroundImage = `url(${thumbUrl})`;
+    card.appendChild(thumb);
+
+    // Duration badge
+    if (typeof durationSec === 'number' && !isNaN(durationSec)){
+      const badge = document.createElement('div');
+      const mm = Math.floor(durationSec / 60);
+      const ss = Math.round(durationSec % 60).toString().padStart(2,'0');
+      badge.className = 'badge-duration';
+      badge.textContent = `${mm}:${ss}`;
+      card.appendChild(badge);
+    }
+
+    // Remove button
+    const rm = document.createElement('button');
+    rm.className = 'btn btn-sm btn-outline-danger btn-remove';
+    rm.innerHTML = '×';
+    rm.title = 'Remove';
+    // Prevent drag interactions when clicking remove
+    rm.addEventListener('dragstart', (e) => { e.stopPropagation(); e.preventDefault(); });
+    rm.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+    rm.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       card.remove();
+      rebuildSeparators();
       if (clipId){
         const src = document.querySelector(`.clip-card[data-clip-id="${clipId}"]`);
         if (src) src.classList.remove('d-none');
@@ -419,16 +435,24 @@
         const chk = document.getElementById('arranged-confirm');
         if (chk) { chk.checked = false; chk.dispatchEvent(new Event('change')); }
       }
+      saveTimelineOrder().catch(()=>{});
     });
-    colBtn.appendChild(rm); row.appendChild(colBtn);
-    card.appendChild(row);
+    card.appendChild(rm);
+
+    // Bottom overlay title/subtitle
+    const ov = document.createElement('div');
+    ov.className = 'overlay';
+    const h6 = document.createElement('div'); h6.className = 'title text-truncate'; h6.textContent = title || 'Item';
+    const small = document.createElement('div'); small.className = 'subtitle text-truncate'; small.textContent = subtitle || '';
+    ov.appendChild(h6); ov.appendChild(small);
+    card.appendChild(ov);
 
     // DnD handlers
     card.addEventListener('dragstart', (e) => {
       card.classList.add('dragging');
       e.dataTransfer.effectAllowed = 'move';
     });
-    card.addEventListener('dragend', () => { card.classList.remove('dragging'); saveTimelineOrder().catch(()=>{}); });
+    card.addEventListener('dragend', () => { card.classList.remove('dragging'); rebuildSeparators(); saveTimelineOrder().catch(()=>{}); });
     return card;
   }
 
@@ -436,61 +460,124 @@
     const list = document.getElementById('timeline-list');
     const existing = list.querySelector('.timeline-card.timeline-intro');
     if (existing) existing.remove();
-    const card = makeTimelineCard({ title: `Intro`, subtitle: item.original_filename || item.filename, thumbUrl: item.thumbnail_url || '', kind: 'intro' });
+    const card = makeTimelineCard({ title: `Intro`, subtitle: item.original_filename || item.filename, thumbUrl: item.thumbnail_url || '', kind: 'intro', durationSec: item.duration });
     card.classList.add('timeline-intro');
     list.prepend(card);
+    rebuildSeparators();
   }
   function addOutroToTimeline(item){
     const list = document.getElementById('timeline-list');
     const existing = list.querySelector('.timeline-card.timeline-outro');
     if (existing) existing.remove();
-    const card = makeTimelineCard({ title: `Outro`, subtitle: item.original_filename || item.filename, thumbUrl: item.thumbnail_url || '', kind: 'outro' });
+    const card = makeTimelineCard({ title: `Outro`, subtitle: item.original_filename || item.filename, thumbUrl: item.thumbnail_url || '', kind: 'outro', durationSec: item.duration });
     card.classList.add('timeline-outro');
     list.appendChild(card);
+    rebuildSeparators();
   }
 
   // Drag and drop container behavior
   (function initTimelineDnD(){
     const list = document.getElementById('timeline-list');
-    const topInd = document.getElementById('timeline-drop-top');
-    const botInd = document.getElementById('timeline-drop-bottom');
-    function getDragAfterElement(container, y){
+    // Single placeholder element indicating insertion point
+    let insertPlaceholder = null;
+    function getOrCreateInsertPlaceholder(){
+      if (insertPlaceholder && insertPlaceholder.isConnected) return insertPlaceholder;
+      const ph = document.createElement('div');
+      ph.className = 'timeline-insert';
+      const plus = document.createElement('div');
+      plus.className = 'timeline-insert-plus';
+      plus.textContent = '+';
+      ph.appendChild(plus);
+      insertPlaceholder = ph;
+      return ph;
+    }
+    function getDragAfterElement(container, x){
       const els = [...container.querySelectorAll('.timeline-card:not(.dragging)')];
       return els.reduce((closest, child) => {
         const box = child.getBoundingClientRect();
-        const offset = y - box.top - box.height / 2;
+        const offset = x - box.left - box.width / 2;
         if (offset < 0 && offset > closest.offset) return { offset, element: child };
         else return closest;
       }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
     }
-    list.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      const after = getDragAfterElement(list, e.clientY);
-      const dragging = document.querySelector('.timeline-card.dragging');
-      if (!dragging) return;
-      // Enforce that intro stays first and outro stays last
+    function placeInsertPlaceholder(x){
+      const ph = getOrCreateInsertPlaceholder();
       const intro = list.querySelector('.timeline-card.timeline-intro');
       const outro = list.querySelector('.timeline-card.timeline-outro');
-      let target = after;
-      if (intro && target === intro) {
-        target = intro.nextElementSibling; // never insert before intro
-      }
-      if (outro && (target == null)) {
-        // appending: ensure it's placed before outro
-        list.insertBefore(dragging, outro);
-      } else if (outro && target === outro) {
-        // don't insert after outro; insert before it
-        list.insertBefore(dragging, outro);
-      } else if (target == null) {
-        list.appendChild(dragging);
+      let after = getDragAfterElement(list, x);
+      // Prevent placing before intro
+      if (intro && after === intro) after = intro.nextElementSibling;
+      // Ensure placeholder exists in DOM for correct relative inserts
+      if (!ph.isConnected) list.appendChild(ph);
+      if (outro && (after == null || after === outro)) {
+        list.insertBefore(ph, outro);
+      } else if (after == null) {
+        list.appendChild(ph);
       } else {
-        list.insertBefore(dragging, target);
+        list.insertBefore(ph, after);
       }
-      topInd.classList.toggle('active', list.firstChild === dragging);
-      botInd.classList.toggle('active', list.lastChild === dragging);
+    }
+    function removeInsertPlaceholder(){
+      if (insertPlaceholder && insertPlaceholder.parentElement) {
+        insertPlaceholder.parentElement.removeChild(insertPlaceholder);
+      }
+    }
+    list.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      const dragging = document.querySelector('.timeline-card.dragging');
+      if (!dragging) return;
+      placeInsertPlaceholder(e.clientX);
     });
-    list.addEventListener('drop', () => { topInd.classList.remove('active'); botInd.classList.remove('active'); });
+    list.addEventListener('drop', () => {
+      const dragging = document.querySelector('.timeline-card.dragging');
+      if (dragging && insertPlaceholder && insertPlaceholder.parentElement === list){
+        list.insertBefore(dragging, insertPlaceholder);
+      }
+      removeInsertPlaceholder();
+      rebuildSeparators();
+      saveTimelineOrder().catch(()=>{});
+    });
+    list.addEventListener('dragleave', (e) => {
+      // If leaving the list entirely, keep placeholder until drop or end to avoid flicker
+      // No-op intentionally
+    });
+    document.addEventListener('dragend', () => {
+      removeInsertPlaceholder();
+    });
   })();
+
+  function rebuildSeparators(){
+    const list = document.getElementById('timeline-list');
+    if (!list) return;
+    // Remove existing separators
+    Array.from(list.querySelectorAll('.timeline-sep')).forEach(el => el.remove());
+    // Insert a narrow static separator between each timeline-card
+    const cards = Array.from(list.querySelectorAll('.timeline-card'));
+    for (let i = 0; i < cards.length - 1; i++){
+      // Don't place separator after outro
+      if (cards[i].classList.contains('timeline-outro')) continue;
+      const sep = document.createElement('div');
+      sep.className = 'timeline-sep';
+      const lbl = document.createElement('div');
+      lbl.className = 'timeline-sep-label';
+      lbl.textContent = (wizard.selectedTransitionIds && wizard.selectedTransitionIds.length) ? 'transition' : 'static';
+      sep.appendChild(lbl);
+      list.insertBefore(sep, cards[i+1]);
+    }
+    // Apply transition visual if any transitions are selected
+    updateSeparatorLabels();
+  }
+
+  function updateSeparatorLabels(){
+    const list = document.getElementById('timeline-list');
+    if (!list) return;
+    const hasTransitions = !!(wizard.selectedTransitionIds && wizard.selectedTransitionIds.length);
+    Array.from(list.querySelectorAll('.timeline-sep')).forEach(sep => {
+      const lbl = sep.querySelector('.timeline-sep-label');
+      if (lbl) lbl.textContent = hasTransitions ? 'transition' : 'static';
+      sep.classList.toggle('has-transition', hasTransitions);
+    });
+  }
 
   async function saveTimelineOrder(){
     if (!wizard.projectId) return;
@@ -715,18 +802,26 @@
   }
   function renderTransitionsBadge(){
     const tl = document.getElementById('timeline');
+    const info = document.getElementById('timeline-info');
     const list = document.getElementById('timeline-list');
     if (!tl || !list) return;
-    let badge = tl.querySelector('.timeline-transitions');
+    let badge = (info || tl).querySelector('.timeline-transitions');
     if (!badge) {
       badge = document.createElement('div');
-      badge.className = 'timeline-item alert alert-info py-1 px-2 mt-2 mb-2 timeline-transitions';
+      badge.className = 'timeline-item alert py-1 px-2 mb-2 timeline-transitions';
     }
-    // Ensure badge is placed at the top of the timeline, just before the list
-    tl.insertBefore(badge, list);
+    // Place badge in the dedicated info area if present
+    if (info) {
+      info.innerHTML = '';
+      info.appendChild(badge);
+    } else {
+      tl.insertBefore(badge, list);
+    }
     const count = (wizard.selectedTransitionIds || []).length;
     const rand = document.getElementById('transitions-randomize')?.checked;
     badge.textContent = count ? `Transitions selected: ${count}${count>1 ? (rand ? ' (randomized)' : ' (cycled)') : ''}` : 'No transitions selected';
+    // Tint separators/labels accordingly
+    try { updateSeparatorLabels(); } catch(_) {}
   }
   document.getElementById('transitions-randomize')?.addEventListener('change', renderTransitionsBadge);
   document.getElementById('select-all-transitions')?.addEventListener('click', (e) => {
@@ -755,4 +850,23 @@
       try { renderTransitionsBadge(); } catch (_) {}
     });
   });
+
+  // Ensure separators rebuild when adding clip from grid to timeline
+  function attachAddToTimelineHandlers(){
+    const grid = document.getElementById('clips-grid');
+    if (!grid) return;
+    grid.querySelectorAll('.clip-card a.btn').forEach(btn => {
+      if (btn._timelineHandlerAttached) return;
+      btn._timelineHandlerAttached = true;
+      btn.addEventListener('click', () => {
+        setTimeout(() => { try { rebuildSeparators(); } catch(_) {} }, 0);
+      });
+    });
+  }
+  // Run after clips grid gets populated
+  const _populateClipsGrid = populateClipsGrid;
+  populateClipsGrid = async function(){
+    await _populateClipsGrid.apply(this, arguments);
+    attachAddToTimelineHandlers();
+  };
 })();

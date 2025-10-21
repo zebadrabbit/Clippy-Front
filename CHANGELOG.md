@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2025-10-21
+
+### Added
+- Arrange: dashed insert placeholder for drag-and-drop with intro/outro lock, thicker type-colored borders on timeline tiles, and a bold remove button.
+- Theme: per-media-type colors (intro/clip/outro/transition) exposed via `/theme.css` and editable in Admin → Themes.
+- Media Library: cards now show type-colored borders using theme variables.
+- Scripts extracted: moved inline scripts from templates (toasts, admin theme form sync, error 429) into `app/static/js/`.
+
+### Changed
+- Defaults: 60fps set by default; project name defaults to “Compilation of <today>” when blank.
+- Step 2 progress keeps “Done” active after reuse-only flows; transitions badge moved to timeline info area; separators tinted when transitions selected.
+
+### Fixed
+- Remove button on timeline now reliably clickable; overlay no longer intercepts clicks.
+
 ## [0.6.0] - 2025-10-20
 
 ### Added

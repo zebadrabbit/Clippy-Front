@@ -83,7 +83,8 @@
           <div class="card-header">Colors</div>
           <div class="card-body">
             {% macro color_input(label, name, default, thm) -%}
-            {% set val = (thm|attr(name)) if thm else default %}
+            {% set raw = (thm|attr(name)) if thm else None %}
+            {% set val = raw if raw else default %}
             <div class="row align-items-center mb-3">
               <div class="col-5"><label class="form-label mb-0" for="color-{{ name }}">{{ label }}</label></div>
               <div class="col-4">
@@ -104,6 +105,12 @@
             {{ color_input('Navbar BG', 'navbar_bg', '#212529', theme) }}
             {{ color_input('Navbar Text', 'navbar_text', '#ffffff', theme) }}
             <hr>
+            <div class="mb-2"><strong>Media Type Colors</strong></div>
+            {{ color_input('Intro Border', 'media_color_intro', '#0ea5e9', theme) }}
+            {{ color_input('Clip Border', 'media_color_clip', (theme.color_accent if theme else '#6610f2'), theme) }}
+            {{ color_input('Outro Border', 'media_color_outro', '#f59e0b', theme) }}
+            {{ color_input('Transition Border', 'media_color_transition', '#22c55e', theme) }}
+            <hr>
             <p class="text-muted small mb-2">Optional: fine-tune focus/outline colors for inputs and buttons.</p>
             {{ color_input('Outline (Focus Ring)', 'outline_color', (theme.color_accent if theme else '#6610f2'), theme) }}
           </div>
@@ -122,44 +129,5 @@
 
 {% block scripts %}
   {{ super() }}
-  <script>
-    (function(){
-      function normalizeHex(val){
-        if (!val) return null;
-        var s = String(val).trim();
-        if (s[0] !== '#') s = '#' + s;
-        var m3 = /^#([0-9a-fA-F]{3})$/;
-        var m6 = /^#([0-9a-fA-F]{6})$/;
-        if (m6.test(s)) return s.toLowerCase();
-        var m = s.match(m3);
-        if (m){
-          var c = m[1];
-          return ('#' + c[0]+c[0] + c[1]+c[1] + c[2]+c[2]).toLowerCase();
-        }
-        return null;
-      }
-      function bindSync(row){
-        var text = row.querySelector('.color-text-input');
-        var colorName = text && text.getAttribute('data-target-name');
-        var color = colorName && document.getElementById('color-' + colorName);
-        if (!text || !color) return;
-        // When typing in text field, update color input live if valid
-        text.addEventListener('input', function(){
-          var norm = normalizeHex(text.value);
-          if (norm){
-            color.value = norm;
-            text.classList.remove('is-invalid');
-          } else {
-            text.classList.add('is-invalid');
-          }
-        });
-        // When using color input, reflect into text field
-        color.addEventListener('input', function(){
-          text.value = color.value;
-          text.classList.remove('is-invalid');
-        });
-      }
-      document.querySelectorAll('.card .card-header + .card-body .row.align-items-center').forEach(bindSync);
-    })();
-  </script>
+  <script src="{{ url_for('static', filename='js/admin_theme_form.js') }}"></script>
 {% endblock %}

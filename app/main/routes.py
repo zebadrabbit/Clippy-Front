@@ -384,8 +384,10 @@ def upload_media(project_id):
 
         if file and allowed_file(file.filename):
             try:
-                # Secure source name
-                safe_name = secure_filename(file.filename) or "uploaded_file"
+                # Preserve the user's original name for display (basename only)
+                original_name = os.path.basename(file.filename or "")
+                # Derive a safe extension for storage using a sanitized variant
+                safe_name = secure_filename(original_name) or "uploaded_file"
                 file_ext = os.path.splitext(safe_name)[1]
                 # Determine media type and subfolder
                 mtype = MediaType(media_type)
@@ -529,7 +531,7 @@ def upload_media(project_id):
                 # Create media record
                 media_file = MediaFile(
                     filename=unique_name,
-                    original_filename=safe_name,
+                    original_filename=original_name,
                     file_path=dest_path,
                     file_size=os.path.getsize(dest_path),
                     mime_type=mime_type,
@@ -549,7 +551,7 @@ def upload_media(project_id):
 
                 # Sidecar files are no longer used; all metadata is kept in DB
 
-                flash(f"File '{safe_name}' uploaded successfully!", "success")
+                flash(f"File '{original_name}' uploaded successfully!", "success")
                 return redirect(url_for("main.project_details", project_id=project.id))
 
             except Exception as e:
@@ -741,7 +743,8 @@ def media_upload():
 
     # Build per-user folder with media-type subfolder
     try:
-        safe_name = secure_filename(file.filename) or "uploaded_file"
+        original_name = os.path.basename(file.filename or "")
+        safe_name = secure_filename(original_name) or "uploaded_file"
         file_ext = os.path.splitext(safe_name)[1]
         unique_name = f"{uuid4().hex}{file_ext}"
 
@@ -907,7 +910,7 @@ def media_upload():
 
         media_file = MediaFile(
             filename=unique_name,
-            original_filename=safe_name,
+            original_filename=original_name,
             file_path=dest_path,
             file_size=os.path.getsize(dest_path),
             mime_type=mime_type,
@@ -1371,6 +1374,11 @@ def theme_css():
             f"--navbar-bg: {v('--navbar-bg', '#212529')};",
             f"--navbar-text: {v('--navbar-text', '#ffffff')};",
             f"--outline-color: {v('--outline-color', v('--color-accent', '#6610f2'))};",
+            # Media/type accents
+            f"--media-color-intro: {v('--media-color-intro', '#0ea5e9')};",
+            f"--media-color-clip: {v('--media-color-clip', v('--color-accent', '#6610f2'))};",
+            f"--media-color-outro: {v('--media-color-outro', '#f59e0b')};",
+            f"--media-color-transition: {v('--media-color-transition', '#22c55e')};",
             "}",
             # Map theme vars to Bootstrap CSS variables for broad component support
             ":root{",
@@ -1387,6 +1395,8 @@ def theme_css():
             "--bs-focus-ring-color: color-mix(in srgb, var(--outline-color), transparent 70%);",
             "--bs-focus-ring-opacity: 1;",
             "--bs-focus-ring-width: 0.25rem;",
+            # Progress bar accent color
+            "--bs-progress-bar-bg: var(--color-accent);",
             "}",
             # Base colors
             "body{background-color: var(--color-background); color: var(--color-text);}",

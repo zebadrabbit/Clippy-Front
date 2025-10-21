@@ -6,6 +6,7 @@ ClippyFront is a Flask-based web application for organizing media and assembling
 
 - Flask app factory with blueprints: auth, main, admin, api
 - Theme system: dynamic `/theme.css` that maps theme colors to Bootstrap variables; admin CRUD to create, edit, activate, and delete themes
+	- Per-media-type colors (intro/clip/outro/transition) are themeable and applied to Media Library cards and the Arrange timeline.
 - Media Library: drag-and-drop uploads (Dropzone), per-user storage, thumbnails, tags, bulk actions
 - Robust video preview using Video.js with MIME detection and graceful fallbacks
 - Self-hosted frontend vendor assets (Dropzone, Video.js) for CSP/MIME safety
@@ -15,6 +16,7 @@ ClippyFront is a Flask-based web application for organizing media and assembling
 - Project Wizard: consolidated flow with robust task polling
 - Arrange step: Intro/Outro selection, Transitions with multi-select, Randomize, Select All/Clear All
 - Timeline: card-style items with thumbnails and native drag-and-drop reordering with persistence
+	- Type-colored borders and a dashed insert marker for clear placement during drag.
 - Compile pipeline: interleaves transitions and inserts a static bumper between all segments; clearer logs
 - Branded overlays: author and game text with optional avatar; NVENC detection with CPU fallback
 - Tests with pytest and coverage; linting (Ruff) and formatting (Black)

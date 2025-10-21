@@ -11,6 +11,12 @@
     --bs-card-bg: #161b22;
     --bs-card-color: #e6edf3;
     --bs-border-color: #30363d;
+    /* Project theme defaults used before /theme.css loads */
+    --color-accent: #6610f2;
+    --color-muted: #adb5bd;
+    --navbar-bg: #212529;
+    --navbar-text: #ffffff;
+    --outline-color: var(--color-accent);
 }
 
 body {
@@ -24,28 +30,53 @@ body {
 }
 
 /* Navbar theming enhancements */
-.navbar.bg-dark {
+.navbar-themed {
     background-color: var(--navbar-bg) !important;
 }
-.navbar .nav-link {
+.navbar-themed .navbar-brand,
+.navbar-themed .nav-link {
     color: var(--navbar-text) !important;
 }
-.navbar .nav-link:hover,
-.navbar .nav-link:focus,
-.navbar .nav-link.active {
+.navbar-themed .nav-link:hover,
+.navbar-themed .nav-link:focus,
+.navbar-themed .nav-link.active {
     color: var(--bs-primary) !important;
 }
-.navbar .form-control {
+.navbar-themed .form-control {
     background-color: var(--bs-body-bg);
     color: var(--bs-body-color);
     border-color: var(--bs-border-color);
 }
-.navbar .form-control::placeholder { color: var(--color-muted); }
-.navbar .form-control:focus {
+.navbar-themed .form-control::placeholder { color: var(--color-muted); }
+.navbar-themed .form-control:focus {
     background-color: var(--bs-body-bg);
     color: var(--bs-body-color);
     border-color: var(--bs-primary);
     box-shadow: 0 0 0 0.25rem color-mix(in srgb, var(--outline-color), transparent 70%);
+}
+
+/* Global focus ring using accent/outline color */
+.form-control:focus,
+.form-select:focus,
+.form-check-input:focus {
+    border-color: var(--outline-color);
+    box-shadow: 0 0 0 var(--bs-focus-ring-width, 0.25rem)
+        var(--bs-focus-ring-color, color-mix(in srgb, var(--outline-color), transparent 70%));
+}
+
+.btn:focus,
+.btn:focus-visible {
+    box-shadow: 0 0 0 var(--bs-focus-ring-width, 0.25rem)
+        var(--bs-focus-ring-color, color-mix(in srgb, var(--outline-color), transparent 70%));
+}
+
+.nav-link:focus-visible,
+.dropdown-item:focus-visible,
+.page-link:focus-visible,
+.btn-close:focus-visible {
+    outline: 2px solid var(--outline-color);
+    outline-offset: 2px;
+    box-shadow: none !important;
 }
 
 .card {
@@ -180,6 +211,24 @@ body {
     border-bottom: 1px solid var(--bs-border-color);
 }
 
+/* Media Library: type-colored accents */
+.media-card {
+    border-width: 2px;
+}
+.media-card[data-type="intro"] { border-color: var(--media-color-intro, #0ea5e9); }
+.media-card[data-type="clip"] { border-color: var(--media-color-clip, var(--color-accent)); }
+.media-card[data-type="outro"] { border-color: var(--media-color-outro, #f59e0b); }
+.media-card[data-type="transition"] { border-color: var(--media-color-transition, #22c55e); }
+
+
+/* Ensure Bootstrap contextual classes map to theme variables */
+.bg-primary { background-color: var(--bs-primary) !important; }
+.text-primary { color: var(--bs-primary) !important; }
+.border-primary { border-color: var(--bs-primary) !important; }
+
+/* Improve contrast for primary card headers when used */
+.card-header.bg-primary { color: #fff !important; }
+
 /* Themed list groups (used in sidebars) */
 .list-group-item {
     background-color: var(--bs-card-bg);
@@ -196,3 +245,11 @@ body {
     border-color: var(--bs-primary);
     color: #fff;
 }
+
+/* Accent utilities for broader representation */
+.text-accent { color: var(--color-accent) !important; }
+.bg-accent { background-color: var(--color-accent) !important; color: #fff !important; }
+.border-accent { border-color: var(--color-accent) !important; }
+
+/* Progress bar uses accent by default (can be overridden by /theme.css) */
+.progress-bar { background-color: var(--color-accent, var(--bs-primary)); }

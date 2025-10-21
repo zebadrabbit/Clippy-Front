@@ -15,36 +15,169 @@
 .clip-card .card-body { display: flex; flex-direction: column; }
 .clip-card .card-body .btn { margin-top: auto; }
 
-/* Timeline uses card-style items */
+/* Timeline uses horizontal, scrollable block items */
 #timeline {
-    min-height: 160px;
+    min-height: 180px;
+    background: linear-gradient(transparent 23px, rgba(255,255,255,0.06) 24px), linear-gradient(90deg, transparent 23px, rgba(255,255,255,0.06) 24px);
+    background-size: 24px 24px, 24px 24px; /* subtle grid */
+    border-radius: 8px;
 }
 
 .timeline-list {
     display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 12px;
+    overflow-x: auto;
+    padding: 12px 8px;
+    scroll-snap-type: x proximity;
 }
 
 .timeline-card {
     cursor: move;
+    width: 160px;
+    height: 140px;
+    position: relative;
+    border: 3px solid var(--color-accent);
+    background: #2b2b2b;
+    color: var(--color-text);
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+    border-radius: 10px;
+    overflow: hidden;
 }
 
-.timeline-card.dragging {
-    opacity: 0.6;
+/* Type-based border accents for quick scanning */
+:root {
+    --tl-border-intro: var(--media-color-intro, #0ea5e9);
+    --tl-border-clip: var(--media-color-clip, var(--color-accent));
+    --tl-border-outro: var(--media-color-outro, #f59e0b);
+    --tl-border-transition: var(--media-color-transition, #22c55e);
+}
+.timeline-card.timeline-intro { border-color: var(--tl-border-intro) !important; }
+.timeline-card.timeline-outro { border-color: var(--tl-border-outro) !important; }
+.timeline-card[data-kind="clip"], .timeline-card.timeline-clip { border-color: var(--tl-border-clip) !important; }
+.timeline-card.timeline-transition { border-color: var(--tl-border-transition) !important; }
+
+.timeline-card .thumb {
+    position: absolute;
+    inset: 0;
+    background: #222 center center / cover no-repeat;
+    border-radius: 0.25rem;
+    z-index: 0;
 }
 
-.timeline-drop-indicator {
-    height: 8px;
-    background: rgba(13, 110, 253, 0.35);
-    border-radius: 4px;
-    margin: 2px 0;
-    display: none;
+.timeline-card .overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(0,0,0,.55), rgba(0,0,0,.1));
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 6px 8px;
+    border-radius: 0.25rem;
+    z-index: 1;
+    pointer-events: none; /* allow buttons above to be clickable */
 }
 
-.timeline-drop-indicator.active {
-    display: block;
+.timeline-card .title { font-weight: 600; font-size: 0.9rem; }
+.timeline-card .subtitle { font-size: 0.75rem; opacity: 0.85; }
+.timeline-card .badge-duration {
+    position: absolute;
+    left: 6px;
+    top: 6px;
+    background: rgba(0,0,0,0.65);
+    color: #fff;
+    font-size: 0.75rem;
+    padding: 2px 6px;
+    border-radius: 999px;
+    z-index: 2;
 }
+
+.timeline-card .btn-remove {
+    position: absolute;
+    right: 6px;
+    top: 6px;
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    padding: 0;
+    font-weight: 800;
+    font-size: 18px;
+    background: rgba(220,53,69,0.95); /* bs-danger */
+    color: #fff;
+    border-color: #dc3545;
+    z-index: 2; /* above overlay */
+}
+.timeline-card .btn-remove:hover { background: #dc3545; color: #fff; }
+.timeline-card .btn-remove:focus { outline: 2px solid var(--color-outline, var(--color-accent)); outline-offset: 2px; }
+
+.timeline-card.dragging { opacity: 0.6; }
+
+.timeline-sep {
+    width: 14px;
+    height: 140px;
+    background: #444;
+    border-radius: 7px;
+    color: #ddd;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+}
+.timeline-sep .timeline-sep-label {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    font-size: 0.7rem;
+    letter-spacing: 0.5px;
+    opacity: 0.9;
+}
+/* When transitions are selected, tint separators to highlight transition points */
+.timeline-sep.has-transition {
+    background: rgba(34,197,94,0.35); /* green-ish */
+    color: #e8fff0;
+}
+.timeline-sep.has-transition .timeline-sep-label {
+    font-weight: 600;
+}
+
+/* Insert placeholder tile during drag */
+.timeline-insert {
+    width: 160px;
+    height: 140px;
+    border: 3px dashed var(--color-accent);
+    border-radius: 10px;
+    background: repeating-linear-gradient(45deg, rgba(255,255,255,0.06), rgba(255,255,255,0.06) 8px, transparent 8px, transparent 16px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-accent);
+    flex: 0 0 auto;
+}
+.timeline-insert .timeline-insert-plus {
+    font-size: 2rem;
+    line-height: 1;
+    font-weight: 700;
+}
+
+/* timeline info badge (transitions) */
+#timeline-info .timeline-transitions {
+    border-radius: 8px;
+    background: rgba(13,110,253,0.12);
+    color: #d1e9ff;
+    border: 1px solid rgba(13,110,253,0.4);
+}
+
+/* emphasize clip visual boundaries */
+.timeline-card .overlay .title { text-shadow: 0 1px 2px rgba(0,0,0,0.7); }
+.timeline-card .overlay .subtitle { text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+
+/* Hide old vertical drop indicators in horizontal mode */
+.timeline-drop-indicator { display: none !important; }
 
 /* Focal progress (renamed to chevron-*) and chevron steps */
 .chevron-progress {
@@ -114,7 +247,7 @@
 }
 
 .chevron-steps ul.progress li.active {
-    background-color: #dc9305;
+    background-color: var(--color-accent);
 }
 
 .chevron-steps ul.progress li a {
@@ -141,7 +274,7 @@
 }
 
 .chevron-steps ul.progress li.active:after {
-    box-shadow: 8px -8px 0 3px #dc9305;
+    box-shadow: 8px -8px 0 3px var(--color-accent);
 }
 
 /* Top wizard chevrons container */
@@ -264,7 +397,7 @@
 }
 
 .chevron-steps ul.progress li.active:after {
-    box-shadow: 10px -10px 0 3px #dc9305;
+    box-shadow: 10px -10px 0 3px var(--color-accent);
 }
 
 /* Final overrides to ensure top chevrons render taller and unclipped */
@@ -325,12 +458,12 @@
 .chevron-steps ul.progress { list-style: none; margin: 0.5em auto; padding: 0; overflow:hidden; white-space:nowrap; display:inline-block; }
 .chevron-steps ul.progress li { background-color: #7e7e7e; color:#fff; display:inline-block; line-height: 28px; height: 28px; min-width: 150px; position: relative; text-indent:0.5em; transition:min-width 0.5s; font-size: 1rem; }
 
-.chevron-steps ul.progress li.active { background-color: #dc9305; }
+.chevron-steps ul.progress li.active { background-color: var(--color-accent); }
 .chevron-steps ul.progress li a { padding: 0 0 0 6px; color: #FFF; text-decoration: none; }
 .chevron-steps ul.progress li .step-check { display: none; margin-right: 6px; vertical-align: -0.125em; }
 .chevron-steps ul.progress li.done .step-check { display: inline-block; }
 .chevron-steps ul.progress li:after { content:''; position:absolute; right:100%; margin-right:0.5em; width:1.6em; padding-top:1.6em; border:solid white; z-index:1; transform:rotate(45deg); border-bottom:0; border-left:0; box-shadow:7px -7px 0 3px  #7e7e7e }
-.chevron-steps ul.progress li.active:after { box-shadow:8px -8px 0 3px #dc9305; }
+.chevron-steps ul.progress li.active:after { box-shadow:8px -8px 0 3px var(--color-accent); }
 
 /* Top wizard chevrons container */
 .chevron-steps { text-align:center; }
@@ -355,7 +488,7 @@
 .chevron-bar { height: 40px; display: flex; align-items: center; }
 .chevron-steps ul.progress li { height: 32px; line-height: 32px; min-width: 160px; font-size: 1.05rem; }
 .chevron-steps ul.progress li:after { margin-right: 0.6em; width: 1.9em; padding-top: 1.9em; box-shadow: 10px -10px 0 3px #7e7e7e; }
-.chevron-steps ul.progress li.active:after { box-shadow: 10px -10px 0 3px #dc9305; }
+.chevron-steps ul.progress li.active:after { box-shadow: 10px -10px 0 3px var(--color-accent); }
 
 /* Final overrides to ensure top chevrons render taller and unclipped */
 .chevron-steps ul.progress {
@@ -383,8 +516,8 @@
 }
 /* Right-facing orange tip: color the next step's left divider */
 .chevron-steps ul.progress li.active + li:after {
-    box-shadow: 12px -12px 0 3px #dc9305;
-    background-color: #dc9305;
+    box-shadow: 12px -12px 0 3px var(--color-accent);
+    background-color: var(--color-accent);
 }
 /* No orange carryover onto the next step's left wedge */
 

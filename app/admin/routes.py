@@ -976,14 +976,20 @@ def theme_create():
             "color_muted": request.form.get("color_muted") or "#adb5bd",
             "navbar_bg": request.form.get("navbar_bg") or "#212529",
             "navbar_text": request.form.get("navbar_text") or "#ffffff",
+            # Media type colors
+            "media_color_intro": request.form.get("media_color_intro") or "#0ea5e9",
+            "media_color_clip": request.form.get("media_color_clip") or None,
+            "media_color_outro": request.form.get("media_color_outro") or "#f59e0b",
+            "media_color_transition": request.form.get("media_color_transition")
+            or "#22c55e",
         }
+        outline_color = (request.form.get("outline_color") or "").strip() or None
         desc = (request.form.get("description") or "").strip() or None
         wm_opacity = request.form.get("watermark_opacity", type=float) or 0.1
         wm_pos = (request.form.get("watermark_position") or "bottom-right").strip()
         mode = (request.form.get("mode") or "auto").strip().lower()
         if mode not in {"auto", "light", "dark"}:
             mode = "auto"
-        outline_color = (request.form.get("outline_color") or "").strip() or None
         try:
             theme = Theme(
                 name=name,
@@ -994,12 +1000,8 @@ def theme_create():
                 mode=mode,
                 **colors,
             )
-            if outline_color:
-                theme.color_accent = (
-                    outline_color
-                    if not colors.get("color_accent")
-                    else theme.color_accent
-                )
+            theme.outline_color = outline_color
+            # outline_color is used for focus ring CSS only; do not override accent persistently
             db.session.add(theme)
             db.session.commit()
             # Handle uploads after we have an ID
@@ -1036,10 +1038,19 @@ def theme_edit(theme_id: int):
                 "color_muted",
                 "navbar_bg",
                 "navbar_text",
+                "media_color_intro",
+                "media_color_clip",
+                "media_color_outro",
+                "media_color_transition",
             ):
                 val = request.form.get(key)
                 if val:
                     setattr(theme, key, val)
+            # Outline/focus ring optional value
+            ocol = request.form.get("outline_color")
+            if ocol is not None:
+                ocol = ocol.strip()
+                theme.outline_color = ocol or None
             # Watermark settings
             wm_opacity = request.form.get("watermark_opacity", type=float)
             wm_pos = request.form.get("watermark_position")
@@ -1052,9 +1063,14 @@ def theme_edit(theme_id: int):
             if mode in {"auto", "light", "dark"}:
                 theme.mode = mode
             # Optional outline/focus override (maps to color_accent if provided)
-            outline_color = (request.form.get("outline_color") or "").strip()
-            if outline_color:
-                theme.color_accent = outline_color
+            # outline_color may adjust focus ring in CSS dynamically; do not overwrite accent persistently
+            # Touch updated_at to bust /theme.css cache param so changes apply immediately
+            try:
+                from datetime import datetime as _dt
+
+                theme.updated_at = _dt.utcnow()
+            except Exception:
+                pass
             theme.updated_by = current_user.id
             _handle_theme_uploads(theme)
             db.session.commit()

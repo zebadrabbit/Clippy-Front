@@ -511,6 +511,17 @@ class Theme(db.Model):
     navbar_bg = db.Column(db.String(20), default="#212529")
     navbar_text = db.Column(db.String(20), default="#ffffff")
 
+    # Optional explicit outline/focus ring color (falls back to accent)
+    outline_color = db.Column(db.String(20))
+
+    # Optional media/type-specific colors for UI accents
+    media_color_intro = db.Column(db.String(20), default="#0ea5e9")
+    media_color_clip = db.Column(
+        db.String(20)
+    )  # defaults to color_accent in CSS mapping
+    media_color_outro = db.Column(db.String(20), default="#f59e0b")
+    media_color_transition = db.Column(db.String(20), default="#22c55e")
+
     # Assets (stored under instance/uploads/system/themes/<id>/...)
     logo_path = db.Column(db.String(500))
     favicon_path = db.Column(db.String(500))
@@ -546,7 +557,22 @@ class Theme(db.Model):
             "--navbar-text": self.navbar_text or "#ffffff",
             # Focus ring and outline colors (defaults based on primary/accent)
             # These may be overridden further downstream if needed
-            "--outline-color": self.color_accent or self.color_primary or "#6610f2",
+            "--outline-color": (
+                self.outline_color
+                or self.color_accent
+                or self.color_primary
+                or "#6610f2"
+            ),
+            # Media/type-specific accent colors
+            "--media-color-intro": getattr(self, "media_color_intro", None)
+            or "#0ea5e9",  # sky-500
+            "--media-color-clip": getattr(self, "media_color_clip", None)
+            or self.color_accent
+            or "#6610f2",
+            "--media-color-outro": getattr(self, "media_color_outro", None)
+            or "#f59e0b",  # amber-500
+            "--media-color-transition": getattr(self, "media_color_transition", None)
+            or "#22c55e",  # green-500
         }
 
     def __repr__(self) -> str:

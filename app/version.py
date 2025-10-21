@@ -2,8 +2,8 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "0.6.0"
-__version_info__ = (0, 6, 0)
+__version__ = "0.7.0"
+__version_info__ = (0, 7, 0)
 
 # Version history tracking
 VERSION_HISTORY = {
@@ -41,6 +41,12 @@ VERSION_HISTORY = {
         "and live color editing (hex input sync). Navbar alignment and stacked icon+label style, centered layout with search; "
         "Media Library upload UX redesign with large dashed Dropzone and simplified type chooser; vendor plugin removed for stability. "
         "Admin delete flow now redirects instead of showing raw JSON; documentation refreshed."
+    ),
+    "0.7.0": (
+        "Arrange timeline UX: horizontal tiles with type-colored borders, thicker outlines, clear remove button, and dashed insert marker; "
+        "Transitions info badge placement and separator tinting; Step 2 progress keeps Done active on reuse; defaults to 60fps & auto project name. "
+        "Theme extensions: per-media-type colors (intro/clip/outro/transition) exposed via /theme.css and editable in Admin → Themes; "
+        "Media Library cards color-coded by type; inline scripts extracted to static files; docs updated."
     ),
 }
 
