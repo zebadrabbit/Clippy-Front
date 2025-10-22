@@ -4,6 +4,7 @@ Main application routes for the Clippy platform.
 This module handles the core user-facing routes including the landing page,
 dashboard, project management, and media upload functionality.
 """
+import hashlib
 import mimetypes
 import os
 import subprocess
@@ -11,6 +12,7 @@ from uuid import uuid4
 
 from flask import (
     Blueprint,
+    Response,
     current_app,
     flash,
     jsonify,
@@ -133,27 +135,67 @@ def projects():
 ## Legacy project creation route removed; use the wizard and API instead.
 
 
-@main_bp.route("/projects/<int:project_id>")
+@main_bp.route("/p/<public_id>")
 @login_required
-def project_details(project_id):
+def project_details_by_public(public_id):
     """
     Display detailed project information and management interface.
 
     Args:
-        project_id: ID of the project to display
+        public_id: Opaque public id of the project to display
 
     Returns:
         Response: Rendered project details template or 404
     """
     project = Project.query.filter_by(
-        id=project_id, user_id=current_user.id
+        public_id=public_id, user_id=current_user.id
     ).first_or_404()
+    # Defense-in-depth: if project has no public_id (shouldn't happen here), assign one
+    if not project.public_id:
+        try:
+            import secrets as _secrets
+
+            project.public_id = _secrets.token_urlsafe(12)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
 
     # Get project clips with ordering
     clips = project.clips.order_by(Clip.order_index.asc(), Clip.created_at.asc()).all()
 
-    # Get project media files
+    # Get project media files and group by role
     media_files = project.media_files.order_by(MediaFile.uploaded_at.desc()).all()
+    intros = (
+        project.media_files.filter_by(media_type=MediaType.INTRO)
+        .order_by(MediaFile.uploaded_at.desc())
+        .all()
+    )
+    outros = (
+        project.media_files.filter_by(media_type=MediaType.OUTRO)
+        .order_by(MediaFile.uploaded_at.desc())
+        .all()
+    )
+    transitions = (
+        project.media_files.filter_by(media_type=MediaType.TRANSITION)
+        .order_by(MediaFile.uploaded_at.desc())
+        .all()
+    )
+
+    # Download URL for final compilation if present
+    download_url = None
+    if project.output_filename:
+        try:
+            if project.public_id:
+                download_url = url_for(
+                    "main.download_compiled_output_by_public",
+                    public_id=project.public_id,
+                )
+            else:
+                download_url = url_for(
+                    "main.download_compiled_output", project_id=project.id
+                )
+        except Exception:
+            download_url = None
 
     return render_template(
         "main/project_details.html",
@@ -161,6 +203,71 @@ def project_details(project_id):
         project=project,
         clips=clips,
         media_files=media_files,
+        intros=intros,
+        outros=outros,
+        transitions=transitions,
+        download_url=download_url,
+    )
+
+
+@main_bp.route("/projects/<int:project_id>")
+@login_required
+def project_details(project_id):
+    """Legacy numeric-id route retained for backwards compatibility.
+
+    Redirects to the opaque-id route if available, while enforcing ownership.
+    """
+    project = Project.query.filter_by(
+        id=project_id, user_id=current_user.id
+    ).first_or_404()
+    if not project.public_id:
+        try:
+            import secrets as _secrets
+
+            project.public_id = _secrets.token_urlsafe(12)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+    if project.public_id:
+        return redirect(
+            url_for("main.project_details_by_public", public_id=project.public_id)
+        )
+    # Fallback: render directly
+    clips = project.clips.order_by(Clip.order_index.asc(), Clip.created_at.asc()).all()
+    media_files = project.media_files.order_by(MediaFile.uploaded_at.desc()).all()
+    intros = (
+        project.media_files.filter_by(media_type=MediaType.INTRO)
+        .order_by(MediaFile.uploaded_at.desc())
+        .all()
+    )
+    outros = (
+        project.media_files.filter_by(media_type=MediaType.OUTRO)
+        .order_by(MediaFile.uploaded_at.desc())
+        .all()
+    )
+    transitions = (
+        project.media_files.filter_by(media_type=MediaType.TRANSITION)
+        .order_by(MediaFile.uploaded_at.desc())
+        .all()
+    )
+    download_url = None
+    if project.output_filename:
+        try:
+            download_url = url_for(
+                "main.download_compiled_output", project_id=project.id
+            )
+        except Exception:
+            download_url = None
+    return render_template(
+        "main/project_details.html",
+        title=project.name,
+        project=project,
+        clips=clips,
+        media_files=media_files,
+        intros=intros,
+        outros=outros,
+        transitions=transitions,
+        download_url=download_url,
     )
 
 
@@ -277,38 +384,174 @@ def upload_media(project_id):
 
         if file and allowed_file(file.filename):
             try:
-                # Generate secure filename
-                filename = secure_filename(file.filename)
-                if not filename:
-                    filename = "uploaded_file"
+                # Preserve the user's original name for display (basename only)
+                original_name = os.path.basename(file.filename or "")
+                # Derive a safe extension for storage using a sanitized variant
+                safe_name = secure_filename(original_name) or "uploaded_file"
+                file_ext = os.path.splitext(safe_name)[1]
+                # Determine media type and subfolder
+                mtype = MediaType(media_type)
+                mime_type = file.content_type or "application/octet-stream"
+                subfolder = _media_type_folder(mtype, mime_type)
 
-                # Create unique filename
-                file_ext = os.path.splitext(filename)[1]
-                unique_filename = f"{current_user.id}_{project_id}_{MediaFile.query.count() + 1}{file_ext}"
-
-                # Save file
-                upload_path = os.path.join(
+                # Build per-user destination path
+                base_upload = os.path.join(
                     current_app.instance_path, current_app.config["UPLOAD_FOLDER"]
                 )
-                file_path = os.path.join(upload_path, unique_filename)
-                file.save(file_path)
+                user_dir = os.path.join(base_upload, str(current_user.id), subfolder)
+                os.makedirs(user_dir, exist_ok=True)
 
-                # Create media file record
+                unique_name = f"{uuid4().hex}{file_ext}"
+                dest_path = os.path.join(user_dir, unique_name)
+                file.save(dest_path)
+
+                # Improve MIME detection if browser provided a generic or missing type
+                try:
+                    if (
+                        not mime_type
+                        or (
+                            mime_type
+                            in ("application/octet-stream", "binary/octet-stream")
+                        )
+                        or not (
+                            mime_type.startswith("image")
+                            or mime_type.startswith("video")
+                        )
+                    ):
+                        # Try python-magic first
+                        try:
+                            import magic  # type: ignore
+
+                            ms = magic.Magic(mime=True)
+                            detected = ms.from_file(dest_path)
+                            if detected:
+                                mime_type = detected
+                        except Exception:
+                            # Fallback: mimetypes by extension
+                            guessed, _ = mimetypes.guess_type(dest_path)
+                            if guessed:
+                                mime_type = guessed
+                except Exception:
+                    pass
+
+                # Generate thumbnail for videos
+                thumb_path = None
+                if mime_type and mime_type.startswith("video"):
+                    try:
+                        thumbs_dir = os.path.join(
+                            base_upload, str(current_user.id), "thumbnails"
+                        )
+                        os.makedirs(thumbs_dir, exist_ok=True)
+                        thumb_name = f"{uuid4().hex}.jpg"
+                        thumb_path = os.path.join(thumbs_dir, thumb_name)
+                        # Extract a frame at 1s; scale width to 480 keeping aspect ratio
+                        subprocess.run(
+                            [
+                                _resolve_binary(current_app, "ffmpeg"),
+                                "-y",
+                                "-ss",
+                                "1",
+                                "-i",
+                                dest_path,
+                                "-frames:v",
+                                "1",
+                                "-vf",
+                                "scale=480:-1",
+                                thumb_path,
+                            ],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            check=True,
+                        )
+                    except Exception as e:
+                        current_app.logger.warning(
+                            f"Thumbnail generation failed (project upload): {e}"
+                        )
+                        thumb_path = None
+
+                # Optionally probe basic video metadata and checksum
+                v_duration = None
+                v_width = None
+                v_height = None
+                v_fps = None
+                try:
+                    if mime_type and mime_type.startswith("video"):
+                        probe_cmd = [
+                            _resolve_binary(current_app, "ffprobe"),
+                            "-v",
+                            "error",
+                            "-select_streams",
+                            "v:0",
+                            "-show_entries",
+                            "stream=width,height,r_frame_rate",
+                            "-show_entries",
+                            "format=duration",
+                            "-of",
+                            "json",
+                            dest_path,
+                        ]
+                        out = subprocess.check_output(
+                            probe_cmd, text=True, encoding="utf-8"
+                        )
+                        import json as _json
+
+                        data = _json.loads(out)
+                        st = (data.get("streams") or [{}])[0]
+                        fr = st.get("r_frame_rate") or "0/1"
+                        try:
+                            num, den = fr.split("/")
+                            v_fps = (
+                                (float(num) / float(den)) if float(den) != 0 else None
+                            )
+                        except Exception:
+                            v_fps = None
+                        v_width = st.get("width")
+                        v_height = st.get("height")
+                        try:
+                            v_duration = float(
+                                (data.get("format") or {}).get("duration")
+                            )
+                        except Exception:
+                            v_duration = None
+                except Exception:
+                    pass
+
+                checksum = None
+                try:
+                    import hashlib as _hashlib
+
+                    h = _hashlib.sha256()
+                    with open(dest_path, "rb") as fh:
+                        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                            h.update(chunk)
+                    checksum = h.hexdigest()
+                except Exception:
+                    checksum = None
+
+                # Create media record
                 media_file = MediaFile(
-                    filename=unique_filename,
-                    original_filename=filename,
-                    file_path=file_path,
-                    file_size=os.path.getsize(file_path),
-                    mime_type=file.content_type or "application/octet-stream",
-                    media_type=MediaType(media_type),
+                    filename=unique_name,
+                    original_filename=original_name,
+                    file_path=dest_path,
+                    file_size=os.path.getsize(dest_path),
+                    mime_type=mime_type,
+                    media_type=mtype,
                     user_id=current_user.id,
                     project_id=project.id,
+                    thumbnail_path=thumb_path,
+                    checksum=checksum,
+                    duration=v_duration,
+                    width=v_width,
+                    height=v_height,
+                    framerate=v_fps,
                 )
 
                 db.session.add(media_file)
                 db.session.commit()
 
-                flash(f"File '{filename}' uploaded successfully!", "success")
+                # Sidecar files are no longer used; all metadata is kept in DB
+
+                flash(f"File '{original_name}' uploaded successfully!", "success")
                 return redirect(url_for("main.project_details", project_id=project.id))
 
             except Exception as e:
@@ -442,15 +685,29 @@ def _media_type_folder(media_type: MediaType, mime_type: str) -> str:
 
 
 def _resolve_binary(app, name: str) -> str:
-    """Resolve a binary path, preferring project-local bin/ if present.
+    """Resolve a binary path, preferring app config and project-local bin/.
 
-    - For 'ffmpeg', consult app.config["FFMPEG_BINARY"] then ./bin/ffmpeg
-    - For 'yt-dlp', consult app.config["YT_DLP_BINARY"] then ./bin/yt-dlp
+    Resolution order per name (case-insensitive):
+      - ffmpeg  -> FFMPEG_BINARY   -> ./bin/ffmpeg -> "ffmpeg"
+      - ffprobe -> FFPROBE_BINARY  -> ./bin/ffprobe -> "ffprobe"
+      - yt-dlp  -> YT_DLP_BINARY   -> ./bin/yt-dlp -> "yt-dlp"
     """
+    lname = (name or "").lower()
+    if lname == "ffmpeg":
+        cfg_key = "FFMPEG_BINARY"
+    elif lname == "ffprobe":
+        cfg_key = "FFPROBE_BINARY"
+    elif lname in ("yt-dlp", "ytdlp"):
+        cfg_key = "YT_DLP_BINARY"
+    else:
+        cfg_key = None
+
     # Config-specified first
-    cfg = app.config.get("FFMPEG_BINARY" if name == "ffmpeg" else "YT_DLP_BINARY")
-    if cfg:
-        return cfg
+    if cfg_key:
+        cfg = app.config.get(cfg_key)
+        if cfg:
+            return cfg
+
     # Project-local bin fallback
     root = app.root_path  # app/ directory
     proj_root = os.path.dirname(root)
@@ -486,7 +743,8 @@ def media_upload():
 
     # Build per-user folder with media-type subfolder
     try:
-        safe_name = secure_filename(file.filename) or "uploaded_file"
+        original_name = os.path.basename(file.filename or "")
+        safe_name = secure_filename(original_name) or "uploaded_file"
         file_ext = os.path.splitext(safe_name)[1]
         unique_name = f"{uuid4().hex}{file_ext}"
 
@@ -502,6 +760,17 @@ def media_upload():
 
         dest_path = os.path.join(user_dir, unique_name)
         file.save(dest_path)
+
+        # Compute checksum for dedupe
+        checksum = None
+        try:
+            h = hashlib.sha256()
+            with open(dest_path, "rb") as fh:
+                for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                    h.update(chunk)
+            checksum = h.hexdigest()
+        except Exception:
+            checksum = None
 
         # Improve MIME detection if browser provided a generic or missing type
         try:
@@ -526,7 +795,44 @@ def media_upload():
         except Exception:
             pass
 
-        # Generate thumbnail for videos
+        # If same content already exists for this user, reuse existing DB row and remove duplicate file
+        try:
+            if checksum:
+                existing = (
+                    db.session.query(MediaFile)
+                    .filter_by(user_id=current_user.id, checksum=checksum)
+                    .first()
+                )
+                if existing and os.path.exists(existing.file_path):
+                    # Remove the new file; return existing record
+                    try:
+                        os.remove(dest_path)
+                    except Exception:
+                        pass
+                    return (
+                        jsonify(
+                            {
+                                "success": True,
+                                "id": existing.id,
+                                "filename": existing.filename,
+                                "type": existing.media_type.value,
+                                "preview_url": url_for(
+                                    "main.media_preview", media_id=existing.id
+                                ),
+                                "thumbnail_url": url_for(
+                                    "main.media_thumbnail", media_id=existing.id
+                                ),
+                                "mime": existing.mime_type,
+                                "original_filename": existing.original_filename,
+                                "tags": existing.tags or "",
+                            }
+                        ),
+                        200,
+                    )
+        except Exception:
+            pass
+
+        # Generate thumbnail for videos (deterministic name; reuse if exists)
         thumb_path = None
         if mime_type and mime_type.startswith("video"):
             try:
@@ -534,34 +840,77 @@ def media_upload():
                     base_upload, str(current_user.id), "thumbnails"
                 )
                 os.makedirs(thumbs_dir, exist_ok=True)
-                thumb_name = f"{uuid4().hex}.jpg"
-                thumb_path = os.path.join(thumbs_dir, thumb_name)
-                # Extract a frame at 1s; scale width to 480 keeping aspect ratio
-                subprocess.run(
-                    [
-                        _resolve_binary(current_app, "ffmpeg"),
-                        "-y",
-                        "-ss",
-                        "1",
-                        "-i",
-                        dest_path,
-                        "-frames:v",
-                        "1",
-                        "-vf",
-                        "scale=480:-1",
-                        thumb_path,
-                    ],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=True,
-                )
+                stem = os.path.splitext(unique_name)[0]
+                thumb_path = os.path.join(thumbs_dir, f"{stem}.jpg")
+                if not os.path.exists(thumb_path):
+                    # Extract a frame at 1s; scale width to 480 keeping aspect ratio
+                    subprocess.run(
+                        [
+                            _resolve_binary(current_app, "ffmpeg"),
+                            "-y",
+                            "-ss",
+                            "1",
+                            "-i",
+                            dest_path,
+                            "-frames:v",
+                            "1",
+                            "-vf",
+                            "scale=480:-1",
+                            thumb_path,
+                        ],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        check=True,
+                    )
             except Exception as e:
                 current_app.logger.warning(f"Thumbnail generation failed: {e}")
                 thumb_path = None
 
+        # Optionally probe basic video metadata
+        v_duration = None
+        v_width = None
+        v_height = None
+        v_fps = None
+        try:
+            if mime_type and mime_type.startswith("video"):
+                # Use ffprobe via subprocess for portability
+                probe_cmd = [
+                    _resolve_binary(current_app, "ffprobe"),
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=width,height,r_frame_rate",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "json",
+                    dest_path,
+                ]
+                out = subprocess.check_output(probe_cmd, text=True, encoding="utf-8")
+                import json as _json
+
+                data = _json.loads(out)
+                st = (data.get("streams") or [{}])[0]
+                fr = st.get("r_frame_rate") or "0/1"
+                try:
+                    num, den = fr.split("/")
+                    v_fps = (float(num) / float(den)) if float(den) != 0 else None
+                except Exception:
+                    v_fps = None
+                v_width = st.get("width")
+                v_height = st.get("height")
+                try:
+                    v_duration = float((data.get("format") or {}).get("duration"))
+                except Exception:
+                    v_duration = None
+        except Exception:
+            pass
+
         media_file = MediaFile(
             filename=unique_name,
-            original_filename=safe_name,
+            original_filename=original_name,
             file_path=dest_path,
             file_size=os.path.getsize(dest_path),
             mime_type=mime_type,
@@ -569,9 +918,16 @@ def media_upload():
             user_id=current_user.id,
             project_id=None,
             thumbnail_path=thumb_path,
+            checksum=checksum,
+            duration=v_duration,
+            width=v_width,
+            height=v_height,
+            framerate=v_fps,
         )
         db.session.add(media_file)
         db.session.commit()
+
+        # Sidecar files are no longer used; all metadata is kept in DB
 
         return (
             jsonify(
@@ -603,12 +959,69 @@ def media_upload():
 @login_required
 def media_preview(media_id: int):
     """Serve a media file preview if the user has access."""
-    media = MediaFile.query.get_or_404(media_id)
+    media = db.session.get(MediaFile, media_id)
+    if not media:
+        return jsonify({"error": "Not found"}), 404
     if media.user_id != current_user.id and not current_user.is_admin():
         # Avoid leaking file paths
         return jsonify({"error": "Not authorized"}), 403
+
+    # Resolve path that may have been created on a different host/container
+    def _resolve_media_server_path(orig_path: str) -> str:
+        try:
+            debug = os.getenv("MEDIA_PATH_DEBUG", "").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+            if orig_path and os.path.exists(orig_path):
+                if debug:
+                    current_app.logger.info(
+                        "[media-path] using original path (exists): %s", orig_path
+                    )
+                return orig_path
+            ap = (orig_path or "").strip()
+            if not ap:
+                return orig_path
+            alias_from = os.getenv("MEDIA_PATH_ALIAS_FROM")
+            alias_to = os.getenv("MEDIA_PATH_ALIAS_TO")
+            if alias_from and alias_to and ap.startswith(alias_from):
+                cand = alias_to + ap[len(alias_from) :]
+                if debug:
+                    current_app.logger.info(
+                        "[media-path] alias candidate: FROM='%s' TO='%s' -> '%s' (exists=%s)",
+                        alias_from,
+                        alias_to,
+                        cand,
+                        os.path.exists(cand),
+                    )
+                if os.path.exists(cand):
+                    return cand
+            marker = "/instance/"
+            if marker in ap:
+                try:
+                    suffix = ap.split(marker, 1)[1]
+                    cand = os.path.join(current_app.instance_path, suffix)
+                    if debug:
+                        current_app.logger.info(
+                            "[media-path] instance remap candidate: base='%s' suffix='/%s' -> '%s' (exists=%s)",
+                            current_app.instance_path,
+                            suffix,
+                            cand,
+                            os.path.exists(cand),
+                        )
+                    if os.path.exists(cand):
+                        return cand
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return orig_path
+
+    resolved_path = _resolve_media_server_path(media.file_path)
     try:
-        return send_file(media.file_path, mimetype=media.mime_type, conditional=True)
+        return send_file(resolved_path, mimetype=media.mime_type, conditional=True)
     except FileNotFoundError:
         return jsonify({"error": "File not found"}), 404
 
@@ -617,17 +1030,116 @@ def media_preview(media_id: int):
 @login_required
 def media_thumbnail(media_id: int):
     """Serve a thumbnail for a media file if available; fallback to preview for images."""
-    media = MediaFile.query.get_or_404(media_id)
+    media = db.session.get(MediaFile, media_id)
+    if not media:
+        return jsonify({"error": "Not found"}), 404
     if media.user_id != current_user.id and not current_user.is_admin():
         return jsonify({"error": "Not authorized"}), 403
-    # If we have a thumbnail, serve it
-    if media.thumbnail_path and os.path.exists(media.thumbnail_path):
+
+    # Local resolver for media paths
+    def _resolve_media_server_path(orig_path: str) -> str:
         try:
-            return send_file(
-                media.thumbnail_path, mimetype="image/jpeg", conditional=True
-            )
+            debug = os.getenv("MEDIA_PATH_DEBUG", "").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+            if orig_path and os.path.exists(orig_path):
+                if debug:
+                    current_app.logger.info(
+                        "[media-path] using original path (exists): %s", orig_path
+                    )
+                return orig_path
+            ap = (orig_path or "").strip()
+            if not ap:
+                return orig_path
+            alias_from = os.getenv("MEDIA_PATH_ALIAS_FROM")
+            alias_to = os.getenv("MEDIA_PATH_ALIAS_TO")
+            if alias_from and alias_to and ap.startswith(alias_from):
+                cand = alias_to + ap[len(alias_from) :]
+                if debug:
+                    current_app.logger.info(
+                        "[media-path] alias candidate: FROM='%s' TO='%s' -> '%s' (exists=%s)",
+                        alias_from,
+                        alias_to,
+                        cand,
+                        os.path.exists(cand),
+                    )
+                if os.path.exists(cand):
+                    return cand
+            marker = "/instance/"
+            if marker in ap:
+                try:
+                    suffix = ap.split(marker, 1)[1]
+                    cand = os.path.join(current_app.instance_path, suffix)
+                    if debug:
+                        current_app.logger.info(
+                            "[media-path] instance remap candidate: base='%s' suffix='/%s' -> '%s' (exists=%s)",
+                            current_app.instance_path,
+                            suffix,
+                            cand,
+                            os.path.exists(cand),
+                        )
+                    if os.path.exists(cand):
+                        return cand
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return orig_path
+
+    # If we have a thumbnail, serve it
+    thumb_path = _resolve_media_server_path(media.thumbnail_path or "")
+    if thumb_path and os.path.exists(thumb_path):
+        try:
+            return send_file(thumb_path, mimetype="image/jpeg", conditional=True)
         except FileNotFoundError:
             pass
+    # Lazy-generate a thumbnail for videos on-demand
+    try:
+        if (
+            media.mime_type
+            and media.mime_type.startswith("video")
+            and os.path.exists(_resolve_media_server_path(media.file_path))
+        ):
+            base_upload = os.path.join(
+                current_app.instance_path, current_app.config["UPLOAD_FOLDER"]
+            )
+            thumbs_dir = os.path.join(base_upload, str(media.user_id), "thumbnails")
+            os.makedirs(thumbs_dir, exist_ok=True)
+            stem = os.path.splitext(os.path.basename(media.file_path))[0]
+            thumb_path = os.path.join(thumbs_dir, f"{stem}.jpg")
+            if not os.path.exists(thumb_path):
+                subprocess.run(
+                    [
+                        _resolve_binary(current_app, "ffmpeg"),
+                        "-y",
+                        "-ss",
+                        "1",
+                        "-i",
+                        _resolve_media_server_path(media.file_path),
+                        "-frames:v",
+                        "1",
+                        "-vf",
+                        "scale=480:-1",
+                        thumb_path,
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=True,
+                )
+            # Save path to DB if not already set
+            if not media.thumbnail_path or media.thumbnail_path != thumb_path:
+                media.thumbnail_path = thumb_path
+                try:
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+            return send_file(thumb_path, mimetype="image/jpeg", conditional=True)
+    except Exception:
+        # Non-fatal: fall through to placeholders
+        pass
     # Fallback: for images, serve image; for video with no thumbnail, placeholder if available
     if media.mime_type and media.mime_type.startswith("image"):
         return send_file(media.file_path, mimetype=media.mime_type, conditional=True)
@@ -648,7 +1160,9 @@ def media_thumbnail(media_id: int):
 @login_required
 def media_update(media_id: int):
     """Rename or change type of a media file."""
-    media = MediaFile.query.get_or_404(media_id)
+    media = db.session.get(MediaFile, media_id)
+    if not media:
+        return jsonify({"error": "Not found"}), 404
     if media.user_id != current_user.id and not current_user.is_admin():
         return jsonify({"error": "Not authorized"}), 403
     new_name = request.form.get("original_filename", "").strip()
@@ -678,7 +1192,9 @@ def media_update(media_id: int):
 @login_required
 def media_delete(media_id: int):
     """Delete a media file and its thumbnail."""
-    media = MediaFile.query.get_or_404(media_id)
+    media = db.session.get(MediaFile, media_id)
+    if not media:
+        return jsonify({"error": "Not found"}), 404
     if media.user_id != current_user.id and not current_user.is_admin():
         return jsonify({"error": "Not authorized"}), 403
     try:
@@ -832,12 +1348,136 @@ def license_page():
     return render_template("main/license.html", title="License")
 
 
-@main_bp.route("/projects/<int:project_id>/download-output")
+@main_bp.route("/theme/logo")
+def theme_logo():
+    """Serve active theme logo (no auth to allow in navbar before auth)."""
+    try:
+        from app.models import Theme
+
+        theme = Theme.query.filter_by(is_active=True).first()
+        if theme and theme.logo_path and os.path.exists(theme.logo_path):
+            guessed, _ = mimetypes.guess_type(theme.logo_path)
+            return send_file(theme.logo_path, mimetype=guessed or "image/png")
+    except Exception:
+        pass
+    return jsonify({"error": "No logo"}), 404
+
+
+@main_bp.route("/theme/favicon")
+def theme_favicon():
+    """Serve active theme favicon."""
+    try:
+        from app.models import Theme
+
+        theme = Theme.query.filter_by(is_active=True).first()
+        if theme and theme.favicon_path and os.path.exists(theme.favicon_path):
+            guessed, _ = mimetypes.guess_type(theme.favicon_path)
+            return send_file(theme.favicon_path, mimetype=guessed or "image/x-icon")
+    except Exception:
+        pass
+    return jsonify({"error": "No favicon"}), 404
+
+
+@main_bp.route("/theme/watermark")
+def theme_watermark():
+    """Serve active theme watermark image."""
+    try:
+        from app.models import Theme
+
+        theme = Theme.query.filter_by(is_active=True).first()
+        if theme and theme.watermark_path and os.path.exists(theme.watermark_path):
+            guessed, _ = mimetypes.guess_type(theme.watermark_path)
+            return send_file(theme.watermark_path, mimetype=guessed or "image/png")
+    except Exception:
+        pass
+    return jsonify({"error": "No watermark"}), 404
+
+
+@main_bp.route("/theme.css")
+def theme_css():
+    """Serve CSS variables and a few overrides for the active theme.
+
+    We keep this in a separate stylesheet to avoid inline <style> lint issues
+    in templates. If no active theme exists, return a minimal empty sheet.
+    """
+    try:
+        from app.models import Theme
+
+        theme = Theme.query.filter_by(is_active=True).first()
+        if not theme:
+            return Response("/* no active theme */", mimetype="text/css")
+
+        # Compose CSS with variables and a couple of Bootstrap overrides
+        css_vars = theme.as_css_vars()
+
+        # Safeguard lookups
+        def v(key, default):
+            return css_vars.get(key, default)
+
+        css = [
+            ":root{",
+            f"--color-primary: {v('--color-primary', '#0d6efd')};",
+            f"--color-secondary: {v('--color-secondary', '#6c757d')};",
+            f"--color-accent: {v('--color-accent', '#6610f2')};",
+            f"--color-background: {v('--color-background', '#121212')};",
+            f"--color-surface: {v('--color-surface', '#1e1e1e')};",
+            f"--color-text: {v('--color-text', '#e9ecef')};",
+            f"--color-muted: {v('--color-muted', '#adb5bd')};",
+            f"--navbar-bg: {v('--navbar-bg', '#212529')};",
+            f"--navbar-text: {v('--navbar-text', '#ffffff')};",
+            f"--outline-color: {v('--outline-color', v('--color-accent', '#6610f2'))};",
+            # Media/type accents
+            f"--media-color-intro: {v('--media-color-intro', '#0ea5e9')};",
+            f"--media-color-clip: {v('--media-color-clip', v('--color-accent', '#6610f2'))};",
+            f"--media-color-outro: {v('--media-color-outro', '#f59e0b')};",
+            f"--media-color-transition: {v('--media-color-transition', '#22c55e')};",
+            f"--media-color-compilation: {v('--media-color-compilation', v('--color-accent', '#6610f2'))};",
+            "}",
+            # Map theme vars to Bootstrap CSS variables for broad component support
+            ":root{",
+            "--bs-primary: var(--color-primary);",
+            "--bs-secondary: var(--color-secondary);",
+            "--bs-body-bg: var(--color-background);",
+            "--bs-body-color: var(--color-text);",
+            "--bs-card-bg: var(--color-surface);",
+            "--bs-card-color: var(--color-text);",
+            "--bs-border-color: #30363d;",
+            "--bs-link-color: var(--color-accent);",
+            "--bs-link-hover-color: var(--color-primary);",
+            # Bootstrap focus ring variables
+            "--bs-focus-ring-color: color-mix(in srgb, var(--outline-color), transparent 70%);",
+            "--bs-focus-ring-opacity: 1;",
+            "--bs-focus-ring-width: 0.25rem;",
+            # Progress bar accent color
+            "--bs-progress-bar-bg: var(--color-accent);",
+            "}",
+            # Base colors
+            "body{background-color: var(--color-background); color: var(--color-text);}",
+            ".card{background-color: var(--color-surface); color: var(--color-text);}",
+            ".text-muted{color: var(--color-muted)!important;}",
+            # Navbar tweaks overriding Bootstrap classes
+            ".navbar.bg-dark{background-color: var(--navbar-bg)!important;}",
+            ".navbar-dark .navbar-brand, .navbar-dark .navbar-nav .nav-link{color: var(--navbar-text)!important;}",
+            # Sidebar and footer accents
+            ".sidebar{background-color: var(--color-surface); border-right: 1px solid var(--bs-border-color);}",
+            ".footer{background-color: var(--color-background); border-top: 1px solid var(--bs-border-color);}",
+            # Buttons - override base.css hardcoded hover color
+            ".btn-primary{background-color: var(--bs-primary); border-color: var(--bs-primary);}",
+            ".btn-primary:hover{background-color: var(--bs-primary); border-color: var(--bs-primary); filter: brightness(0.9);}",
+            # Generic focus outline fallback
+            ":focus{outline-color: var(--outline-color);}",
+        ]
+        return Response("\n".join(css), mimetype="text/css")
+    except Exception:
+        return Response("/* theme css error */", mimetype="text/css")
+
+
+@main_bp.route("/p/<public_id>/download")
 @login_required
-def download_compiled_output(project_id: int):
+def download_compiled_output_by_public(public_id: str):
     """Download the compiled output video for a project if available."""
     project = Project.query.filter_by(
-        id=project_id, user_id=current_user.id
+        public_id=public_id, user_id=current_user.id
     ).first_or_404()
 
     if not project.output_filename:
@@ -859,3 +1499,59 @@ def download_compiled_output(project_id: int):
         as_attachment=True,
         download_name=project.output_filename,
     )
+
+
+@main_bp.route("/p/<public_id>/preview")
+@login_required
+def preview_compiled_output_by_public(public_id: str):
+    """Stream the compiled output video inline for preview if available.
+
+    Supports HTTP Range requests so the HTML5 <video> element can seek.
+    """
+    project = Project.query.filter_by(
+        public_id=public_id, user_id=current_user.id
+    ).first_or_404()
+
+    if not project.output_filename:
+        return jsonify({"error": "No compiled output available"}), 404
+
+    final_path = os.path.join(
+        current_app.instance_path, "compilations", project.output_filename
+    )
+    if not os.path.exists(final_path):
+        return jsonify({"error": "Compiled file not found"}), 404
+
+    guessed, _ = mimetypes.guess_type(final_path)
+    mimetype = guessed or "video/mp4"
+
+    # Range support
+    range_header = request.headers.get("Range", None)
+    if not range_header:
+        return send_file(final_path, mimetype=mimetype, conditional=True)
+
+    try:
+        file_size = os.path.getsize(final_path)
+        # Parse Range: bytes=start-end
+        units, _, rng = range_header.partition("=")
+        if units != "bytes":
+            # Not supported; send whole file
+            return send_file(final_path, mimetype=mimetype, conditional=True)
+        start_str, _, end_str = rng.partition("-")
+        start = int(start_str) if start_str.isdigit() else 0
+        end = int(end_str) if end_str.isdigit() else file_size - 1
+        start = max(0, min(start, file_size - 1))
+        end = max(start, min(end, file_size - 1))
+        length = end - start + 1
+
+        with open(final_path, "rb") as f:
+            f.seek(start)
+            data = f.read(length)
+
+        rv = Response(data, 206, mimetype=mimetype, direct_passthrough=True)
+        rv.headers.add("Content-Range", f"bytes {start}-{end}/{file_size}")
+        rv.headers.add("Accept-Ranges", "bytes")
+        rv.headers.add("Content-Length", str(length))
+        return rv
+    except Exception:
+        # Fallback to full file
+        return send_file(final_path, mimetype=mimetype, conditional=True)

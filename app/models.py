@@ -4,6 +4,7 @@ Database models for Clippy application.
 This module contains all SQLAlchemy models defining the database schema
 for users, projects, media files, clips, and related entities.
 """
+import secrets
 from datetime import datetime
 from enum import Enum
 
@@ -86,10 +87,21 @@ class User(UserMixin, db.Model):
     email_verified = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     last_login = db.Column(db.DateTime)
+    password_changed_at = db.Column(db.DateTime)
+    # Optional path to user's profile image stored on disk
+    profile_image_path = db.Column(db.String(500))
 
     # External service connections
     discord_user_id = db.Column(db.String(100), unique=True)
     twitch_username = db.Column(db.String(100))
+
+    # Preferences
+    date_format = db.Column(
+        db.String(32),
+        default="auto",
+        nullable=False,
+        doc="Preferred date format: auto|mdy|dmy|ymd|long",
+    )
 
     # Relationships
     projects = db.relationship(
@@ -165,6 +177,8 @@ class Project(db.Model):
     __tablename__ = "projects"
 
     id = db.Column(db.Integer, primary_key=True)
+    # Short, opaque identifier for URL usage (non-sequential, URL-safe)
+    public_id = db.Column(db.String(32), unique=True, index=True)
     name = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text)
 
@@ -218,6 +232,14 @@ class Project(db.Model):
     def __repr__(self) -> str:
         return f"<Project {self.name}>"
 
+    @staticmethod
+    def generate_public_id() -> str:
+        """Generate a short, URL-safe opaque identifier.
+
+        12-16 chars from token_urlsafe provides ~72-96 bits of entropy.
+        """
+        return secrets.token_urlsafe(12)
+
 
 class MediaFile(db.Model):
     """
@@ -232,9 +254,13 @@ class MediaFile(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     filename = db.Column(db.String(255), nullable=False)
     original_filename = db.Column(db.String(255), nullable=False)
+    # Optional human description/title for library listing
+    description = db.Column(db.Text)
 
     # File metadata
     file_path = db.Column(db.String(500), nullable=False)
+    # Content checksum for dedupe/reuse (sha256 hex)
+    checksum = db.Column(db.String(64), index=True)
     file_size = db.Column(db.BigInteger, nullable=False)
     mime_type = db.Column(db.String(100), nullable=False)
     media_type = db.Column(db.Enum(MediaType), nullable=False)
@@ -308,6 +334,10 @@ class Clip(db.Model):
 
     # Optional enriched metadata for UI and rendering
     creator_name = db.Column(db.String(120))  # who clipped it / creator
+    creator_id = db.Column(db.String(64))  # platform user id (e.g., Twitch user id)
+    creator_avatar_path = db.Column(
+        db.String(500)
+    )  # cached avatar file path if downloaded
     game_name = db.Column(db.String(120))  # game title if available
     clip_created_at = db.Column(db.DateTime)  # when clip was created on platform
 
@@ -420,3 +450,135 @@ class ProcessingJob(db.Model):
 
     def __repr__(self) -> str:
         return f"<ProcessingJob {self.job_type} - {self.status}>"
+
+
+class SystemSetting(db.Model):
+    """
+    System-wide settings editable from the Admin UI.
+
+    These override app.config at runtime for a curated allowlist. Secrets should
+    remain in environment/.env and are not stored here.
+    """
+
+    __tablename__ = "system_settings"
+
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    value = db.Column(db.Text, nullable=False)
+    value_type = db.Column(
+        db.String(20),
+        nullable=False,
+        default="str",
+        doc="str|int|float|bool|json",
+    )
+    group = db.Column(db.String(50), nullable=True, index=True)
+    description = db.Column(db.Text)
+
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_by = db.Column(db.Integer, db.ForeignKey("users.id"))
+    updated_by_user = db.relationship(
+        "User", backref=db.backref("settings_updates", lazy="dynamic")
+    )
+
+    def __repr__(self) -> str:
+        return f"<SystemSetting {self.key}={self.value}>"
+
+
+class Theme(db.Model):
+    """UI theme with colors and branding assets.
+
+    Allows admins to customize the look and feel: colors, logo, favicon,
+    and optional watermark. One theme can be marked active.
+    """
+
+    __tablename__ = "themes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    description = db.Column(db.Text)
+
+    # Activation flag (only one should be active; enforced at app level)
+    is_active = db.Column(db.Boolean, default=False, nullable=False)
+
+    # Core palette (hex strings like #RRGGBB or CSS color names)
+    color_primary = db.Column(db.String(20), default="#0d6efd")
+    color_secondary = db.Column(db.String(20), default="#6c757d")
+    color_accent = db.Column(db.String(20), default="#6610f2")
+    color_background = db.Column(db.String(20), default="#121212")
+    color_surface = db.Column(db.String(20), default="#1e1e1e")
+    color_text = db.Column(db.String(20), default="#e9ecef")
+    color_muted = db.Column(db.String(20), default="#adb5bd")
+    navbar_bg = db.Column(db.String(20), default="#212529")
+    navbar_text = db.Column(db.String(20), default="#ffffff")
+
+    # Optional explicit outline/focus ring color (falls back to accent)
+    outline_color = db.Column(db.String(20))
+
+    # Optional media/type-specific colors for UI accents
+    media_color_intro = db.Column(db.String(20), default="#0ea5e9")
+    media_color_clip = db.Column(
+        db.String(20)
+    )  # defaults to color_accent in CSS mapping
+    media_color_outro = db.Column(db.String(20), default="#f59e0b")
+    media_color_transition = db.Column(db.String(20), default="#22c55e")
+    # Optional color for the final compiled output representation
+    media_color_compilation = db.Column(db.String(20))
+
+    # Assets (stored under instance/uploads/system/themes/<id>/...)
+    logo_path = db.Column(db.String(500))
+    favicon_path = db.Column(db.String(500))
+    watermark_path = db.Column(db.String(500))
+
+    # Watermark options
+    watermark_opacity = db.Column(db.Float, default=0.1)
+    watermark_position = db.Column(
+        db.String(32),
+        default="bottom-right",
+        doc="top-left|top-right|bottom-left|bottom-right|center",
+    )
+
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_by = db.Column(db.Integer, db.ForeignKey("users.id"))
+    updated_by_user = db.relationship(
+        "User", backref=db.backref("theme_updates", lazy="dynamic")
+    )
+    # Explicit light/dark override. Values: 'auto'|'light'|'dark'
+    mode = db.Column(db.String(10), default="auto")
+
+    def as_css_vars(self) -> dict:
+        """Return a dict of CSS variable names to values for templates."""
+        return {
+            "--color-primary": self.color_primary or "#0d6efd",
+            "--color-secondary": self.color_secondary or "#6c757d",
+            "--color-accent": self.color_accent or "#6610f2",
+            "--color-background": self.color_background or "#121212",
+            "--color-surface": self.color_surface or "#1e1e1e",
+            "--color-text": self.color_text or "#e9ecef",
+            "--color-muted": self.color_muted or "#adb5bd",
+            "--navbar-bg": self.navbar_bg or "#212529",
+            "--navbar-text": self.navbar_text or "#ffffff",
+            # Focus ring and outline colors (defaults based on primary/accent)
+            # These may be overridden further downstream if needed
+            "--outline-color": (
+                self.outline_color
+                or self.color_accent
+                or self.color_primary
+                or "#6610f2"
+            ),
+            # Media/type-specific accent colors
+            "--media-color-intro": getattr(self, "media_color_intro", None)
+            or "#0ea5e9",  # sky-500
+            "--media-color-clip": getattr(self, "media_color_clip", None)
+            or self.color_accent
+            or "#6610f2",
+            "--media-color-outro": getattr(self, "media_color_outro", None)
+            or "#f59e0b",  # amber-500
+            "--media-color-transition": getattr(self, "media_color_transition", None)
+            or "#22c55e",  # green-500
+            "--media-color-compilation": getattr(self, "media_color_compilation", None)
+            or self.color_accent
+            or "#6610f2",
+        }
+
+    def __repr__(self) -> str:
+        return f"<Theme {self.name}{' *' if self.is_active else ''}>"

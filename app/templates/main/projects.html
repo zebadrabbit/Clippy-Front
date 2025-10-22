@@ -13,7 +13,7 @@
   <div class="list-group">
     {% for p in projects %}
       <div class="list-group-item d-flex justify-content-between align-items-center">
-        <a class="text-decoration-none flex-grow-1" href="{{ url_for('main.project_details', project_id=p.id) }}">
+  <a class="text-decoration-none flex-grow-1" href="{{ url_for('main.project_details_by_public', public_id=p.public_id) if p.public_id else url_for('main.project_details', project_id=p.id) }}">
           <div class="fw-semibold">{{ p.name }}</div>
           <small class="text-muted">Status: {{ p.status.value if p.status else 'draft' }} · {{ p.clips|safe_count }} clips · {{ p.media_files|safe_count }} media</small>
         </a>

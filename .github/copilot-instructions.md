@@ -2,6 +2,46 @@
 
 This repo is a Flask app with Celery workers for background processing and a media-focused UI. Use these guardrails to work productively and safely in this codebase.
 
+## Repo-wide rules for AI helpers
+Keep changes safe, reproducible, and easy to review. Follow these concise rules in addition to the project-specific guidance below.
+
+### Environment & execution
+- Always assume a Python virtual environment at the repo root: `venv/`.
+- Before running Python, pip, pytest, or tools, activate it:
+  - POSIX: `source venv/bin/activate`
+- When the venv is active, do NOT hardcode full paths to executables (e.g., `/path/to/venv/bin/ruff`). Prefer calling them by name (`python`, `ruff`, `pytest`) so the active shell resolves from the venv.
+- If a command fails due to a missing executable, (re-)activate the venv and try again:
+  - `source venv/bin/activate` → rerun the command.
+- Use `python -m pip` for installs; never use global installs or `sudo pip`.
+- Respect `requirements.txt` and `pyproject.toml` as sources of truth. If deps change, update files and show the exact install command.
+- Run commands in this order when proposing or automating: 1) activate venv → 2) install/upgrade deps → 3) lint/format → 4) type-check (if configured) → 5) tests.
+
+### Tooling & quality gates
+- Formatting: Black (`black .`).
+- Linting: Ruff (`ruff check .`). Prefer Ruff’s import sorting (I) over a separate isort run.
+- Tests: pytest (`pytest -q`) or `pytest --cov=app`.
+- Types: If configured, run pyright or mypy. Otherwise, add/maintain type hints in new/changed public APIs.
+- Commits must pass lint + tests locally; let pre-commit hooks run to enforce.
+
+### Git workflow & push policy
+- Branch names: `feat/<slug>`, `fix/<slug>`, `chore/<slug>`, `docs/<slug>`.
+- Conventional Commits for messages: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`, `perf:`, `build:`, `ci:`.
+  - Subject ≤72 chars; body explains why before what; reference issues in footer.
+- Do not push automatically.
+
+### How to propose changes
+- Provide a minimal diff and a short reasoning note (1–3 lines).
+- Include or update tests if behavior changes (happy path + one edge).
+- Show the exact command sequence (activate venv → lint/format → type-check → test).
+
+### Security & secrets
+- Never print or log secrets, tokens, or PII. Use `.env` and `.env.example`.
+- Don’t alter CI secrets or propose commands that expose credentials.
+
+### Documentation & developer experience
+- If you add a user-facing feature or change behavior, update README/docs in the same PR.
+- Prefer small, logical commits; avoid kitchen-sink diffs.
+
 ## Architecture and key flows
 - App factory + blueprints: `app/__init__.py` creates the Flask app; routes live under blueprints:
   - `app/main` (UI: projects, media library, project wizard)
@@ -27,15 +67,16 @@ High-level data flow for a compilation:
 ## Development workflows
 - Setup
   - `python3 -m venv venv && source venv/bin/activate`
-  - `pip install -r requirements.txt`
+  - `python -m pip install -r requirements.txt`
   - `cp .env.example .env`; run `scripts/fetch_vendor_assets.sh` (and optionally `scripts/install_local_binaries.sh`).
   - `python init_db.py --all --password <pwd>` to seed an admin.
 - Run
   - Web: `python main.py`
   - Worker (optional): `celery -A app.tasks.celery_app worker --loglevel=info`
 - Tests/Lint
-  - `pytest` (or `pytest --cov=app`)
+  - `pytest -q` (or `pytest --cov=app`)
   - `ruff check .` and `black .`
+  - Type-check if configured (pyright/mypy)
   - Pre-commit hooks run ruff/black/pytest on commit.
 
 ## Patterns to follow
@@ -59,6 +100,7 @@ High-level data flow for a compilation:
 - For file paths and external executables, prefer `_resolve_binary` and `instance/` storage; don’t hardcode OS-specific paths.
 - When deleting a project, keep intros/outros/transitions by detaching (already implemented in `main/routes.py`).
 - To avoid duplicate storage, always go through the download API’s reuse logic rather than writing to `MediaFile` directly.
+ - If media files exist on disk but aren’t visible in the UI, use `python scripts/reindex_media.py` (add `--regen-thumbnails` to restore thumbs) to backfill DB rows from `instance/uploads/`.
 
 ## Example references
 - Deduped download flow: `app/api/routes.py::create_and_download_clips_api`

@@ -4,15 +4,6 @@
 <div class="container py-4">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h2 class="mb-0"><i class="bi bi-folder"></i> {{ project.name }}</h2>
-    <div class="d-flex gap-2">
-      <a href="{{ url_for('main.upload_media', project_id=project.id) }}" class="btn btn-outline-primary">
-        <i class="bi bi-cloud-upload"></i> Upload Media
-      </a>
-      <form method="POST" action="{{ url_for('main.compile_project', project_id=project.id) }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="btn btn-primary" type="submit"><i class="bi bi-film"></i> Compile</button>
-      </form>
-    </div>
   </div>
 
   {% if project.description %}
@@ -20,41 +11,89 @@
   {% endif %}
 
   <div class="row g-4">
-    <div class="col-lg-6">
+    <!-- Clips Card -->
+    <div class="col-lg-7">
       <div class="card h-100">
-        <div class="card-header"><strong>Clips</strong></div>
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <strong>Clips</strong>
+          <small class="text-muted">{{ clips|length }} total</small>
+        </div>
         <div class="card-body">
           {% if clips %}
-          <ol class="mb-0">
+          <div class="row row-cols-1 row-cols-md-2 g-3">
             {% for c in clips %}
-              <li class="mb-2 d-flex justify-content-between">
-                <span>{{ c.title }}</span>
-                <small class="text-muted">{{ c.duration_formatted }}</small>
-              </li>
+            <div class="col">
+              <div class="border rounded p-2 h-100">
+                <div class="d-flex align-items-start">
+                  {% if c.media_file and c.media_file.thumbnail_path %}
+                    <img src="{{ url_for('main.media_thumbnail', media_id=c.media_file.id) }}" class="me-2 rounded" style="width: 96px; height: 54px; object-fit: cover;" alt="thumb">
+                  {% endif %}
+                  <div class="flex-grow-1">
+                    <div class="fw-semibold text-truncate" title="{{ c.title }}">{{ c.title }}</div>
+                    <ul class="small text-muted mb-0 ps-3">
+                      {% if c.creator_name %}<li><i class="bi bi-person"></i> {{ c.creator_name }}</li>{% endif %}
+                      {% if c.game_name %}<li><i class="bi bi-controller"></i> {{ c.game_name }}</li>{% endif %}
+                      {% if c.clip_created_at %}<li><i class="bi bi-calendar"></i> {{ c.clip_created_at.strftime('%Y-%m-%d') }}</li>{% endif %}
+                      <li><i class="bi bi-clock"></i> {{ c.duration_formatted }}</li>
+                      {% if c.source_platform %}
+                        <li>Source: {{ c.source_platform }}{% if c.source_url %} · <a href="{{ c.source_url }}" target="_blank">open</a>{% endif %}</li>
+                      {% endif %}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
             {% endfor %}
-          </ol>
+          </div>
           {% else %}
           <p class="text-muted mb-0">No clips yet.</p>
           {% endif %}
         </div>
       </div>
     </div>
-    <div class="col-lg-6">
+
+    <!-- Compilation Card -->
+    <div class="col-lg-5">
       <div class="card h-100">
-        <div class="card-header"><strong>Media Files</strong></div>
-        <div class="card-body">
-          {% if media_files %}
-          <ul class="list-unstyled mb-0">
-            {% for m in media_files %}
-              <li class="mb-2 d-flex justify-content-between">
-                <span>{{ m.original_filename }} <small class="text-muted">({{ m.media_type.value if m.media_type else '' }})</small></span>
-                <small class="text-muted">{{ '%.1f'|format(m.file_size_mb) }} MB</small>
-              </li>
-            {% endfor %}
-          </ul>
+        <div class="card-header"><strong>Compilation</strong></div>
+        <div class="card-body d-flex flex-column">
+          {% if project.output_filename %}
+            <div class="mb-2">
+              <div class="fw-semibold">{{ project.output_filename }}</div>
+              {% if project.output_file_size %}
+                <small class="text-muted">Size: {{ '%.1f'|format(project.output_file_size / (1024*1024)) }} MB</small>
+              {% endif %}
+            </div>
+            <div class="ratio ratio-16x9 mb-3">
+              <video controls preload="metadata">
+                <source src="{{ url_for('main.preview_compiled_output_by_public', public_id=project.public_id) if project.public_id else url_for('main.preview_compiled_output', project_id=project.id) }}" type="video/mp4">
+                Your browser does not support the video tag.
+              </video>
+            </div>
+            <div class="mt-auto d-flex gap-2">
+              {% if download_url %}
+                <a class="btn btn-primary" href="{{ download_url }}"><i class="bi bi-download"></i> Download</a>
+              {% endif %}
+              <button class="btn btn-outline-secondary" disabled title="Coming soon"><i class="bi bi-youtube"></i> Share to YouTube</button>
+            </div>
           {% else %}
-          <p class="text-muted mb-0">No media uploaded.</p>
+            <p class="text-muted mb-0">No compiled output yet. Click Compile to start.</p>
           {% endif %}
+        </div>
+        <div class="card-footer">
+          <div class="small text-muted">
+            <div><strong>Intro:</strong> {% if intros and intros|length > 0 %} {{ intros[0].original_filename }} {% else %} — {% endif %}</div>
+            <div><strong>Outro:</strong> {% if outros and outros|length > 0 %} {{ outros[0].original_filename }} {% else %} — {% endif %}</div>
+            <div><strong>Transitions:</strong>
+              {% if transitions and transitions|length > 0 %}
+                {% for t in transitions %}
+                  <span class="badge bg-secondary me-1">{{ t.original_filename }}</span>
+                {% endfor %}
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </div>
+          </div>
         </div>
       </div>
     </div>

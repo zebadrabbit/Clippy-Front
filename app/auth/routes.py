@@ -4,15 +4,18 @@ Authentication routes for user login, registration, and profile management.
 This module handles all authentication-related routes including user registration,
 login, logout, password reset, and profile management.
 """
+import os
 from urllib.parse import urlparse
 
 from flask import (
     Blueprint,
     current_app,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
+    send_file,
     url_for,
 )
 from flask_login import current_user, login_required, login_user, logout_user
@@ -192,6 +195,8 @@ def profile():
             current_user.last_name = form.last_name.data or None
             current_user.discord_user_id = form.discord_user_id.data or None
             current_user.twitch_username = form.twitch_username.data or None
+            if form.date_format.data:
+                current_user.date_format = form.date_format.data
 
             db.session.commit()
 
@@ -214,6 +219,7 @@ def profile():
         form.last_name.data = current_user.last_name
         form.discord_user_id.data = current_user.discord_user_id
         form.twitch_username.data = current_user.twitch_username
+        form.date_format.data = current_user.date_format or "auto"
 
     return render_template("auth/profile.html", title="Profile", form=form)
 
@@ -276,6 +282,50 @@ def account_settings():
         Response: Rendered account settings template
     """
     return render_template("auth/account_settings.html", title="Account Settings")
+
+
+@auth_bp.route("/change-password", methods=["POST"])
+@login_required
+def change_password():
+    """Handle password change from Account Settings modal."""
+    current_pw = request.form.get("current_password", "")
+    new_pw = request.form.get("new_password", "")
+    confirm_pw = request.form.get("confirm_password", "")
+
+    # Basic validations
+    if not current_user.check_password(current_pw):
+        flash("Current password is incorrect.", "danger")
+        return redirect(url_for("auth.account_settings"))
+    if not new_pw or len(new_pw) < 8:
+        flash("New password must be at least 8 characters.", "warning")
+        return redirect(url_for("auth.account_settings"))
+    if new_pw != confirm_pw:
+        flash("New password and confirmation do not match.", "warning")
+        return redirect(url_for("auth.account_settings"))
+
+    try:
+        current_user.set_password(new_pw)
+        # Record timestamp if column exists
+        try:
+            from sqlalchemy import inspect as _inspect
+
+            insp = _inspect(db.engine)
+            cols = {c["name"] for c in insp.get_columns("users")}
+            if "password_changed_at" in cols:
+                current_user.password_changed_at = db.func.now()
+        except Exception:
+            # Non-fatal; proceed without timestamp
+            pass
+        db.session.commit()
+        flash("Your password has been changed.", "success")
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(
+            f"Password change failed for user {current_user.id}: {e}"
+        )
+        flash("Failed to change password. Please try again.", "danger")
+
+    return redirect(url_for("auth.account_settings"))
 
 
 @auth_bp.route("/connect/discord", methods=["POST"])
@@ -359,3 +409,83 @@ def disconnect_twitch():
         )
         flash("Failed to disconnect Twitch.", "danger")
     return redirect(url_for("auth.account_settings"))
+
+
+@auth_bp.route("/profile/image", methods=["GET"])
+@login_required
+def profile_image():
+    """Serve the current user's profile image if set."""
+    path = current_user.profile_image_path
+    if not path or not os.path.exists(path):
+        return jsonify({"error": "No profile image"}), 404
+    # Basic mime guess
+    import mimetypes as _m
+
+    mt, _ = _m.guess_type(path)
+    return send_file(path, mimetype=mt or "image/jpeg", conditional=True)
+
+
+@auth_bp.route("/profile/image/upload", methods=["POST"])
+@login_required
+def upload_profile_image():
+    """Upload and set the current user's profile image (images only)."""
+    file = request.files.get("file")
+    if not file or file.filename == "":
+        flash("No file selected.", "warning")
+        return redirect(url_for("auth.profile"))
+
+    # Validate extension
+    from flask import current_app as _app
+
+    allowed = _app.config.get("ALLOWED_IMAGE_EXTENSIONS", set())
+    ext = os.path.splitext(file.filename)[1].lower().lstrip(".")
+    if ext not in allowed:
+        flash("Unsupported image type.", "danger")
+        return redirect(url_for("auth.profile"))
+
+    # Prepare user dir under instance/uploads/<user_id>/avatars
+    base_upload = os.path.join(_app.instance_path, _app.config["UPLOAD_FOLDER"])
+    user_dir = os.path.join(base_upload, str(current_user.id), "avatars")
+    os.makedirs(user_dir, exist_ok=True)
+
+    # Save with a deterministic name per user to avoid buildup
+    dest_name = f"avatar_{current_user.id}.{ext}"
+    dest_path = os.path.join(user_dir, dest_name)
+    try:
+        file.save(dest_path)
+        # Remove previous image if different path
+        try:
+            prev = current_user.profile_image_path
+            if prev and prev != dest_path and os.path.exists(prev):
+                os.remove(prev)
+        except Exception:
+            pass
+        current_user.profile_image_path = dest_path
+        db.session.commit()
+        flash("Profile image updated.", "success")
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Profile image upload failed: {e}")
+        flash("Failed to upload profile image.", "danger")
+    return redirect(url_for("auth.profile"))
+
+
+@auth_bp.route("/profile/image/remove", methods=["POST"])
+@login_required
+def remove_profile_image():
+    """Remove the current user's profile image from disk and DB."""
+    try:
+        path = current_user.profile_image_path
+        if path and os.path.exists(path):
+            try:
+                os.remove(path)
+            except Exception:
+                pass
+        current_user.profile_image_path = None
+        db.session.commit()
+        flash("Profile image removed.", "info")
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Profile image remove failed: {e}")
+        flash("Failed to remove profile image.", "danger")
+    return redirect(url_for("auth.profile"))

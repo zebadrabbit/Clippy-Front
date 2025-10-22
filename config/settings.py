@@ -26,9 +26,10 @@ class Config:
     WTF_CSRF_TIME_LIMIT = 3600  # 1 hour
     WTF_CSRF_SSL_STRICT = False  # Allow CSRF tokens over HTTP in development
 
-    # Database Configuration
+    # Database Configuration: default to PostgreSQL; SQLite is reserved for tests only
     SQLALCHEMY_DATABASE_URI = (
-        os.environ.get("DATABASE_URL") or "sqlite:///clippy_front.db"
+        os.environ.get("DATABASE_URL")
+        or "postgresql://postgres:postgres@localhost/clippy_front"
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {
@@ -72,6 +73,12 @@ class Config:
     FFMPEG_BINARY = os.environ.get("FFMPEG_BINARY") or "ffmpeg"
     YT_DLP_BINARY = os.environ.get("YT_DLP_BINARY") or "yt-dlp"
     OUTPUT_VIDEO_QUALITY = os.environ.get("OUTPUT_VIDEO_QUALITY") or "high"
+    # Queue selection: use a dedicated 'gpu' Celery queue for compile tasks when enabled
+    USE_GPU_QUEUE = os.environ.get("USE_GPU_QUEUE", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
 
     # Security Headers (Talisman)
     FORCE_HTTPS = False  # Set to True in production
@@ -102,9 +109,14 @@ class DevelopmentConfig(Config):
     # Disable rate limiting in development to avoid 429s during asset bursts
     RATELIMIT_ENABLED = False
 
-    # Development database (SQLite)
+    # Automatically reindex media on startup if the DB is empty (dev-only safety net)
+    AUTO_REINDEX_ON_STARTUP = True
+
+    # Development database precedence: DATABASE_URL (if set) > DEV_DATABASE_URL > default Postgres
     SQLALCHEMY_DATABASE_URI = (
-        os.environ.get("DEV_DATABASE_URL") or "sqlite:///clippy_front_dev.db"
+        os.environ.get("DATABASE_URL")
+        or os.environ.get("DEV_DATABASE_URL")
+        or "postgresql://postgres:postgres@localhost/clippy_front"
     )
 
 
@@ -144,7 +156,7 @@ class TestingConfig(Config):
     DEBUG = True
     WTF_CSRF_ENABLED = False  # Disable CSRF for testing
 
-    # In-memory database for testing
+    # In-memory database for testing (only place SQLite is used)
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
 
     # Disable rate limiting for tests

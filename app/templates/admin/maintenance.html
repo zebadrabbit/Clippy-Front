@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="row">
+    <h2 class="mb-3"><i class="bi bi-gear"></i> Admin Dashboard</h2>
+    <div class="col-12 col-lg-3 mb-3 mb-lg-0">
+      {% set active_page = 'maintenance' %}
+      {% include 'admin/_includes/sidebar.html' with context %}
+    </div>
+    <div class="col-12 col-lg-9">
+  <div class="card mb-3">
+    <div class="card-body">
+      <h5 class="card-title">Reindex Media Library</h5>
+      <p class="card-text">Scan <code>instance/uploads/</code> and backfill missing database rows for media files. This will never modify or rename files on disk.</p>
+      <form method="post">
+        <input type="hidden" name="action" value="reindex" />
+        <button type="submit" class="btn btn-primary">Start Reindex</button>
+      </form>
+    </div>
+  </div>
+
+    <div class="card mt-3">
+    <div class="card-body">
+      <h5 class="card-title">Deduplicate Media</h5>
+      <p class="card-text">Remove duplicate media rows per user based on checksum and exact same file path. Keeps the newest entry, deletes older duplicates.</p>
+      <form method="post">
+        <input type="hidden" name="action" value="dedupe_media" />
+        <div class="row g-2 align-items-end">
+          <div class="col-md-3">
+            <label class="form-label" for="dupe_user_id">User ID (optional)</label>
+            <input type="number" class="form-control" id="dupe_user_id" name="user_id" placeholder="All users" />
+          </div>
+          <div class="col-md-3">
+            <div class="form-check mt-4">
+              <input class="form-check-input" type="checkbox" value="1" id="dry_run" name="dry_run" />
+              <label class="form-check-label" for="dry_run">Dry run (no deletes)</label>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <button type="submit" class="btn btn-warning">Start Deduplication</button>
+          </div>
+        </div>
+      </form>
+    </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

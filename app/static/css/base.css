@@ -1,0 +1,277 @@
+:root {
+    /* Defaults; overridden by /theme.css if an active theme exists */
+    --bs-primary: #6f42c1;
+    --bs-secondary: #6c757d;
+    --bs-success: #198754;
+    --bs-info: #0dcaf0;
+    --bs-warning: #ffc107;
+    --bs-danger: #dc3545;
+    --bs-body-bg: #0d1117;
+    --bs-body-color: #e6edf3;
+    --bs-card-bg: #161b22;
+    --bs-card-color: #e6edf3;
+    --bs-border-color: #30363d;
+    /* Project theme defaults used before /theme.css loads */
+    --color-accent: #6610f2;
+    --color-muted: #adb5bd;
+    --navbar-bg: #212529;
+    --navbar-text: #ffffff;
+    --outline-color: var(--color-accent);
+}
+
+body {
+    background-color: var(--bs-body-bg);
+    color: var(--bs-body-color);
+}
+
+.navbar-brand {
+    font-weight: bold;
+    font-size: 1.5rem;
+}
+
+/* Navbar theming enhancements */
+.navbar-themed {
+    background-color: var(--navbar-bg) !important;
+}
+.navbar-themed .navbar-brand,
+.navbar-themed .nav-link {
+    color: var(--navbar-text) !important;
+}
+.navbar-themed .nav-link:hover,
+.navbar-themed .nav-link:focus,
+.navbar-themed .nav-link.active {
+    color: var(--bs-primary) !important;
+}
+.navbar-themed .form-control {
+    background-color: var(--bs-body-bg);
+    color: var(--bs-body-color);
+    border-color: var(--bs-border-color);
+}
+.navbar-themed .form-control::placeholder { color: var(--color-muted); }
+.navbar-themed .form-control:focus {
+    background-color: var(--bs-body-bg);
+    color: var(--bs-body-color);
+    border-color: var(--bs-primary);
+    box-shadow: 0 0 0 0.25rem color-mix(in srgb, var(--outline-color), transparent 70%);
+}
+
+/* Global focus ring using accent/outline color */
+.form-control:focus,
+.form-select:focus,
+.form-check-input:focus {
+    border-color: var(--outline-color);
+    box-shadow: 0 0 0 var(--bs-focus-ring-width, 0.25rem)
+        var(--bs-focus-ring-color, color-mix(in srgb, var(--outline-color), transparent 70%));
+}
+
+.btn:focus,
+.btn:focus-visible {
+    box-shadow: 0 0 0 var(--bs-focus-ring-width, 0.25rem)
+        var(--bs-focus-ring-color, color-mix(in srgb, var(--outline-color), transparent 70%));
+}
+
+.nav-link:focus-visible,
+.dropdown-item:focus-visible,
+.page-link:focus-visible,
+.btn-close:focus-visible {
+    outline: 2px solid var(--outline-color);
+    outline-offset: 2px;
+    box-shadow: none !important;
+}
+
+.card {
+    background-color: var(--bs-card-bg);
+    color: var(--bs-card-color);
+    border: 1px solid var(--bs-border-color);
+}
+
+.btn-primary {
+    background-color: var(--bs-primary);
+    border-color: var(--bs-primary);
+}
+
+.btn-primary:hover {
+    background-color: var(--bs-primary);
+    border-color: var(--bs-primary);
+    filter: brightness(0.9);
+}
+
+.footer {
+    background-color: var(--bs-body-bg);
+    border-top: 1px solid var(--bs-border-color);
+    margin-top: auto;
+}
+
+.hero-section {
+    background: linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--bs-card-bg), #ffffff 6%) 0%,
+        color-mix(in srgb, var(--bs-primary), #000000 5%) 100%
+    );
+    padding: 6rem 0;
+}
+
+.feature-icon {
+    width: 3rem;
+    height: 3rem;
+    border-radius: 0.75rem;
+    background-color: var(--bs-primary);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1rem;
+}
+
+.sidebar {
+    min-height: calc(100vh - 56px);
+    background-color: var(--bs-card-bg);
+    border-right: 1px solid var(--bs-border-color);
+}
+
+.sidebar .nav-link {
+    color: var(--bs-body-color);
+    padding: 0.75rem 1rem;
+    border-radius: 0.375rem;
+    margin: 0.125rem 0;
+}
+
+.sidebar .nav-link:hover, .sidebar .nav-link.active {
+    background-color: color-mix(in srgb, var(--bs-card-bg), #ffffff 6%);
+    color: var(--bs-primary);
+}
+
+.main-content {
+    padding: 2rem;
+}
+
+.stats-card {
+    background: linear-gradient(
+        135deg,
+        var(--bs-card-bg) 0%,
+        color-mix(in srgb, var(--bs-card-bg), #ffffff 6%) 100%
+    );
+    border: 1px solid var(--bs-border-color);
+    transition: transform 0.2s;
+}
+
+.stats-card:hover {
+    transform: translateY(-2px);
+}
+
+.upload-zone {
+    border: 2px dashed var(--bs-border-color);
+    border-radius: 0.5rem;
+    padding: 3rem;
+    text-align: center;
+    background-color: var(--bs-body-bg);
+    transition: all 0.3s ease;
+}
+
+.upload-zone:hover {
+    border-color: var(--bs-primary);
+    background-color: var(--bs-card-bg);
+}
+
+/* Dropzone theming */
+.dropzone {
+    border: 2px dashed var(--bs-border-color) !important;
+    border-radius: 0.5rem !important;
+    background: var(--bs-card-bg) !important;
+    color: var(--bs-card-color) !important;
+    min-height: 160px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.dropzone.dz-drag-hover {
+    border-color: var(--bs-primary) !important;
+    background: color-mix(in srgb, var(--bs-card-bg), #ffffff 4%) !important;
+}
+.dropzone .dz-message {
+    margin: 0 !important;
+    padding: 1rem 0 !important;
+    font-size: 1.125rem;
+    color: var(--bs-muted, var(--color-muted, #adb5bd));
+}
+.dropzone .dz-preview { display: none; }
+
+.project-card {
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.project-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+}
+
+.card-header {
+    background-color: color-mix(in srgb, var(--bs-card-bg), #ffffff 4%);
+    color: var(--bs-card-color);
+    border-bottom: 1px solid var(--bs-border-color);
+}
+
+/* Media Library: type-colored accents */
+.media-card {
+    border-width: 2px;
+}
+.media-card[data-type="intro"] { border-color: var(--media-color-intro, #0ea5e9); }
+.media-card[data-type="clip"] { border-color: var(--media-color-clip, var(--color-accent)); }
+.media-card[data-type="outro"] { border-color: var(--media-color-outro, #f59e0b); }
+.media-card[data-type="transition"] { border-color: var(--media-color-transition, #22c55e); }
+.media-card[data-type="compilation"] { border-color: var(--media-color-compilation, var(--color-accent)); }
+
+/* Media type badges using theme colors */
+.badge.text-bg-intro {
+    background-color: color-mix(in srgb, var(--media-color-intro, #0ea5e9), #000 10%) !important;
+    color: #fff !important;
+}
+.badge.text-bg-clip {
+    background-color: color-mix(in srgb, var(--media-color-clip, var(--color-accent)), #000 10%) !important;
+    color: #fff !important;
+}
+.badge.text-bg-outro {
+    background-color: color-mix(in srgb, var(--media-color-outro, #f59e0b), #000 10%) !important;
+    color: #111 !important;
+}
+.badge.text-bg-transition {
+    background-color: color-mix(in srgb, var(--media-color-transition, #22c55e), #000 10%) !important;
+    color: #111 !important;
+}
+.badge.text-bg-compilation {
+    background-color: color-mix(in srgb, var(--media-color-compilation, var(--color-accent)), #000 10%) !important;
+    color: #fff !important;
+}
+
+/* Ensure Bootstrap contextual classes map to theme variables */
+.bg-primary { background-color: var(--bs-primary) !important; }
+.text-primary { color: var(--bs-primary) !important; }
+.border-primary { border-color: var(--bs-primary) !important; }
+
+/* Improve contrast for primary card headers when used */
+.card-header.bg-primary { color: #fff !important; }
+
+/* Themed list groups (used in sidebars) */
+.list-group-item {
+    background-color: var(--bs-card-bg);
+    color: var(--bs-card-color);
+    border-color: var(--bs-border-color);
+}
+.list-group-item-action:hover,
+.list-group-item-action:focus {
+    background-color: color-mix(in srgb, var(--bs-card-bg), #ffffff 6%);
+    color: var(--bs-primary);
+}
+.list-group-item.active {
+    background-color: color-mix(in srgb, var(--bs-primary), #000000 10%);
+    border-color: var(--bs-primary);
+    color: #fff;
+}
+
+/* Accent utilities for broader representation */
+.text-accent { color: var(--color-accent) !important; }
+.bg-accent { background-color: var(--color-accent) !important; color: #fff !important; }
+.border-accent { border-color: var(--color-accent) !important; }
+
+/* Progress bar uses accent by default (can be overridden by /theme.css) */
+.progress-bar { background-color: var(--color-accent, var(--bs-primary)); }

@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-4">
+  <h2>Edit User: {{ user.username }}</h2>
+  <form method="post">
+    <div class="mb-3">
+      <label class="form-label">Email</label>
+      <input type="email" class="form-control" name="email" value="{{ user.email }}" required />
+    </div>
+    <div class="row">
+      <div class="col-md-6 mb-3">
+        <label class="form-label">First name</label>
+        <input class="form-control" name="first_name" value="{{ user.first_name or '' }}" />
+      </div>
+      <div class="col-md-6 mb-3">
+        <label class="form-label">Last name</label>
+        <input class="form-control" name="last_name" value="{{ user.last_name or '' }}" />
+      </div>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Role</label>
+      <select class="form-select" name="role">
+        {% for r in user_roles %}
+        <option value="{{ r.value }}" {% if user.role==r %}selected{% endif %}>{{ r.value | capitalize }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-check mb-3">
+      <input class="form-check-input" type="checkbox" name="is_active" id="is_active" {% if user.is_active %}checked{% endif %}>
+      <label class="form-check-label" for="is_active">Active</label>
+    </div>
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-secondary" href="{{ url_for('admin.user_details', user_id=user.id) }}">Cancel</a>
+  </form>
+  <hr/>
+  <form method="post" action="{{ url_for('admin.admin_reset_password', user_id=user.id) }}" onsubmit="return confirm('Reset password for {{ user.username }}?');">
+    <h5>Reset Password</h5>
+    <div class="input-group mb-3" style="max-width: 420px;">
+      <input type="password" name="new_password" class="form-control" placeholder="Leave blank to generate" />
+      <button class="btn btn-warning" type="submit">Reset</button>
+    </div>
+  </form>
+  <form method="post" action="{{ url_for('admin.resend_verification', user_id=user.id) }}">
+    <button class="btn btn-outline-primary" type="submit">Resend Verification</button>
+  </form>
+  <hr/>
+  <form method="post" action="{{ url_for('admin.user_delete', user_id=user.id) }}" onsubmit="return confirm('Delete {{ user.username }}? This cannot be undone.');">
+    <button class="btn btn-danger" type="submit">Delete User</button>
+  </form>
+</div>
+{% endblock %}

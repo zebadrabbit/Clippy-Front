@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container py-4">
+  <div class="row">
+    <h2 class="mb-3"><i class="bi bi-gear"></i> Admin Dashboard</h2>
+    <div class="col-12 col-lg-3 mb-3 mb-lg-0">
+      {% set active_page = 'workers' %}
+      {% include 'admin/_includes/sidebar.html' with context %}
+    </div>
+    <div class="col-12 col-lg-9">
+      {% if workers and workers|length > 0 %}
+      <div class="table-responsive">
+        <table class="table table-sm table-striped align-middle">
+          <thead>
+            <tr>
+              <th>Worker</th>
+              <th>Queues</th>
+              <th>Active Tasks</th>
+              <th>Registered Tasks</th>
+              <th>Load</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for w in workers %}
+            <tr>
+              <td><code>{{ w.name }}</code></td>
+              <td>
+                {% for q in w.queues %}
+                  <span class="badge bg-primary me-1">{{ q.name }}</span>
+                {% else %}
+                  <span class="text-muted">(none)</span>
+                {% endfor %}
+              </td>
+              <td>
+                {% if w.active and w.active|length %}
+                  {{ w.active|length }}
+                {% else %}
+                  0
+                {% endif %}
+              </td>
+              <td>
+                {% if w.registered and w.registered|length %}
+                  <details>
+                    <summary>{{ w.registered|length }}</summary>
+                    <ul class="mb-0 small">
+                    {% for t in w.registered %}
+                      <li><code>{{ t }}</code></li>
+                    {% endfor %}
+                    </ul>
+                  </details>
+                {% else %}
+                  0
+                {% endif %}
+              </td>
+              <td>
+                {% set st = w.stats %}
+                {% if st and st.loadavg %}
+                  {{ st.loadavg }}
+                {% elif st and st.total %}
+                  total: {{ st.total }}
+                {% else %}
+                  <span class="text-muted">n/a</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+        <div class="alert alert-warning">No workers reported. Ensure your workers are connected to the same broker.</div>
+      {% endif %}
+
+      {% if raw.errors and raw.errors|length %}
+        <div class="alert alert-danger mt-3">
+          <strong>Errors:</strong>
+          <ul class="mb-0">
+            {% for e in raw.errors %}
+            <li>{{ e }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

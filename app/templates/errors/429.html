@@ -41,28 +41,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    let countdown = 10;
-    const retryBtn = document.getElementById('retryBtn');
-    const retryText = document.getElementById('retryText');
-    const cooldownBar = document.getElementById('cooldownBar');
-
-    const timer = setInterval(function() {
-        countdown--;
-        retryText.textContent = `Retry in ${countdown}s`;
-
-        const percentage = (countdown / 10) * 100;
-        cooldownBar.style.width = percentage + '%';
-
-        if (countdown <= 0) {
-            clearInterval(timer);
-            retryBtn.disabled = false;
-            retryText.textContent = 'Retry Now';
-            cooldownBar.style.width = '0%';
-            cooldownBar.classList.remove('progress-bar-animated');
-        }
-    }, 1000);
-});
-</script>
+<script src="{{ url_for('static', filename='js/error_429.js') }}"></script>
 {% endblock %}

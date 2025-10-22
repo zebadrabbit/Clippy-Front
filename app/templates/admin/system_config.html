@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="row">
+    <h2 class="mb-3"><i class="bi bi-gear"></i> Admin Dashboard</h2>
+    <div class="col-12 col-lg-3 mb-3 mb-lg-0">
+      {% set active_page = 'config' %}
+      {% include 'admin/_includes/sidebar.html' with context %}
+    </div>
+    <div class="col-12 col-lg-9">
+      <div class="d-flex align-items-center justify-content-between mb-3">
+        <div class="d-flex gap-2">
+      <form method="post" action="{{ url_for('admin.restart', target='web') }}">
+        <button class="btn btn-outline-danger" type="submit" onclick="return confirm('Restart web server?');"><i class="bi bi-arrow-repeat"></i> Restart Web</button>
+      </form>
+      <form method="post" action="{{ url_for('admin.restart', target='workers') }}">
+        <button class="btn btn-outline-warning" type="submit" onclick="return confirm('Restart all workers?');"><i class="bi bi-cpu"></i> Restart Workers</button>
+      </form>
+        </div>
+      </div>
+
+      <form method="post">
+    <input type="hidden" name="action" value="save">
+
+    {% for section, items in groups.items() %}
+    <div class="card mb-3">
+      <div class="card-header"><strong>{{ section }}</strong></div>
+      <div class="card-body">
+        <div class="row g-3">
+          {% for item in items %}
+          <div class="col-md-6">
+            <label class="form-label">{{ item.label }}</label>
+            {% if item.type == 'bool' %}
+              {% set checked = values.get(item.key, '').lower() in ['1','true','yes','on'] %}
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="setting_{{ item.key }}" {% if checked %}checked{% endif %}>
+                <span class="form-text">Enable/Disable</span>
+              </div>
+            {% else %}
+              <input class="form-control" name="setting_{{ item.key }}" value="{{ values.get(item.key, '') }}">
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+
+        <div class="d-flex justify-content-end">
+          <button class="btn btn-primary" type="submit"><i class="bi bi-save"></i> Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

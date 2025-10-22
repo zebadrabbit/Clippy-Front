@@ -1,0 +1,26 @@
+version: "3.8"
+services:
+  gpu-worker:
+    build:
+      context: ..
+      dockerfile: docker/worker.Dockerfile
+    image: clippyfront-gpu-worker:latest
+    environment:
+      # Defaults if not provided in .env
+      - USE_GPU_QUEUE=true
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://host.docker.internal:6379/0}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://host.docker.internal:6379/0}
+      - FFMPEG_BINARY=ffmpeg
+      - YT_DLP_BINARY=yt-dlp
+      - CELERY_CONCURRENCY=${CELERY_CONCURRENCY:-1}
+      - CELERY_QUEUES=${CELERY_QUEUES:-gpu,celery}
+    volumes:
+      - ../instance:/app/instance
+    # GPU passthrough (Docker Desktop + NVIDIA)
+    # Note: On many setups, Compose ignores GPU reservations unless using Swarm.
+    # If GPU is not detected, prefer plain `docker run --gpus all`.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]

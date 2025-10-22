@@ -102,6 +102,10 @@ local_settings.py
 # Flask instance folder and runtime uploads
 instance/
 
+# Allow committing the required static bumper asset
+!instance/assets/
+!instance/assets/static.mp4
+
 # Local binaries (installed via scripts/install_local_binaries.sh)
 bin/
 

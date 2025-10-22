@@ -9,9 +9,10 @@ from app.integrations.discord import extract_clip_urls, get_channel_messages
 from app.integrations.twitch import (
     get_clips as twitch_get_clips,
     get_user_id as twitch_get_user_id,
+    get_user_profile_image_url as twitch_get_user_profile_image_url,
 )
 from app.models import db, Clip, ProcessingJob, Project, ProjectStatus
-from app.tasks.background_tasks import example_long_task
+import os
 
 api_bp = Blueprint("api", __name__)
 
@@ -22,22 +23,7 @@ def health_check():
     return jsonify({"status": "healthy", "message": "Clippy API is running"})
 
 
-@api_bp.route("/tasks/start", methods=["POST"])
-def start_task():
-    """Start a background task."""
-    data = request.get_json() or {}
-    task_name = data.get("task_name", "default")
-
-    # Start background task
-    task = example_long_task.delay(task_name)
-
-    return jsonify(
-        {
-            "task_id": task.id,
-            "status": "started",
-            "message": f"Task {task_name} started",
-        }
-    )
+## Demo background task endpoint removed; no longer supported.
 
 
 @api_bp.route("/tasks/<task_id>", methods=["GET"])
@@ -159,8 +145,11 @@ def job_details_api(job_id: int):
     rd = job.result_data or {}
     project_name = None
     if job.project_id:
-        proj = Project.query.get(job.project_id)
-        project_name = proj.name if proj else None
+        try:
+            proj = db.session.get(Project, job.project_id)
+            project_name = proj.name if proj else None
+        except Exception:
+            project_name = None
 
     return jsonify(
         {
@@ -198,7 +187,13 @@ def create_project_api():
     data = request.get_json(silent=True) or {}
     name = (data.get("name") or "").strip()
     if not name:
-        return jsonify({"error": "Project name is required"}), 400
+        # Default to "Compilation of <YYYY-MM-DD>" when name is omitted/blank
+        try:
+            from datetime import date
+
+            name = f"Compilation of {date.today().isoformat()}"
+        except Exception:
+            name = "Compilation of Today"
 
     description = (data.get("description") or "").strip() or None
     output_resolution = data.get("output_resolution") or "1080p"
@@ -206,6 +201,12 @@ def create_project_api():
     max_clip_duration = int(data.get("max_clip_duration") or 30)
 
     try:
+        # Ensure project has an opaque public_id
+        pid = None
+        try:
+            pid = Project.generate_public_id()
+        except Exception:
+            pid = None
         project = Project(
             name=name,
             description=description,
@@ -213,6 +214,7 @@ def create_project_api():
             max_clip_duration=max_clip_duration,
             output_resolution=output_resolution,
             output_format=output_format,
+            public_id=pid,
         )
         db.session.add(project)
         db.session.commit()
@@ -331,6 +333,7 @@ def create_and_download_clips_api(project_id: int):
                 )
                 title = (obj.get("title") or f"Clip {order_base + idx + 1}").strip()
                 creator_name = obj.get("creator_name")
+                creator_id = obj.get("creator_id")
                 game_name = obj.get("game_name")
                 clip_created_at = obj.get("created_at")
                 # Attempt reuse
@@ -344,6 +347,7 @@ def create_and_download_clips_api(project_id: int):
                         project_id=project.id,
                         order_index=order_base + idx,
                         creator_name=creator_name,
+                        creator_id=creator_id,
                         game_name=game_name,
                         media_file_id=media_file.id,
                         is_downloaded=True,
@@ -379,6 +383,7 @@ def create_and_download_clips_api(project_id: int):
                         project_id=project.id,
                         order_index=order_base + idx,
                         creator_name=creator_name,
+                        creator_id=creator_id,
                         game_name=game_name,
                     )
                     if clip_created_at:
@@ -392,6 +397,54 @@ def create_and_download_clips_api(project_id: int):
                             pass
                     db.session.add(clip)
                     db.session.flush()
+                    # Try to resolve and cache creator avatar if creator_id present
+                    try:
+                        if creator_id:
+                            avatar_url = twitch_get_user_profile_image_url(creator_id)
+                            if avatar_url:
+                                # Cache under instance/assets/avatars/
+                                base_assets = os.path.join(
+                                    current_app.instance_path, "assets", "avatars"
+                                )
+                                os.makedirs(base_assets, exist_ok=True)
+                                import re as _re
+                                import secrets
+                                import httpx as _httpx
+
+                                safe = (
+                                    _re.sub(
+                                        r"[^a-z0-9_-]+",
+                                        "_",
+                                        (creator_name or "").lower().strip(),
+                                    )
+                                    or creator_id
+                                )
+                                # Keep original extension if possible
+                                ext = (
+                                    os.path.splitext(avatar_url.split("?")[0])[1]
+                                    or ".png"
+                                )
+                                out_path = os.path.join(
+                                    base_assets, f"{safe}_{secrets.token_hex(4)}{ext}"
+                                )
+                                try:
+                                    r = _httpx.get(avatar_url, timeout=10)
+                                    if r.status_code == 200 and r.content:
+                                        with open(out_path, "wb") as fp:
+                                            fp.write(r.content)
+                                        clip.creator_avatar_path = out_path
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+
+                    # Ensure the Clip row is visible to the Celery worker
+                    try:
+                        db.session.commit()
+                    except Exception:
+                        db.session.rollback()
+                        # If commit fails, skip enqueue to avoid orphan task
+                        continue
                     task = download_clip_task.delay(clip.id, url_s)
                     items.append({"clip_id": clip.id, "task_id": task.id, "url": url_s})
                     idx += 1
@@ -448,6 +501,12 @@ def create_and_download_clips_api(project_id: int):
                 )
                 db.session.add(clip)
                 db.session.flush()
+                # Commit before enqueuing so the worker can load the Clip row
+                try:
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+                    continue
                 task = download_clip_task.delay(clip.id, url_s)
                 items.append({"clip_id": clip.id, "task_id": task.id, "url": url_s})
                 idx += 1
@@ -480,16 +539,105 @@ def compile_project_api(project_id: int):
         data = request.get_json(silent=True) or {}
         intro_id = data.get("intro_id")
         outro_id = data.get("outro_id")
+        transition_ids = data.get("transition_ids") or []
+        randomize_transitions = bool(data.get("randomize_transitions") or False)
 
+        # Defense-in-depth: verify intro/outro ownership if provided
+        if intro_id is not None:
+            try:
+                from app.models import MediaFile
+
+                intro = MediaFile.query.filter_by(
+                    id=intro_id, user_id=current_user.id
+                ).first()
+                if not intro:
+                    return jsonify({"error": "Invalid intro selection"}), 400
+            except Exception:
+                return jsonify({"error": "Invalid intro selection"}), 400
+        if outro_id is not None:
+            try:
+                from app.models import MediaFile
+
+                outro = MediaFile.query.filter_by(
+                    id=outro_id, user_id=current_user.id
+                ).first()
+                if not outro:
+                    return jsonify({"error": "Invalid outro selection"}), 400
+            except Exception:
+                return jsonify({"error": "Invalid outro selection"}), 400
+
+        # Verify transitions ownership if provided
+        valid_transition_ids: list[int] = []
+        if isinstance(transition_ids, list) and transition_ids:
+            try:
+                from app.models import MediaFile, MediaType
+
+                # Coerce to ints and dedupe
+                try:
+                    tid_list = list({int(t) for t in transition_ids})
+                except Exception:
+                    tid_list = []
+                if tid_list:
+                    q = MediaFile.query.filter(
+                        MediaFile.id.in_(tid_list),
+                        MediaFile.user_id == current_user.id,
+                        MediaFile.media_type == MediaType.TRANSITION,
+                    )
+                    valid_transition_ids = [m.id for m in q.all()]
+            except Exception:
+                valid_transition_ids = []
+
+        # Attempt to enqueue first; only mark PROCESSING if enqueue succeeds
+        # Explicitly route to the GPU queue when enabled to avoid default-queue fallback
+        # Queue selection priority: gpu > cpu > celery
+        # We'll inspect known workers for declared queues via Celery's inspect API.
+        # If inspect fails (e.g., permissions/network), fall back to USE_GPU_QUEUE flag.
+        queue_name = "celery"
+        try:
+            from app.tasks.celery_app import celery_app as _celery
+
+            i = _celery.control.inspect(timeout=1.0)
+            active_queues = set()
+            if i:
+                aq = i.active_queues() or {}
+                for _worker, queues in aq.items():
+                    for q in queues or []:
+                        qname = q.get("name") if isinstance(q, dict) else None
+                        if qname:
+                            active_queues.add(qname)
+            # Choose by priority if present
+            if "gpu" in active_queues:
+                queue_name = "gpu"
+            elif "cpu" in active_queues:
+                queue_name = "cpu"
+            else:
+                # Final fallback: respect USE_GPU_QUEUE flag if set
+                if bool(current_app.config.get("USE_GPU_QUEUE")):
+                    queue_name = "gpu"
+        except Exception:
+            # On any error, keep default behavior
+            if bool(current_app.config.get("USE_GPU_QUEUE")):
+                queue_name = "gpu"
+        task = compile_video_task.apply_async(
+            args=(project_id,),
+            kwargs={
+                "intro_id": intro_id,
+                "outro_id": outro_id,
+                "transition_ids": valid_transition_ids,
+                "randomize_transitions": randomize_transitions,
+            },
+            queue=queue_name,
+        )
+        # Enqueue succeeded; mark project as processing
         project.status = ProjectStatus.PROCESSING
         db.session.commit()
-
-        task = compile_video_task.delay(
-            project_id, intro_id=intro_id, outro_id=outro_id
-        )
         return jsonify({"task_id": task.id, "status": "started"}), 202
     except Exception as e:
-        db.session.rollback()
+        # Ensure project remains not-processing on failure
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
         current_app.logger.error(f"API compile start failed: {e}")
         return jsonify({"error": "Failed to start compilation"}), 500
 
@@ -539,6 +687,53 @@ def list_project_clips_api(project_id: int):
         )
 
     return jsonify({"items": items, "count": len(items)})
+
+
+@api_bp.route("/projects/<int:project_id>/clips/order", methods=["POST"])
+@login_required
+def reorder_project_clips_api(project_id: int):
+    """Reorder clips for a project.
+
+    Expected JSON body: { clip_ids: [int, int, ...] } where clip_ids is the desired
+    order for the clips. Any project clips not listed will be appended after in their
+    existing relative order.
+    """
+    project = Project.query.filter_by(id=project_id, user_id=current_user.id).first()
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+    ids = data.get("clip_ids") or []
+    try:
+        ids = [int(x) for x in ids]
+    except Exception:
+        return jsonify({"error": "clip_ids must be a list of integers"}), 400
+
+    # Fetch current clips
+    clips = project.clips.order_by(Clip.order_index.asc(), Clip.created_at.asc()).all()
+    if not clips:
+        return jsonify({"error": "No clips to reorder"}), 400
+
+    # Map id -> clip, filter ids to those belonging to this project
+    clip_map = {c.id: c for c in clips}
+    desired = [cid for cid in ids if cid in clip_map]
+
+    # Append any missing clips in original order
+    existing_set = set(desired)
+    tail = [c.id for c in clips if c.id not in existing_set]
+    new_order = desired + tail
+
+    # Update order_index sequentially
+    try:
+        for idx, cid in enumerate(new_order):
+            clip_map[cid].order_index = idx
+        db.session.commit()
+        return jsonify(
+            {"status": "ok", "ordered_ids": new_order, "count": len(new_order)}
+        )
+    except Exception:
+        db.session.rollback()
+        return jsonify({"error": "Failed to update order"}), 500
 
 
 @api_bp.route("/twitch/clips", methods=["GET"])
@@ -654,9 +849,11 @@ def get_project_details_api(project_id: int):
     download_url = None
     if project.output_filename:
         try:
-            download_url = url_for(
-                "main.download_compiled_output", project_id=project.id
-            )
+            if project.public_id:
+                download_url = url_for(
+                    "main.download_compiled_output_by_public",
+                    public_id=project.public_id,
+                )
         except Exception:
             download_url = None
 

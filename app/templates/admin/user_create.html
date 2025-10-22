@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-4">
+  <h2>Create User</h2>
+  <form method="post">
+    <div class="mb-3">
+      <label class="form-label">Username</label>
+      <input class="form-control" name="username" required />
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Email</label>
+      <input type="email" class="form-control" name="email" required />
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Password (optional)</label>
+      <input type="password" class="form-control" name="password" />
+      <div class="form-text">Leave blank to generate a temporary password.</div>
+    </div>
+    <div class="row">
+      <div class="col-md-6 mb-3">
+        <label class="form-label">First name</label>
+        <input class="form-control" name="first_name" />
+      </div>
+      <div class="col-md-6 mb-3">
+        <label class="form-label">Last name</label>
+        <input class="form-control" name="last_name" />
+      </div>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Role</label>
+      <select class="form-select" name="role">
+        {% for r in user_roles %}
+        <option value="{{ r.value }}">{{ r.value | capitalize }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button class="btn btn-primary" type="submit">Create</button>
+    <a class="btn btn-secondary" href="{{ url_for('admin.users') }}">Cancel</a>
+  </form>
+  <hr/>
+  <p class="text-muted">After creation, you can reset the password or resend verification from the user's page.</p>
+  </div>
+{% endblock %}

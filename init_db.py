@@ -7,7 +7,6 @@ for development and testing purposes.
 """
 from app import create_app
 from app.models import Project, ProjectStatus, User, UserRole, db
-from config.settings import DevelopmentConfig
 
 
 def init_db(drop_existing=False):
@@ -17,7 +16,8 @@ def init_db(drop_existing=False):
     Args:
         drop_existing: Whether to drop existing tables first
     """
-    app = create_app(DevelopmentConfig)
+    # Use app factory's default selection (env-driven) to avoid DB mismatches
+    app = create_app()
 
     with app.app_context():
         if drop_existing:
@@ -36,7 +36,7 @@ def create_admin_user(password: str = "admin123"):
     Args:
         password: Password to set for the admin user.
     """
-    app = create_app(DevelopmentConfig)
+    app = create_app()
 
     with app.app_context():
         # Check if admin already exists
@@ -72,7 +72,7 @@ def reset_admin_password(password: str = "admin123"):
     Args:
         password: New password to set.
     """
-    app = create_app(DevelopmentConfig)
+    app = create_app()
 
     with app.app_context():
         admin = User.query.filter_by(username="admin").first()
@@ -89,7 +89,7 @@ def reset_admin_password(password: str = "admin123"):
 
 def create_sample_data():
     """Create sample data for development."""
-    app = create_app(DevelopmentConfig)
+    app = create_app()
 
     with app.app_context():
         # Create a test user

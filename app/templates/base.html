@@ -1,11 +1,14 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
+<html lang="en" data-bs-theme="{{ bs_theme_mode or 'dark' }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="Clippy - Video Compilation Platform">
     <meta name="author" content="Clippy">
     <title>{% if title %}{{ title }} - Clippy{% else %}Clippy{% endif %}</title>
+    {% if active_theme and active_theme.favicon_path %}
+    <link rel="icon" href="{{ url_for('main.theme_favicon') }}" type="image/x-icon">
+    {% endif %}
     {% if current_user.is_authenticated %}
     <meta name="csrf-token" content="{{ csrf_token() }}">
     {% endif %}
@@ -17,168 +20,63 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
 
     <!-- Custom CSS -->
-    <style>
-        :root {
-            --bs-primary: #6f42c1;
-            --bs-secondary: #6c757d;
-            --bs-success: #198754;
-            --bs-info: #0dcaf0;
-            --bs-warning: #ffc107;
-            --bs-danger: #dc3545;
-        }
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+    {% if active_theme %}
+    {# Cache-bust when theme changes using updated_at timestamp or id #}
+    <link rel="stylesheet" href="{{ url_for('main.theme_css') }}?v={{ (active_theme.updated_at or 0)|int }}{{ '-' ~ active_theme.id if active_theme.id else '' }}">
+    {% endif %}
 
-        body {
-            background-color: #0d1117;
-            color: #e6edf3;
-        }
-
-        .navbar-brand {
-            font-weight: bold;
-            font-size: 1.5rem;
-        }
-
-        .card {
-            background-color: #161b22;
-            border: 1px solid #30363d;
-        }
-
-        .btn-primary {
-            background-color: var(--bs-primary);
-            border-color: var(--bs-primary);
-        }
-
-        .btn-primary:hover {
-            background-color: #5936a3;
-            border-color: #5936a3;
-        }
-
-        .footer {
-            background-color: #0d1117;
-            border-top: 1px solid #30363d;
-            margin-top: auto;
-        }
-
-        .hero-section {
-            background: linear-gradient(135deg, #1e1e2e 0%, #2d1b69 100%);
-            padding: 6rem 0;
-        }
-
-        .feature-icon {
-            width: 3rem;
-            height: 3rem;
-            border-radius: 0.75rem;
-            background-color: var(--bs-primary);
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 1rem;
-        }
-
-        .sidebar {
-            min-height: calc(100vh - 56px);
-            background-color: #161b22;
-            border-right: 1px solid #30363d;
-        }
-
-        .sidebar .nav-link {
-            color: #e6edf3;
-            padding: 0.75rem 1rem;
-            border-radius: 0.375rem;
-            margin: 0.125rem 0;
-        }
-
-        .sidebar .nav-link:hover, .sidebar .nav-link.active {
-            background-color: #21262d;
-            color: #58a6ff;
-        }
-
-        .main-content {
-            padding: 2rem;
-        }
-
-        .stats-card {
-            background: linear-gradient(135deg, #161b22 0%, #21262d 100%);
-            border: 1px solid #30363d;
-            transition: transform 0.2s;
-        }
-
-        .stats-card:hover {
-            transform: translateY(-2px);
-        }
-
-        .upload-zone {
-            border: 2px dashed #30363d;
-            border-radius: 0.5rem;
-            padding: 3rem;
-            text-align: center;
-            background-color: #0d1117;
-            transition: all 0.3s ease;
-        }
-
-        .upload-zone:hover {
-            border-color: var(--bs-primary);
-            background-color: #161b22;
-        }
-
-        .project-card {
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        .project-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
-        }
-    </style>
 
     {% block styles %}{% endblock %}
 </head>
 <body class="d-flex flex-column min-vh-100" {% if current_user.is_authenticated %}data-recent-jobs-url="{{ url_for('api.recent_jobs_api') }}" data-job-details-url-template="{{ url_for('api.job_details_api', job_id=0) }}"{% endif %}>
 
     <!-- Navigation -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark border-bottom">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="{{ url_for('main.index') }}">
-                <i class="bi bi-camera-video"></i>
-                Clippy
-            </a>
-
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+    <nav class="navbar navbar-expand-lg navbar-themed navbar-dark border-bottom">
+        <div class="container-lg">
+            <!-- Toggle -->
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
 
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav me-auto">
+            <!-- Brand -->
+            <a class="navbar-brand mt-1 mt-lg-0 d-flex align-items-center gap-2" href="{{ url_for('main.index') }}">
+                {% if active_theme and active_theme.logo_path %}
+                    <img src="{{ url_for('main.theme_logo') }}" alt="Logo" style="height:24px">
+                {% else %}
+                    <i class="bi bi-camera-video"></i>
+                {% endif %}
+                <span>Clippy</span>
+            </a>
+
+            <!-- Collapsible wrapper -->
+            <div class="collapse navbar-collapse" id="navbarSupportedContent">
+                <!-- Left links -->
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                     {% if current_user.is_authenticated %}
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('main.dashboard') }}">
-                                <i class="bi bi-speedometer2"></i> Dashboard
-                            </a>
+                            <a class="nav-link" href="{{ url_for('main.dashboard') }}">Dashboard</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('main.projects') }}">
-                                <i class="bi bi-folder2-open"></i> Projects
-                            </a>
+                            <a class="nav-link" href="{{ url_for('main.projects') }}">Projects</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('main.media_library') }}">
-                                <i class="bi bi-collection-play"></i> Media Library
-                            </a>
+                            <a class="nav-link" href="{{ url_for('main.media_library') }}">Media</a>
                         </li>
                         {% if current_user.is_admin() %}
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('admin.dashboard') }}">
-                                <i class="bi bi-gear"></i> Admin
-                            </a>
+                            <a class="nav-link" href="{{ url_for('admin.dashboard') }}">Admin</a>
                         </li>
                         {% endif %}
                     {% endif %}
                 </ul>
 
-                <ul class="navbar-nav">
+                <!-- Right elements -->
+                <div class="d-flex align-items-center gap-3">
                     {% if current_user.is_authenticated %}
-                        <li class="nav-item dropdown me-2" id="notificationsDropdown" style="display:none;">
-                            <a class="nav-link dropdown-toggle position-relative" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <!-- Notifications -->
+                        <div class="nav-item dropdown me-3" id="notificationsDropdown" style="display:none;">
+                            <a class="nav-link dropdown-toggle position-relative" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Notifications">
                                 <i class="bi bi-bell"></i>
                                 <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" id="notifBadge" style="display:none;">0</span>
                             </a>
@@ -187,56 +85,57 @@
                                 <li><hr class="dropdown-divider"></li>
                                 <li class="px-3 py-2 text-muted small">No recent jobs</li>
                             </ul>
-                        </li>
-                        <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                                <i class="bi bi-person-circle"></i>
-                                {{ current_user.username }}
+                        </div>
+
+                        <!-- User menu -->
+                        <div class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" role="button" data-bs-toggle="dropdown" aria-label="User menu">
+                                <i class="bi bi-person-circle me-1"></i>
+                                <span>Me</span>
                             </a>
                             <ul class="dropdown-menu dropdown-menu-end">
-                                <li><a class="dropdown-item" href="{{ url_for('auth.profile') }}">
-                                    <i class="bi bi-person"></i> Profile
-                                </a></li>
-                                <li><a class="dropdown-item" href="{{ url_for('auth.account_settings') }}">
-                                    <i class="bi bi-gear"></i> Settings
-                                </a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('auth.profile') }}"><i class="bi bi-person"></i> Profile</a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('auth.account_settings') }}"><i class="bi bi-gear"></i> Settings</a></li>
                                 <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}">
-                                    <i class="bi bi-box-arrow-right"></i> Logout
-                                </a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
                             </ul>
-                        </li>
+                        </div>
                     {% else %}
-                        <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('auth.login') }}">
-                                <i class="bi bi-box-arrow-in-right"></i> Login
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('auth.register') }}">
-                                <i class="bi bi-person-plus"></i> Sign Up
-                            </a>
-                        </li>
+                        <ul class="navbar-nav mb-2 mb-lg-0">
+                            <li class="nav-item">
+                                <a class="nav-link" href="{{ url_for('auth.login') }}">Login</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="{{ url_for('auth.register') }}">Sign Up</a>
+                            </li>
+                        </ul>
                     {% endif %}
-                </ul>
+                </div>
             </div>
         </div>
     </nav>
 
-    <!-- Flash Messages -->
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            <div class="container-fluid mt-3">
+        <!-- Flash Messages as Toasts -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1080;">
                 {% for category, message in messages %}
-                    <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
-                        <i class="bi bi-{{ 'exclamation-triangle' if category == 'danger' or category == 'error' else 'info-circle' if category == 'info' else 'check-circle' if category == 'success' else 'exclamation-triangle' }}"></i>
-                        {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    {% set cat = 'danger' if category in ['danger','error'] else category %}
+                    {% set bg = 'danger' if cat == 'danger' else 'success' if cat == 'success' else 'info' if cat == 'info' else 'warning' if cat == 'warning' else 'secondary' %}
+                    {% set icon = 'exclamation-triangle' if cat == 'danger' else 'check-circle' if cat == 'success' else 'info-circle' if cat == 'info' else 'exclamation-triangle' if cat == 'warning' else 'bell' %}
+                    <div class="toast text-bg-{{ bg }} border-0 mb-2" role="alert" aria-live="assertive" aria-atomic="true" data-bs-autohide="true" data-bs-delay="5000">
+                        <div class="d-flex">
+                            <div class="toast-body">
+                                <i class="bi bi-{{ icon }} me-2"></i>
+                                {{ message }}
+                            </div>
+                            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                        </div>
                     </div>
                 {% endfor %}
             </div>
-        {% endif %}
-    {% endwith %}
+            {% endif %}
+        {% endwith %}
 
     <!-- Main Content -->
     <main class="flex-grow-1">
@@ -293,129 +192,13 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
     <!-- Custom JavaScript -->
-    <script>
-        // Initialize tooltips
-        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-        const tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-            return new bootstrap.Tooltip(tooltipTriggerEl);
-        });
+    <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
+    {% if current_user.is_authenticated %}
+    <script src="{{ url_for('static', filename='js/jobs.js') }}"></script>
+    {% endif %}
 
-        // Initialize popovers
-        const popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="popover"]'));
-        const popoverList = popoverTriggerList.map(function (popoverTriggerEl) {
-            return new bootstrap.Popover(popoverTriggerEl);
-        });
-
-        // Auto-hide alerts after 5 seconds
-        setTimeout(function() {
-            const alerts = document.querySelectorAll('.alert');
-            alerts.forEach(function(alert) {
-                const bsAlert = new bootstrap.Alert(alert);
-                bsAlert.close();
-            });
-        }, 5000);
-
-        // Lightweight notifications poller for background jobs
-        (function(){
-            const dropdown = document.getElementById('notificationsDropdown');
-            if (!dropdown) return;
-            const badge = document.getElementById('notifBadge');
-            const menu = document.getElementById('notifMenu');
-            let lastSeenIds = new Set();
-
-            async function fetchJobs(){
-                try {
-                    const recentUrl = document.body.dataset.recentJobsUrl;
-                    if (!recentUrl) return;
-                    const res = await fetch(recentUrl);
-                    if (!res.ok) return;
-                    const data = await res.json();
-                    const items = data.items || [];
-                    render(items);
-                } catch (e) {
-                    // silent
-                }
-            }
-
-            function render(items){
-                dropdown.style.display = 'block';
-                menu.innerHTML = '';
-                const header = document.createElement('li');
-                header.className = 'dropdown-header';
-                header.textContent = 'Recent activity';
-                menu.appendChild(header);
-                menu.appendChild(document.createElement('li')).innerHTML = '<hr class="dropdown-divider">';
-
-                if (!items.length){
-                    const empty = document.createElement('li');
-                    empty.className = 'px-3 py-2 text-muted small';
-                    empty.textContent = 'No recent jobs';
-                    menu.appendChild(empty);
-                    badge.style.display = 'none';
-                    return;
-                }
-
-                let unread = 0;
-                items.forEach(j => {
-                    const li = document.createElement('li');
-                    const statusIcon = j.status === 'success' ? 'check-circle-fill text-success' : (j.status === 'failure' ? 'x-circle-fill text-danger' : 'hourglass-split text-warning');
-                    const proj = j.project_id ? ` · Project #${j.project_id}` : '';
-                    const title = `${(j.job_type || '').replace(/_/g, ' ')}${proj}`;
-                    const subtitle = j.last_log ? (j.last_log.message || j.last_log.status || '') : (j.error_message || '');
-                    const created = j.created_at ? new Date(j.created_at).toLocaleString() : '';
-                    li.innerHTML = `
-                        <a class="dropdown-item d-flex align-items-start gap-2" href="#" data-job-id="${j.id}" onclick="return window.showJobLogs(${j.id});">
-                            <i class="bi bi-${statusIcon} mt-1"></i>
-                            <div class="flex-grow-1">
-                                <div class="d-flex justify-content-between"><span>${title}</span><small class="text-muted">${j.progress || 0}%</small></div>
-                                <small class="text-muted">${subtitle || created}</small>
-                            </div>
-                        </a>`;
-                    menu.appendChild(li);
-                    if (!lastSeenIds.has(j.id) && (j.status === 'success' || j.status === 'failure')) unread++;
-                });
-                if (unread > 0){
-                    badge.textContent = unread.toString();
-                    badge.style.display = 'inline-block';
-                } else {
-                    badge.style.display = 'none';
-                }
-                lastSeenIds = new Set(items.map(i => i.id));
-            }
-
-            // Expose a tiny helper to open logs modal
-            window.showJobLogs = async function(jobId){
-                try {
-                    const baseDetails = document.body.dataset.jobDetailsUrlTemplate;
-                    if (!baseDetails) return false;
-                    const url = baseDetails.replace(/\/0$/, '/' + jobId);
-                    const res = await fetch(url);
-                    if (!res.ok) return false;
-                    const data = await res.json();
-                    const modalEl = document.getElementById('jobLogsModal');
-                    if (!modalEl) return false;
-                    modalEl.querySelector('.modal-title').textContent = `${data.job_type} · ${data.project_name || ('Project #' + (data.project_id || ''))}`;
-                    const pre = modalEl.querySelector('pre');
-                    const logs = (data.result_data && data.result_data.logs) || [];
-                    pre.textContent = logs.map(l => {
-                        const ts = l.ts ? new Date(l.ts).toLocaleString() : '';
-                        const lvl = l.level ? `[${l.level.toUpperCase()}]` : '';
-                        const status = l.status ? `(${l.status})` : '';
-                        return `${ts} ${lvl} ${l.message || ''} ${status}`.trim();
-                    }).join('\n');
-                    const modal = new bootstrap.Modal(modalEl);
-                    modal.show();
-                } catch (e) {}
-                return false;
-            }
-
-            // Poll periodically
-            if (document.body.dataset.recentJobsUrl){
-                fetchJobs();
-                setInterval(fetchJobs, 5000);
-            }
-        })();
-    </script>
+        <!-- Show any queued toasts -->
+        <script src="{{ url_for('static', filename='js/toasts.js') }}"></script>
 
     <!-- Job Logs Modal -->
     <div class="modal fade" id="jobLogsModal" tabindex="-1" aria-hidden="true">

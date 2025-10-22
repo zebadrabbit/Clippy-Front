@@ -5,12 +5,20 @@ ClippyFront is a Flask-based web application for organizing media and assembling
 ## Highlights
 
 - Flask app factory with blueprints: auth, main, admin, api
+- Theme system: dynamic `/theme.css` that maps theme colors to Bootstrap variables; admin CRUD to create, edit, activate, and delete themes
+	- Per-media-type colors (intro/clip/outro/transition) are themeable and applied to Media Library cards and the Arrange timeline.
 - Media Library: drag-and-drop uploads (Dropzone), per-user storage, thumbnails, tags, bulk actions
 - Robust video preview using Video.js with MIME detection and graceful fallbacks
 - Self-hosted frontend vendor assets (Dropzone, Video.js) for CSP/MIME safety
-- Admin panel for users, projects, and system info
+- Admin panel for users, projects, themes, and system info
 - Security: CSRF, CORS, secure headers (Talisman), rate limiting
 - Optional async jobs via Celery + Redis
+- Project Wizard: consolidated flow with robust task polling
+- Arrange step: Intro/Outro selection, Transitions with multi-select, Randomize, Select All/Clear All
+- Timeline: card-style items with thumbnails and native drag-and-drop reordering with persistence
+	- Type-colored borders and a dashed insert marker for clear placement during drag.
+- Compile pipeline: interleaves transitions and inserts a static bumper between all segments; clearer logs
+- Branded overlays: author and game text with optional avatar; NVENC detection with CPU fallback
 - Tests with pytest and coverage; linting (Ruff) and formatting (Black)
 
 ## Quickstart
@@ -65,8 +73,16 @@ export YT_DLP_BINARY="$(pwd)/bin/yt-dlp"
 6) Initialize the database and admin user
 
 ```bash
+# Ensure your DATABASE_URL points to PostgreSQL (runtime uses Postgres; SQLite is test-only outside pytest)
+# export DATABASE_URL=postgresql://postgres:postgres@localhost/clippy_front
+
+# Optionally create the database if it doesn't exist
+python scripts/create_database.py
+
+# Initialize tables and seed an admin + sample data (drops and recreates tables)
 python init_db.py --all --password admin123
-# Or incrementally:
+
+# Or incrementally
 python init_db.py --drop
 python init_db.py --admin --password admin123
 ```
@@ -93,7 +109,11 @@ Visit http://localhost:5000 and log in with the admin user if created.
 Adjust via environment variables (see `.env.example`):
 
 - SECRET_KEY, DATABASE_URL, REDIS_URL
+- Database env precedence in dev: `DATABASE_URL` (if set) > `DEV_DATABASE_URL` > default. Runtime enforces PostgreSQL outside tests; SQLite is reserved for pytest only. Set one stable Postgres URL and keep it consistent across runs.
 - FFMPEG_BINARY, YT_DLP_BINARY (resolves local ./bin first if provided)
+- FFMPEG_DISABLE_NVENC (set to 1/true to force CPU encoding)
+- FFMPEG_NVENC_PRESET (override NVENC preset if supported by your ffmpeg)
+- TMPDIR (optional): set to `/app/instance/tmp` on workers bound to a network share to avoid EXDEV cross-device moves when saving final outputs.
 - RATELIMIT_DEFAULT/RATELIMIT_STORAGE_URL
 - UPLOAD_FOLDER, MAX_CONTENT_LENGTH
 - FLASK_HOST, FLASK_PORT, FLASK_DEBUG
@@ -101,6 +121,12 @@ Adjust via environment variables (see `.env.example`):
 Notes:
 - Vendor assets are served locally from `app/static/vendor`; re-run the fetch script if you clean the repo.
 - Content Security Policy is strict by default; local assets avoid nosniff/MIME issues.
+
+## Theming
+
+- Create and manage themes in the Admin → Themes section.
+- Activate a theme to apply it globally; the app serves `/theme.css` which maps your saved colors to Bootstrap CSS variables.
+- Edit colors via native color inputs or hex fields; changes save on submit. Hex and swatch inputs stay in sync while editing.
 
 ## Media Library Capabilities
 
@@ -112,6 +138,26 @@ Notes:
 
 If a format isn't supported by the browser, the UI gracefully offers a direct file open. Consider transcoding inputs with ffmpeg for maximum compatibility.
 
+Cross-host paths: If a remote worker writes media paths that differ from the web server, set:
+
+```
+MEDIA_PATH_ALIAS_FROM=/app/instance/
+MEDIA_PATH_ALIAS_TO=/mnt/clippy/instance/
+```
+
+The server also auto-rebases any path containing `/instance/` under its own `instance_path` if that location exists on disk.
+
+## Arrange and Compile
+
+- Arrange: Pick an Intro and Outro from your Media Library; choose Transitions (multi-select) and optionally toggle Randomize. Use Select All or Clear All to quickly manage transitions.
+- Timeline: Drag cards to reorder clips; the new order is saved to the server. Remove items with the X on each card.
+- Compile: Starts a background job that builds the sequence, interleaves transitions, and inserts a short static bumper between segments for a channel-switching effect.
+- Logs: The log window now shows which segment is processed next, e.g., “Concatenating: <name> (2 of 6)”.
+
+Avatars: To show a creator avatar next to the overlay text, place a PNG/JPG under `instance/assets/avatars/` named after a sanitized creator name (e.g., `pokimane.png`). A fallback avatar is used if present (e.g., `avatar.png`).
+
+NVENC: The app detects NVENC availability and performs a tiny test encode; if unavailable or failing (e.g., missing CUDA), it automatically falls back to CPU (libx264). You can force CPU via `FFMPEG_DISABLE_NVENC=1`. See `scripts/check_nvenc.py` to diagnose.
+
 ## Testing and Quality
 
 ```bash
@@ -120,6 +166,9 @@ pytest --cov=app     # with coverage
 ruff check .         # lint
 black .              # format
 pre-commit install   # set up hooks
+
+# Connectivity probes (optional)
+python scripts/health_check.py --db "$DATABASE_URL" --redis "$REDIS_URL"
 ```
 
 ## Project Structure (abridged)
@@ -129,6 +178,7 @@ ClippyFront/
 ├── app/
 │   ├── __init__.py              # Flask app factory, ext init, CSP, filters
 │   ├── admin/                   # Admin blueprint
+│   │   └── ... themes CRUD and routes
 │   ├── api/                     # API blueprint
 │   ├── auth/                    # Auth blueprint
 │   ├── main/                    # Main UI routes (media library, projects)
@@ -156,18 +206,69 @@ ClippyFront/
 - Invalid login for admin/admin123: run `python init_db.py --reset-admin --password admin123`.
 - Missing ffmpeg/yt-dlp: run `scripts/install_local_binaries.sh` and set `FFMPEG_BINARY`/`YT_DLP_BINARY` in your environment.
 
+### Admin password seems to change daily
+
+If your admin password appears to “change,” it was typically due to multiple SQLite files being created with relative paths. We now standardize on PostgreSQL to avoid this class of issue. If you still hit issues:
+
+- Ensure you’re using the same environment variables (`FLASK_ENV`, `DATABASE_URL`) for each run.
+- Avoid re-running `init_db.py --all` unless you intend to drop/recreate tables.
+- Reset the admin password explicitly when needed:
+	- `python init_db.py --reset-admin --password <newpassword>`
+
 ### Media files exist on disk but don't show up
 
 If you see files under `instance/uploads/<user_id>/...` but they aren't listed in the UI (Arrange, Media Library), the DB may be missing their rows. Reindex the media library:
 
-Optional commands (run inside the venv):
+Optional command (run inside the venv):
 
 ```bash
-python scripts/reindex_media.py            # backfill DB rows from disk
-python scripts/reindex_media.py --regen-thumbnails  # also rebuild missing video thumbnails
+python scripts/reindex_media.py            # backfill DB rows from disk (read-only)
 ```
 
 The script infers media type from subfolders (intros/, outros/, transitions/, compilations/, images/, clips/).
+It never modifies files on disk and does not regenerate thumbnails.
+
+### Data persistence and sidecars
+
+- The database is the single source of truth for media and projects. We no longer write or rely on per-file sidecar `.meta.json` metadata during uploads.
+- If you previously had sidecars, the reindexer ignores them. It will still restore DB rows based on actual files on disk.
+- In development, you can optionally enable an automatic reindex on startup if the DB is empty:
+	- Set `AUTO_REINDEX_ON_STARTUP=true` in your environment (or `.env`).
+	- By default this is disabled to avoid masking database issues.
+
+We recommend PostgreSQL exclusively outside tests. At startup, the app logs the resolved database target safely (e.g., `postgresql://host:port/db (redacted)`), which helps diagnose accidental DB misconfiguration.
+
+### Static bumper
+
+To customize the inter-segment “static” bumper, replace `instance/assets/static.mp4` with your own short clip. It will be inserted between every segment including transitions, intro, and outro.
+
+### Remote workers (GPU/CPU)
+
+Consolidated instructions live in `docs/workers.md` (Linux, Windows/WSL2, Docker and native). Quick examples:
+
+- GPU worker in Docker (Windows/WSL2):
+
+```bash
+docker build -f docker/worker.Dockerfile -t clippyfront-gpu-worker:latest .
+docker run --rm --gpus all \
+	-e CELERY_BROKER_URL=redis://host.docker.internal:6379/0 \
+	-e CELERY_RESULT_BACKEND=redis://host.docker.internal:6379/0 \
+	-e DATABASE_URL=postgresql://USER:PASSWORD@host.docker.internal/clippy_front \
+	-v "$(pwd)/instance:/app/instance" \
+	clippyfront-gpu-worker:latest
+```
+
+- Native worker on Linux (CPU/general):
+
+```bash
+source venv/bin/activate
+export CELERY_BROKER_URL=redis://localhost:6379/0
+export CELERY_RESULT_BACKEND=redis://localhost:6379/0
+export DATABASE_URL=postgresql://USER:PASSWORD@localhost/clippy_front
+celery -A app.tasks.celery_app worker -Q celery --loglevel=info
+```
+
+Ensure workers point to the same Redis/Postgres as the web app. For VPN/storage patterns, see `docs/wireguard.md` and `docs/samba-and-mounts.md`.
 
 ## Contributing
 

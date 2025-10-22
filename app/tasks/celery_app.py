@@ -1,7 +1,9 @@
 """
 Celery application configuration.
 """
+
 from celery import Celery
+from kombu import Queue
 
 from config.settings import Config
 
@@ -14,11 +16,15 @@ def make_celery(app_name=__name__):
         app_name,
         broker=config.CELERY_BROKER_URL,
         backend=config.CELERY_RESULT_BACKEND,
-        include=[
-            "app.tasks.background_tasks",
-            "app.tasks.video_processing",
-        ],
+        include=[],
     )
+    # Conditionally register task modules
+    celery_includes = [
+        "app.tasks.video_processing",
+        "app.tasks.media_maintenance",
+    ]
+
+    celery_app.conf.update(include=celery_includes)
 
     # Update configuration
     celery_app.conf.update(
@@ -27,6 +33,24 @@ def make_celery(app_name=__name__):
         result_serializer="json",
         timezone="UTC",
         enable_utc=True,
+        # Celery 6+ change: explicitly retry broker connections on startup
+        broker_connection_retry_on_startup=True,
+        # Define queues: default 'celery', a dedicated 'cpu' queue for CPU renders,
+        # and a 'gpu' queue for NVENC-capable workers
+        task_queues=(
+            Queue("celery"),
+            Queue("cpu"),
+            Queue("gpu"),
+        ),
+        # Route compile tasks to the GPU queue by default
+        task_routes=(
+            lambda name, args, kwargs, options, task=None: (
+                {"queue": "gpu"}
+                if name == "app.tasks.video_processing.compile_video_task"
+                and config.USE_GPU_QUEUE
+                else None
+            )
+        ),
     )
 
     return celery_app
