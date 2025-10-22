@@ -500,6 +500,7 @@ def init_extensions(app):
                             "media_color_clip VARCHAR(20)",
                             "media_color_outro VARCHAR(20)",
                             "media_color_transition VARCHAR(20)",
+                            "media_color_compilation VARCHAR(20)",
                             "logo_path VARCHAR(500)",
                             "favicon_path VARCHAR(500)",
                             "watermark_path VARCHAR(500)",

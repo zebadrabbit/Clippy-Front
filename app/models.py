@@ -521,6 +521,8 @@ class Theme(db.Model):
     )  # defaults to color_accent in CSS mapping
     media_color_outro = db.Column(db.String(20), default="#f59e0b")
     media_color_transition = db.Column(db.String(20), default="#22c55e")
+    # Optional color for the final compiled output representation
+    media_color_compilation = db.Column(db.String(20))
 
     # Assets (stored under instance/uploads/system/themes/<id>/...)
     logo_path = db.Column(db.String(500))
@@ -573,6 +575,9 @@ class Theme(db.Model):
             or "#f59e0b",  # amber-500
             "--media-color-transition": getattr(self, "media_color_transition", None)
             or "#22c55e",  # green-500
+            "--media-color-compilation": getattr(self, "media_color_compilation", None)
+            or self.color_accent
+            or "#6610f2",
         }
 
     def __repr__(self) -> str:

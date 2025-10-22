@@ -1431,6 +1431,7 @@ def theme_css():
             f"--media-color-clip: {v('--media-color-clip', v('--color-accent', '#6610f2'))};",
             f"--media-color-outro: {v('--media-color-outro', '#f59e0b')};",
             f"--media-color-transition: {v('--media-color-transition', '#22c55e')};",
+            f"--media-color-compilation: {v('--media-color-compilation', v('--color-accent', '#6610f2'))};",
             "}",
             # Map theme vars to Bootstrap CSS variables for broad component support
             ":root{",

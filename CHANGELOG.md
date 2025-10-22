@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2025-10-21
+
+### Added
+- Theme/UI: added a dedicated color for the "Compilation" media type.
+	- Admin → Themes now has a "Compilation Border" color input.
+	- Dynamic `/theme.css` exposes `--media-color-compilation`.
+	- Base CSS includes `.media-card[data-type="compilation"]` and `.badge.text-bg-compilation`.
+	- Runtime schema updater and Alembic migration add `themes.media_color_compilation`.
+
 ## [0.7.1] - 2025-10-21
 
 ### Added

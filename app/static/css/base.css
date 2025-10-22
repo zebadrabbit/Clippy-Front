@@ -219,6 +219,7 @@ body {
 .media-card[data-type="clip"] { border-color: var(--media-color-clip, var(--color-accent)); }
 .media-card[data-type="outro"] { border-color: var(--media-color-outro, #f59e0b); }
 .media-card[data-type="transition"] { border-color: var(--media-color-transition, #22c55e); }
+.media-card[data-type="compilation"] { border-color: var(--media-color-compilation, var(--color-accent)); }
 
 /* Media type badges using theme colors */
 .badge.text-bg-intro {
@@ -236,6 +237,10 @@ body {
 .badge.text-bg-transition {
     background-color: color-mix(in srgb, var(--media-color-transition, #22c55e), #000 10%) !important;
     color: #111 !important;
+}
+.badge.text-bg-compilation {
+    background-color: color-mix(in srgb, var(--media-color-compilation, var(--color-accent)), #000 10%) !important;
+    color: #fff !important;
 }
 
 /* Ensure Bootstrap contextual classes map to theme variables */

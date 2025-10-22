@@ -161,12 +161,17 @@
           </div>
         </div>
 
-        <!-- Downloaded Clips next -->
+        <!-- Downloaded Clips next (collapsible) -->
         <div class="mb-3">
           <div class="card">
-            <div class="card-header">Downloaded Clips</div>
-            <div class="card-body" id="clips-grid" style="min-height: 220px;">
-              <div class="text-muted">No clips yet. Download first.</div>
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#clips-collapse" aria-expanded="true" aria-controls="clips-collapse">Downloaded Clips</button>
+              <small class="text-muted" id="clips-remaining"></small>
+            </div>
+            <div id="clips-collapse" class="collapse show">
+              <div class="card-body" id="clips-grid" style="min-height: 220px;">
+                <div class="text-muted">No clips yet. Download first.</div>
+              </div>
             </div>
           </div>
         </div>

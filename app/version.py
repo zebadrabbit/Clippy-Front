@@ -2,8 +2,8 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "0.7.1"
-__version_info__ = (0, 7, 1)
+__version__ = "0.7.2"
+__version_info__ = (0, 7, 2)
 
 # Version history tracking
 VERSION_HISTORY = {
@@ -51,6 +51,11 @@ VERSION_HISTORY = {
     "0.7.1": (
         "Docs and DX: consolidated workers guide for Linux and Windows/WSL2 (Docker and native), clarified required vs optional flags, "
         "and removed redundant USE_GPU_QUEUE from worker run examples; README and GPU worker docs aligned."
+    ),
+    "0.7.2": (
+        "Theme/UI: added 'Compilation' media type color across theme variables and UI. "
+        "Admin → Themes now includes a Compilation color; /theme.css exposes --media-color-compilation; "
+        "Media Library and badges style accordingly."
     ),
 }
 

@@ -982,6 +982,8 @@ def theme_create():
             "media_color_outro": request.form.get("media_color_outro") or "#f59e0b",
             "media_color_transition": request.form.get("media_color_transition")
             or "#22c55e",
+            "media_color_compilation": request.form.get("media_color_compilation")
+            or None,
         }
         outline_color = (request.form.get("outline_color") or "").strip() or None
         desc = (request.form.get("description") or "").strip() or None
@@ -1042,6 +1044,7 @@ def theme_edit(theme_id: int):
                 "media_color_clip",
                 "media_color_outro",
                 "media_color_transition",
+                "media_color_compilation",
             ):
                 val = request.form.get(key)
                 if val:

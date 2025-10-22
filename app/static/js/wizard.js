@@ -369,10 +369,12 @@
           list.appendChild(cardEl);
         }
         card.classList.add('d-none');
+        updateClipsGridState();
         // Do not auto-check arrange confirmation; user must explicitly confirm
       });
       body.appendChild(h5); body.appendChild(ul); body.appendChild(btn); card.appendChild(body); grid.appendChild(card);
     });
+    updateClipsGridState();
   }
 
   // Arrange gating
@@ -429,6 +431,7 @@
       if (clipId){
         const src = document.querySelector(`.clip-card[data-clip-id="${clipId}"]`);
         if (src) src.classList.remove('d-none');
+        updateClipsGridState();
       }
       const list = document.getElementById('timeline-list');
       if (list && list.querySelectorAll('.timeline-card[data-clip-id]').length === 0) {
@@ -869,4 +872,37 @@
     await _populateClipsGrid.apply(this, arguments);
     attachAddToTimelineHandlers();
   };
+
+  // Collapsible Downloaded Clips logic
+  function updateClipsGridState(){
+    const grid = document.getElementById('clips-grid');
+    const wrap = document.getElementById('clips-collapse');
+    const badge = document.getElementById('clips-remaining');
+    if (!grid || !wrap) return;
+    const cards = Array.from(grid.querySelectorAll('.clip-card'));
+    const visible = cards.filter(c => !c.classList.contains('d-none')).length;
+    if (badge) {
+      const total = cards.length;
+      if (total > 0) {
+        badge.textContent = `Available: ${visible}/${total}`;
+      } else {
+        badge.textContent = '';
+      }
+    }
+    const wantCollapsed = (visible === 0 && cards.length > 0);
+    // Bootstrap Collapse API if available
+    try {
+      const Coll = window.bootstrap?.Collapse;
+      if (Coll) {
+        let inst = Coll.getInstance(wrap);
+        if (!inst) inst = new Coll(wrap, { toggle: false });
+        if (wantCollapsed) inst.hide(); else inst.show();
+      } else {
+        // Fallback: toggle 'show' class
+        wrap.classList.toggle('show', !wantCollapsed);
+      }
+    } catch (_) {
+      wrap.classList.toggle('show', !wantCollapsed);
+    }
+  }
 })();
