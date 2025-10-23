@@ -575,6 +575,25 @@ def init_extensions(app):
             # If DB isn't ready or rollback isn't needed, ignore
             pass
 
+    # Extra safety: always clean up the session at the end of each request.
+    # This prevents 'InFailedSqlTransaction' from leaking across requests if any view errored.
+    @app.teardown_request
+    def _teardown_request(exc):  # pragma: no cover - simple guard
+        # On request errors, ensure the transaction is rolled back.
+        # Avoid forcibly removing the session here to keep Flask-SQLAlchemy's
+        # own appcontext-scoped cleanup behavior and prevent detaching models
+        # mid-request/redirect chains in tests.
+        try:
+            from app.models import db as _db
+
+            if exc is not None:
+                try:
+                    _db.session.rollback()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     # Rate limiting (can be disabled via RATELIMIT_ENABLED=False)
     if app.config.get("RATELIMIT_ENABLED", True):
         limiter = Limiter(

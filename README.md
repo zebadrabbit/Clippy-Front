@@ -21,6 +21,19 @@ ClippyFront is a Flask-based web application for organizing media and assembling
 - Branded overlays: author and game text with optional avatar; NVENC detection with CPU fallback
 - Tests with pytest and coverage; linting (Ruff) and formatting (Black)
 
+### Subscription tiers and quotas
+
+- Per-user subscription tiers define monthly render-time and total storage quotas.
+- Watermark policy is tier-aware: higher tiers can remove the watermark; admins/unlimited tier never apply it. A per-user override exists for special cases.
+- An Unlimited tier is available for admin/testing with no limits and no watermark.
+- Admin UI: manage tiers in Admin → Tiers (create/edit/delete) and assign a tier on the user edit page.
+- Quotas are enforced consistently:
+	- Storage: on uploads and clip downloads (pre-check, and cleanup on overflow)
+	- Render-time: pre-compile estimation and enforcement; usage recorded after successful compilation
+	- Monthly window: render usage resets each calendar month
+
+See docs/tiers-and-quotas.md for details.
+
 ## Quickstart
 
 ### Prerequisites
@@ -85,6 +98,17 @@ python init_db.py --all --password admin123
 # Or incrementally
 python init_db.py --drop
 python init_db.py --admin --password admin123
+```
+
+8) Apply migrations (upgrades)
+
+```bash
+# Use Flask-Migrate to apply Alembic migrations
+flask db upgrade
+
+# Notes
+# - Migrations are idempotent on PostgreSQL; duplicate columns/indexes are guarded.
+# - Outside of pytest, the app requires PostgreSQL; set DATABASE_URL accordingly.
 ```
 
 7) Start services

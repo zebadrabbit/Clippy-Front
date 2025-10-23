@@ -32,6 +32,16 @@ def _column_exists(bind, table: str, column: str) -> bool:
         return False
 
 
+def _index_exists(bind, table: str, index_name: str) -> bool:
+    insp = sa.inspect(bind)
+    try:
+        indexes = insp.get_indexes(table)
+        names = {idx.get("name") for idx in indexes}
+        return index_name in names
+    except Exception:
+        return False
+
+
 def upgrade():
     bind = op.get_bind()
 
@@ -72,11 +82,9 @@ def upgrade():
             ),
             sa.Column("updated_at", sa.DateTime(), nullable=True),
         )
-        # Create index for name if server didn't apply from arg (SQLite compatibility)
-        try:
+        # Create index for name if not present (avoid aborting the transaction on PG)
+        if not _index_exists(bind, "tiers", "ix_tiers_name"):
             op.create_index("ix_tiers_name", "tiers", ["name"], unique=True)
-        except Exception:
-            pass
 
     # Add users.tier_id if missing
     if _table_exists(bind, "users") and not _column_exists(bind, "users", "tier_id"):

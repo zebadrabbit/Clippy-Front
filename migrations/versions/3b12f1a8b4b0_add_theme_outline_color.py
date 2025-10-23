@@ -16,12 +16,30 @@ depends_on = None
 
 
 def upgrade():
-    with op.batch_alter_table("themes", schema=None) as batch_op:
-        batch_op.add_column(
-            sa.Column("outline_color", sa.String(length=20), nullable=True)
-        )
+    # Guard against re-running on a DB where the column was added manually/earlier
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_cols = {col["name"] for col in inspector.get_columns("themes")}
+
+    if "outline_color" not in existing_cols:
+        with op.batch_alter_table("themes", schema=None) as batch_op:
+            batch_op.add_column(
+                sa.Column("outline_color", sa.String(length=20), nullable=True)
+            )
+    else:
+        # No-op; column already exists
+        pass
 
 
 def downgrade():
-    with op.batch_alter_table("themes", schema=None) as batch_op:
-        batch_op.drop_column("outline_color")
+    # Drop only if present to keep downgrade idempotent
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_cols = {col["name"] for col in inspector.get_columns("themes")}
+
+    if "outline_color" in existing_cols:
+        with op.batch_alter_table("themes", schema=None) as batch_op:
+            batch_op.drop_column("outline_color")
+    else:
+        # No-op
+        pass
