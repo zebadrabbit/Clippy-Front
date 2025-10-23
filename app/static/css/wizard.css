@@ -532,3 +532,179 @@
   border-top-right-radius: 10px;
   border-bottom-right-radius: 10px;
 }
+
+/* Option slider (radio-based) used for Audio Normalization */
+.audio-norm-card {
+    /* Stronger shadow to stand out on high-res/dark backgrounds */
+    box-shadow: 0 0.75rem 1.5rem rgba(0,0,0,0.55), 0 0.25rem 0.75rem rgba(0,0,0,0.4) !important;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 0.75rem;
+    padding-bottom: 1.5rem
+}
+
+.opt-slider {
+    position: relative;
+    width: 100%;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    user-select: none;
+}
+.opt-slider::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    height: 2px;
+    width: calc(100% * (3/4)); /* leave edge padding for knobs */
+    background: rgba(255,255,255,0.65);
+}
+.opt-slider input[type="radio"] { display: none; }
+.opt-slider label {
+    flex: 1 1 25%;
+    position: relative;
+    height: 100%;
+    cursor: pointer;
+}
+.opt-slider label::before {
+    content: attr(data-label);
+    position: absolute;
+    left: 50%;
+    transform: translate(-50%, 40px);
+    font-size: 0.9rem;
+    opacity: 0.85;
+    white-space: nowrap;
+}
+.opt-slider label::after {
+    content: " ";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 26px;
+    height: 26px;
+    border-radius: 999px;
+    border: 2px solid var(--outline-color, var(--color-accent));
+    background: var(--color-surface, #1e1e1e);
+    transition: transform .15s ease-in-out, border-width .15s ease-in-out;
+}
+.opt-slider label:hover::after { transform: translate(-50%, -50%) scale(1.15); }
+.opt-slider input[type="radio"]:checked + label::before {
+    font-weight: 700; opacity: 1;
+}
+.opt-slider input[type="radio"]:checked + label::after {
+    border-width: 4px; transform: translate(-50%, -50%) scale(0.8);
+}
+.opt-slider .pos {
+    position: absolute;
+    top: 50%;
+    left: 12.5%; /* default to first option center */
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--outline-color, var(--color-accent));
+    border: 2px solid #fff;
+    transform: translate(-50%, -50%);
+    transition: left .15s ease-in-out, opacity .15s ease-in-out;
+    opacity: 1;
+}
+
+.wizard-nav { gap: 0.75rem; }
+
+/* Glowing Next buttons while keeping theme face color (btn-primary background) */
+.btn-glow {
+    position: relative;
+    z-index: 0;
+    border-radius: 12px;
+    overflow: visible;
+}
+.btn-glow::before {
+    content: "";
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    width: calc(100% + 4px);
+    height: calc(100% + 4px);
+    border-radius: 12px;
+    background: linear-gradient(
+        45deg,
+        var(--color-accent, #6610f2),
+        #0d6efd,
+        #22c55e,
+        #9b59b6,
+        var(--color-accent, #6610f2)
+    );
+    background-size: 400%;
+    filter: blur(10px);
+    animation: wizardGlow 20s linear infinite;
+    transition: opacity 0.25s ease-in-out;
+    opacity: 0;
+    z-index: -1;
+}
+.btn-glow:hover::before,
+.btn-glow:focus-visible::before {
+    opacity: 1;
+}
+.btn-glow:disabled::before {
+    opacity: 0;
+}
+@keyframes wizardGlow {
+    0% {
+        background-position: 0 0;
+    }
+    50% {
+        background-position: 400% 0;
+    }
+    100% {
+        background-position: 0 0;
+    }
+}
+
+/* Compile step: summary + clip list layout */
+.compile-summary {
+    display: grid;
+    grid-template-columns: 1fr minmax(260px, 420px);
+    gap: 16px;
+}
+@media (max-width: 992px) {
+    .compile-summary { grid-template-columns: 1fr; }
+}
+.compile-left {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    padding: 12px 14px;
+}
+.compile-right {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    padding: 10px 12px;
+}
+.compile-clip-list {
+    max-height: 220px; /* scroll but don't push page down too far */
+    overflow: auto;
+    margin-top: 8px;
+}
+.compile-clip-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 2px;
+    border-bottom: 1px dashed rgba(255,255,255,0.06);
+}
+.compile-clip-item:last-child { border-bottom: 0; }
+.compile-clip-thumb {
+    width: 64px;
+    height: 36px;
+    object-fit: cover;
+    border-radius: 6px;
+    background: #222;
+}
+.compile-clip-meta { flex: 1 1 auto; min-width: 0; }
+.compile-clip-title { font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.compile-clip-len { font-size: 0.8rem; opacity: 0.8; }
+
+/* Thicker compile progress bar that aligns visually with the clip box */
+.progress.compile-progress { height: 14px; border-radius: 10px; }

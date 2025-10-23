@@ -91,6 +91,12 @@ class User(UserMixin, db.Model):
     # Optional path to user's profile image stored on disk
     profile_image_path = db.Column(db.String(500))
 
+    # Admin-only preference: disable global watermark overlay for this user
+    watermark_disabled = db.Column(db.Boolean, default=False, nullable=False)
+
+    # Tier/Plan assignment (quotas). Nullable for legacy rows; default applied in app logic.
+    tier_id = db.Column(db.Integer, db.ForeignKey("tiers.id"))
+
     # External service connections
     discord_user_id = db.Column(db.String(100), unique=True)
     twitch_username = db.Column(db.String(100))
@@ -110,6 +116,8 @@ class User(UserMixin, db.Model):
     media_files = db.relationship(
         "MediaFile", backref="user", lazy="dynamic", cascade="all, delete-orphan"
     )
+    # Optional relationship to user's assigned tier
+    tier = db.relationship("Tier", backref=db.backref("users", lazy="dynamic"))
 
     def set_password(self, password: str) -> None:
         """
@@ -199,6 +207,9 @@ class Project(db.Model):
     max_clip_duration = db.Column(db.Integer, default=30)  # seconds
     output_resolution = db.Column(db.String(20), default="1080p")
     output_format = db.Column(db.String(10), default="mp4")
+    # Audio normalization (optional per-project)
+    audio_norm_profile = db.Column(db.String(32))
+    audio_norm_db = db.Column(db.Float)
 
     # Output file information
     output_filename = db.Column(db.String(255))
@@ -450,6 +461,62 @@ class ProcessingJob(db.Model):
 
     def __repr__(self) -> str:
         return f"<ProcessingJob {self.job_type} - {self.status}>"
+
+
+class Tier(db.Model):
+    """Subscription tier/plan defining quotas and features.
+
+    Limits are enforced as follows:
+      - storage_limit_bytes: hard cap across all user's media (None => unlimited)
+      - render_time_limit_seconds: monthly allowance based on output video durations (None => unlimited)
+      - apply_watermark: when True, system watermark is applied on renders unless per-user override disables it
+      - is_unlimited: shortcut to bypass all checks (admin/test tier)
+    """
+
+    __tablename__ = "tiers"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    description = db.Column(db.Text)
+
+    # Quotas
+    storage_limit_bytes = db.Column(db.BigInteger, nullable=True)
+    render_time_limit_seconds = db.Column(db.BigInteger, nullable=True)
+
+    # Features
+    apply_watermark = db.Column(db.Boolean, default=True, nullable=False)
+    is_unlimited = db.Column(db.Boolean, default=False, nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    def __repr__(self) -> str:
+        return f"<Tier {self.name}{' (unlimited)' if self.is_unlimited else ''}>"
+
+
+class RenderUsage(db.Model):
+    """Tracks render usage (based on compiled output duration) per user.
+
+    Rows are appended after successful compilation with the final output duration
+    to enable monthly aggregation and quota enforcement.
+    """
+
+    __tablename__ = "render_usage"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    project_id = db.Column(db.Integer, db.ForeignKey("projects.id"))
+    seconds_used = db.Column(db.Integer, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    user = db.relationship("User", backref=db.backref("render_usages", lazy="dynamic"))
+    project = db.relationship(
+        "Project", backref=db.backref("render_usages", lazy="dynamic")
+    )
 
 
 class SystemSetting(db.Model):

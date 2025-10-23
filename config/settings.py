@@ -58,12 +58,17 @@ class Config:
     UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER") or "uploads"
     ALLOWED_VIDEO_EXTENSIONS = {"mp4", "avi", "mov", "mkv", "webm"}
     ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
+    # Thumbnails
+    THUMBNAIL_TIMESTAMP_SECONDS = int(os.environ.get("THUMBNAIL_TIMESTAMP_SECONDS", 1))
+    THUMBNAIL_WIDTH = int(os.environ.get("THUMBNAIL_WIDTH", 480))
 
     # External API Configuration
     DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN")
     DISCORD_CHANNEL_ID = os.environ.get("DISCORD_CHANNEL_ID")
     TWITCH_CLIENT_ID = os.environ.get("TWITCH_CLIENT_ID")
     TWITCH_CLIENT_SECRET = os.environ.get("TWITCH_CLIENT_SECRET")
+    # Optional avatars path for overlay feature (defaults resolved at runtime if not set)
+    AVATARS_PATH = os.environ.get("AVATARS_PATH")
 
     # Rate Limiting Configuration
     RATELIMIT_STORAGE_URL = REDIS_URL
@@ -71,7 +76,15 @@ class Config:
 
     # Video Processing Configuration
     FFMPEG_BINARY = os.environ.get("FFMPEG_BINARY") or "ffmpeg"
+    FFPROBE_BINARY = os.environ.get("FFPROBE_BINARY") or "ffprobe"
     YT_DLP_BINARY = os.environ.get("YT_DLP_BINARY") or "yt-dlp"
+    # Optional CLI args for fine-tuning tool behavior
+    FFMPEG_GLOBAL_ARGS = os.environ.get("FFMPEG_GLOBAL_ARGS", "")
+    FFMPEG_ENCODE_ARGS = os.environ.get("FFMPEG_ENCODE_ARGS", "")
+    FFMPEG_THUMBNAIL_ARGS = os.environ.get("FFMPEG_THUMBNAIL_ARGS", "")
+    FFMPEG_CONCAT_ARGS = os.environ.get("FFMPEG_CONCAT_ARGS", "")
+    FFPROBE_ARGS = os.environ.get("FFPROBE_ARGS", "")
+    YT_DLP_ARGS = os.environ.get("YT_DLP_ARGS", "")
     OUTPUT_VIDEO_QUALITY = os.environ.get("OUTPUT_VIDEO_QUALITY") or "high"
     # Queue selection: use a dedicated 'gpu' Celery queue for compile tasks when enabled
     USE_GPU_QUEUE = os.environ.get("USE_GPU_QUEUE", "false").lower() in {
@@ -91,6 +104,22 @@ class Config:
         "font-src": "'self' cdn.jsdelivr.net vjs.zencdn.net",
         "media-src": "'self' https:",
     }
+
+    # Pagination defaults
+    PROJECTS_PER_PAGE = int(os.environ.get("PROJECTS_PER_PAGE", 20))
+    MEDIA_PER_PAGE = int(os.environ.get("MEDIA_PER_PAGE", 20))
+    ADMIN_USERS_PER_PAGE = int(os.environ.get("ADMIN_USERS_PER_PAGE", 25))
+    ADMIN_PROJECTS_PER_PAGE = int(os.environ.get("ADMIN_PROJECTS_PER_PAGE", 25))
+
+    # Defaults for new Projects
+    DEFAULT_OUTPUT_RESOLUTION = os.environ.get("DEFAULT_OUTPUT_RESOLUTION", "1080p")
+    DEFAULT_OUTPUT_FORMAT = os.environ.get("DEFAULT_OUTPUT_FORMAT", "mp4")
+    DEFAULT_MAX_CLIP_DURATION = int(os.environ.get("DEFAULT_MAX_CLIP_DURATION", 30))
+
+    # Global watermark defaults (can be overridden via System Settings)
+    WATERMARK_PATH = os.environ.get("WATERMARK_PATH")  # path set via Admin UI upload
+    WATERMARK_OPACITY = float(os.environ.get("WATERMARK_OPACITY", 0.3))
+    WATERMARK_POSITION = os.environ.get("WATERMARK_POSITION", "bottom-right")
 
 
 class DevelopmentConfig(Config):

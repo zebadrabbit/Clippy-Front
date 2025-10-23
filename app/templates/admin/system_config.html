@@ -6,51 +6,175 @@
     <h2 class="mb-3"><i class="bi bi-gear"></i> Admin Dashboard</h2>
     <div class="col-12 col-lg-3 mb-3 mb-lg-0">
       {% set active_page = 'config' %}
+      {% set config_section = section or (request.args.get('section') or '') %}
       {% include 'admin/_includes/sidebar.html' with context %}
     </div>
     <div class="col-12 col-lg-9">
-      <div class="d-flex align-items-center justify-content-between mb-3">
-        <div class="d-flex gap-2">
-      <form method="post" action="{{ url_for('admin.restart', target='web') }}">
-        <button class="btn btn-outline-danger" type="submit" onclick="return confirm('Restart web server?');"><i class="bi bi-arrow-repeat"></i> Restart Web</button>
-      </form>
-      <form method="post" action="{{ url_for('admin.restart', target='workers') }}">
-        <button class="btn btn-outline-warning" type="submit" onclick="return confirm('Restart all workers?');"><i class="bi bi-cpu"></i> Restart Workers</button>
-      </form>
+      {% if not section %}
+      <!-- Configuration overview -->
+      <div class="card mb-3">
+        <div class="card-header d-flex align-items-center gap-2">
+          <i class="bi bi-info-circle"></i> <strong>Configuration overview</strong>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div class="small text-muted">.env file</div>
+              <div class="d-flex align-items-center gap-2">
+                <code class="text-break">{{ config_info.env.path }}</code>
+                {% if config_info.env.exists %}
+                  <span class="badge bg-success-subtle text-success">exists</span>
+                {% else %}
+                  <span class="badge bg-warning-subtle text-warning">missing</span>
+                {% endif %}
+                <span class="badge bg-light text-muted">R: {{ 'yes' if config_info.env.read else 'no' }}</span>
+                <span class="badge bg-light text-muted">W: {{ 'yes' if config_info.env.write else 'no' }}</span>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="small text-muted">settings.py</div>
+              <div class="d-flex align-items-center gap-2">
+                <code class="text-break">{{ config_info.settings_py.path }}</code>
+                {% if config_info.settings_py.exists %}
+                  <span class="badge bg-success-subtle text-success">exists</span>
+                {% else %}
+                  <span class="badge bg-warning-subtle text-warning">missing</span>
+                {% endif %}
+                <span class="badge bg-light text-muted">R: {{ 'yes' if config_info.settings_py.read else 'no' }}</span>
+                <span class="badge bg-light text-muted">W: {{ 'yes' if config_info.settings_py.write else 'no' }}</span>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="small text-muted">Instance path</div>
+              <div class="d-flex align-items-center gap-2">
+                <code class="text-break">{{ config_info.instance_path.path }}</code>
+                <span class="badge bg-light text-muted">R: {{ 'yes' if config_info.instance_path.read else 'no' }}</span>
+                <span class="badge bg-light text-muted">W: {{ 'yes' if config_info.instance_path.write else 'no' }}</span>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="small text-muted">Uploads directory</div>
+              <div class="d-flex align-items-center gap-2">
+                <code class="text-break">{{ config_info.uploads_dir.path }}</code>
+                {% if config_info.uploads_dir.exists %}
+                  <span class="badge bg-success-subtle text-success">exists</span>
+                {% else %}
+                  <span class="badge bg-warning-subtle text-warning">missing</span>
+                {% endif %}
+                <span class="badge bg-light text-muted">R: {{ 'yes' if config_info.uploads_dir.read else 'no' }}</span>
+                <span class="badge bg-light text-muted">W: {{ 'yes' if config_info.uploads_dir.write else 'no' }}</span>
+              </div>
+            </div>
+          </div>
+          <hr>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div class="small text-muted">Database</div>
+              <code class="text-break">{{ config_info.database }}</code>
+            </div>
+            <div class="col-md-6">
+              <div class="small text-muted">Redis</div>
+              <code class="text-break">{{ config_info.redis }}</code>
+            </div>
+            <div class="col-12">
+              <div class="small text-muted">Environment</div>
+              <span class="badge bg-light text-muted">DEBUG: {{ 'on' if config_info.environment.debug else 'off' }}</span>
+              <span class="badge bg-light text-muted">TESTING: {{ 'on' if config_info.environment.testing else 'off' }}</span>
+            </div>
+          </div>
+          {% if security_warnings %}
+          <div class="alert alert-warning mt-3" role="alert">
+            <div class="fw-semibold mb-1">Precautions</div>
+            <ul class="mb-0">
+              {% for w in security_warnings %}
+                <li>{{ w }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% endif %}
         </div>
       </div>
+      {% endif %}
+
+      {% if section %}
+      {% if section == 'pagination' %}
+      <!-- Watermark upload (Display section) -->
+      <div class="card mb-3">
+        <div class="card-header d-flex align-items-center gap-2">
+          <i class="bi bi-image"></i> <strong>Watermark Image</strong>
+        </div>
+        <div class="card-body">
+          <form method="post" enctype="multipart/form-data" class="d-flex flex-column gap-3">
+            <input type="hidden" name="action" value="upload_watermark">
+            <div>
+              <label class="form-label">Upload Watermark</label>
+              <input class="form-control" type="file" name="watermark" accept="image/*">
+              {% if values.get('WATERMARK_PATH') %}
+                <small class="text-muted">Current: {{ values.get('WATERMARK_PATH') }}</small>
+              {% else %}
+                <small class="text-muted">No watermark uploaded</small>
+              {% endif %}
+            </div>
+            <div>
+              <button class="btn btn-outline-primary" type="submit"><i class="bi bi-upload"></i> Upload Watermark</button>
+            </div>
+          </form>
+        </div>
+      </div>
+      {% endif %}
 
       <form method="post">
-    <input type="hidden" name="action" value="save">
+        <input type="hidden" name="action" value="save">
 
-    {% for section, items in groups.items() %}
-    <div class="card mb-3">
-      <div class="card-header"><strong>{{ section }}</strong></div>
-      <div class="card-body">
-        <div class="row g-3">
-          {% for item in items %}
-          <div class="col-md-6">
-            <label class="form-label">{{ item.label }}</label>
-            {% if item.type == 'bool' %}
-              {% set checked = values.get(item.key, '').lower() in ['1','true','yes','on'] %}
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" name="setting_{{ item.key }}" {% if checked %}checked{% endif %}>
-                <span class="form-text">Enable/Disable</span>
+        {% for section, items in groups.items() %}
+        <div class="card mb-3">
+          <div class="card-header"><strong>{{ section }}</strong></div>
+          <div class="card-body">
+            <div class="row g-3">
+              {% for item in items %}
+              <div class="col-md-6">
+                <label class="form-label">{{ item.label }}</label>
+                {% if item.type == 'bool' %}
+                  {% set checked = values.get(item.key, '').lower() in ['1','true','yes','on'] %}
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="setting_{{ item.key }}" {% if checked %}checked{% endif %}>
+                    <span class="form-text">Enable/Disable</span>
+                  </div>
+                {% else %}
+                  <input class="form-control" name="setting_{{ item.key }}" value="{{ values.get(item.key, '') }}">
+                {% endif %}
               </div>
-            {% else %}
-              <input class="form-control" name="setting_{{ item.key }}" value="{{ values.get(item.key, '') }}">
-            {% endif %}
+              {% endfor %}
+            </div>
           </div>
-          {% endfor %}
         </div>
-      </div>
-    </div>
-    {% endfor %}
+        {% endfor %}
 
         <div class="d-flex justify-content-end">
           <button class="btn btn-primary" type="submit"><i class="bi bi-save"></i> Save Changes</button>
         </div>
       </form>
+      {% endif %}
+
+      {% if not section %}
+      <!-- Danger Zone: Restart controls -->
+      <div class="card border-danger mt-4">
+        <div class="card-header bg-danger-subtle text-danger d-flex align-items-center gap-2">
+          <i class="bi bi-exclamation-triangle"></i> <strong>Danger Zone</strong>
+        </div>
+        <div class="card-body">
+          <p class="text-muted small mb-3">Restarting may interrupt active jobs. Ensure background tasks are idle or safe to interrupt.</p>
+          <div class="d-flex gap-2">
+            <form method="post" action="{{ url_for('admin.restart', target='web') }}">
+              <button class="btn btn-outline-danger" type="submit" onclick="return confirm('Restart web server?');"><i class="bi bi-arrow-repeat"></i> Restart Web</button>
+            </form>
+            <form method="post" action="{{ url_for('admin.restart', target='workers') }}">
+              <button class="btn btn-outline-warning" type="submit" onclick="return confirm('Restart all workers?');"><i class="bi bi-cpu"></i> Restart Workers</button>
+            </form>
+          </div>
+        </div>
+      </div>
+      {% endif %}
     </div>
   </div>
 </div>

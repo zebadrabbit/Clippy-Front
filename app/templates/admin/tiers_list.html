@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="row">
+    <h2 class="mb-3"><i class="bi bi-gear"></i> Admin Dashboard</h2>
+    <div class="col-12 col-lg-3 mb-3 mb-lg-0">
+      {% set active_page = 'tiers' %}
+      {% include 'admin/_includes/sidebar.html' with context %}
+    </div>
+    <div class="col-12 col-lg-9">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">Subscription Tiers</h3>
+        <a class="btn btn-primary" href="{{ url_for('admin.tier_create') }}"><i class="bi bi-plus-lg"></i> New Tier</a>
+      </div>
+      <div class="card">
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>Name</th>
+                  <th class="text-nowrap">Storage Limit</th>
+                  <th class="text-nowrap">Render Limit</th>
+                  <th>Watermark</th>
+                  <th>Flags</th>
+                  <th class="text-end">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for t in tiers %}
+                <tr>
+                  <td>
+                    <div class="fw-semibold">{{ t.name }}</div>
+                    {% if t.description %}
+                    <div class="text-muted small">{{ t.description }}</div>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if t.storage_limit_bytes %}
+                      {{ (t.storage_limit_bytes/1024/1024)|round(1) }} MB
+                    {% else %}
+                      <span class="badge bg-success">Unlimited</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if t.render_time_limit_seconds %}
+                      {{ (t.render_time_limit_seconds/60)|round(1) }} min/mo
+                    {% else %}
+                      <span class="badge bg-success">Unlimited</span>
+                    {% endif %}
+                  </td>
+                  <td>{% if t.apply_watermark %}<span class="badge bg-secondary">Applied</span>{% else %}<span class="badge bg-info text-dark">Disabled</span>{% endif %}</td>
+                  <td>
+                    {% if t.is_unlimited %}<span class="badge bg-warning text-dark">Unlimited</span>{% endif %}
+                    {% if t.is_active %}<span class="badge bg-primary">Active</span>{% else %}<span class="badge bg-outline-secondary">Inactive</span>{% endif %}
+                  </td>
+                  <td class="text-end">
+                    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.tier_edit', tier_id=t.id) }}">Edit</a>
+                    <button class="btn btn-sm btn-outline-danger delete-tier" data-id="{{ t.id }}">Delete</button>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('.delete-tier');
+  if (!btn) return;
+  const id = btn.getAttribute('data-id');
+  if (!id) return;
+  if (!confirm('Delete this tier? Users assigned to it will block deletion.')) return;
+  try {
+    const resp = await fetch(`{{ url_for('admin.tier_delete', tier_id=0) }}`.replace('0',''+id), { method: 'POST', headers: { 'X-CSRFToken': '{{ csrf_token() }}' } });
+    if (resp.ok) {
+      location.reload();
+    } else {
+      const data = await resp.json().catch(()=>({}));
+      alert(data.error || 'Failed to delete tier');
+    }
+  } catch (e) {
+    alert('Failed to delete tier');
+  }
+});
+</script>
+{% endblock %}

@@ -434,6 +434,29 @@ def upload_media(project_id):
                 except Exception:
                     pass
 
+                # Enforce storage quota after saving but before DB insert
+                try:
+                    from app.quotas import check_storage_quota
+
+                    new_size = os.path.getsize(dest_path)
+                    qc = check_storage_quota(current_user, additional_bytes=new_size)
+                    if not qc.ok:
+                        # Clean up saved file and abort
+                        try:
+                            os.remove(dest_path)
+                        except Exception:
+                            pass
+                        flash(
+                            "Storage quota exceeded. Please remove some files or upgrade your tier.",
+                            "danger",
+                        )
+                        return redirect(
+                            url_for("main.project_details", project_id=project.id)
+                        )
+                except Exception:
+                    # If quota check fails unexpectedly, continue; enforcement will happen on next operations
+                    pass
+
                 # Generate thumbnail for videos
                 thumb_path = None
                 if mime_type and mime_type.startswith("video"):
@@ -444,19 +467,26 @@ def upload_media(project_id):
                         os.makedirs(thumbs_dir, exist_ok=True)
                         thumb_name = f"{uuid4().hex}.jpg"
                         thumb_path = os.path.join(thumbs_dir, thumb_name)
-                        # Extract a frame at 1s; scale width to 480 keeping aspect ratio
+                        # Extract a frame at configured timestamp; scale width per config keeping aspect ratio
+                        from app.ffmpeg_config import config_args as _cfg_args
+
                         subprocess.run(
                             [
                                 _resolve_binary(current_app, "ffmpeg"),
+                                *_cfg_args(current_app, "ffmpeg", "thumbnail"),
                                 "-y",
                                 "-ss",
-                                "1",
+                                str(
+                                    current_app.config.get(
+                                        "THUMBNAIL_TIMESTAMP_SECONDS", 1
+                                    )
+                                ),
                                 "-i",
                                 dest_path,
                                 "-frames:v",
                                 "1",
                                 "-vf",
-                                "scale=480:-1",
+                                f"scale={int(current_app.config.get('THUMBNAIL_WIDTH', 480))}:-1",
                                 thumb_path,
                             ],
                             stdout=subprocess.DEVNULL,
@@ -476,8 +506,11 @@ def upload_media(project_id):
                 v_fps = None
                 try:
                     if mime_type and mime_type.startswith("video"):
+                        from app.ffmpeg_config import config_args as _cfg_args
+
                         probe_cmd = [
                             _resolve_binary(current_app, "ffprobe"),
+                            *_cfg_args(current_app, "ffprobe"),
                             "-v",
                             "error",
                             "-select_streams",
@@ -761,6 +794,30 @@ def media_upload():
         dest_path = os.path.join(user_dir, unique_name)
         file.save(dest_path)
 
+        # Enforce storage quota right after save but before DB insert
+        try:
+            from app.quotas import check_storage_quota
+
+            new_size = os.path.getsize(dest_path)
+            qc = check_storage_quota(current_user, additional_bytes=new_size)
+            if not qc.ok:
+                try:
+                    os.remove(dest_path)
+                except Exception:
+                    pass
+                return (
+                    jsonify(
+                        {
+                            "error": "Storage quota exceeded",
+                            "remaining_bytes": qc.remaining,
+                            "limit_bytes": qc.limit,
+                        }
+                    ),
+                    403,
+                )
+        except Exception:
+            pass
+
         # Compute checksum for dedupe
         checksum = None
         try:
@@ -843,19 +900,24 @@ def media_upload():
                 stem = os.path.splitext(unique_name)[0]
                 thumb_path = os.path.join(thumbs_dir, f"{stem}.jpg")
                 if not os.path.exists(thumb_path):
-                    # Extract a frame at 1s; scale width to 480 keeping aspect ratio
+                    # Extract a frame at configured timestamp; scale width per config keeping aspect ratio
+                    from app.ffmpeg_config import config_args as _cfg_args
+
                     subprocess.run(
                         [
                             _resolve_binary(current_app, "ffmpeg"),
+                            *_cfg_args(current_app, "ffmpeg", "thumbnail"),
                             "-y",
                             "-ss",
-                            "1",
+                            str(
+                                current_app.config.get("THUMBNAIL_TIMESTAMP_SECONDS", 1)
+                            ),
                             "-i",
                             dest_path,
                             "-frames:v",
                             "1",
                             "-vf",
-                            "scale=480:-1",
+                            f"scale={int(current_app.config.get('THUMBNAIL_WIDTH', 480))}:-1",
                             thumb_path,
                         ],
                         stdout=subprocess.DEVNULL,

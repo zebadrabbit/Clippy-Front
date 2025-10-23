@@ -102,6 +102,27 @@
   routeSelect?.addEventListener('change', updateTwitchWarning);
 
   // Create project and go to Get Clips
+  // Audio normalization slider wiring
+  (function initAudioNormSlider(){
+    const slider = document.getElementById('audio-norm-slider');
+    if (!slider) return;
+    const radios = Array.from(slider.querySelectorAll('input[type="radio"][name="audio_norm_profile"]'));
+    const pos = slider.querySelector('.pos');
+    const hiddenDb = document.getElementById('audio_norm_db');
+    function update(){
+      const idx = radios.findIndex(r => r.checked);
+      const count = Math.max(1, parseInt(slider.dataset.count || String(radios.length || 4), 10));
+      const step = 100 / count;
+      // center of each step: step*(idx+0.5)
+      const left = (step * (idx + 0.5));
+      if (pos) pos.style.left = left + '%';
+      const db = (radios[idx]?.dataset.db || '-1');
+      if (hiddenDb) hiddenDb.value = db;
+    }
+    radios.forEach(r => r.addEventListener('change', update));
+    update();
+  })();
+
   document.getElementById('next-1')?.addEventListener('click', async () => {
     const route = routeSelect.value;
     const form = document.getElementById('setup-form');
@@ -112,7 +133,9 @@
       description: (fd.get('description') || '').toString(),
       output_resolution: (fd.get('resolution') || '1080p').toString(),
       output_format: (fd.get('format') || 'mp4').toString(),
-      max_clip_duration: parseInt(fd.get('max_len') || '300', 10)
+      max_clip_duration: parseInt(fd.get('max_len') || '300', 10),
+      audio_norm_profile: (fd.get('audio_norm_profile') || 'music').toString(),
+      audio_norm_db: parseFloat(fd.get('audio_norm_db') || '-1')
     };
     // Persist settings for Compile summary
     wizard.settings = {
@@ -127,7 +150,9 @@
       max_len: payload.max_clip_duration,
       start_date: fd.get('start_date') || '',
       end_date: fd.get('end_date') || '',
-      min_views: fd.get('min_views') || ''
+      min_views: fd.get('min_views') || '',
+      audio_norm_profile: payload.audio_norm_profile,
+      audio_norm_db: payload.audio_norm_db
     };
     try {
       const r = await api('/api/projects', { method: 'POST', body: JSON.stringify(payload) });
@@ -307,25 +332,48 @@
     const outro = list.querySelector('.timeline-card.timeline-outro');
     const clips = Array.from(list.querySelectorAll('.timeline-card[data-clip-id]'));
     const clipCount = clips.length;
-    const clipTitles = clips.map(el => el.querySelector('.fw-semibold')?.textContent || 'Clip');
+    const clipTitles = clips.map(el => (el.querySelector('.title')?.textContent || el.querySelector('.fw-semibold')?.textContent || 'Clip'));
     const transCount = (wizard.selectedTransitionIds || []).length;
     const transMode = document.getElementById('transitions-randomize')?.checked ? 'Randomized' : 'Cycled';
-    const parts = [];
-    parts.push(`<h6 class="mb-2">Render Summary</h6>`);
-    parts.push('<div class="row small g-2">');
-    parts.push(`<div class="col-md-6"><strong>Project:</strong> ${escapeHtml(s.name || 'My Compilation')}</div>`);
-    parts.push(`<div class="col-md-6"><strong>Route:</strong> ${escapeHtml(s.route || '')}</div>`);
-    parts.push(`<div class="col-md-6"><strong>Resolution:</strong> ${escapeHtml(s.resolution || '')}</div>`);
-    parts.push(`<div class="col-md-6"><strong>Format/FPS:</strong> ${escapeHtml((s.format || '') + (s.fps?` @ ${s.fps}fps`:''))}</div>`);
-    parts.push(`<div class="col-md-6"><strong>Clip Limits:</strong> min ${s.min_len || 0}s • max ${s.max_len || 0}s • max clips ${s.max_clips || 0}</div>`);
-    if (s.start_date || s.end_date) parts.push(`<div class="col-md-6"><strong>Date Range:</strong> ${escapeHtml(s.start_date || '—')} to ${escapeHtml(s.end_date || '—')}</div>`);
-    if (s.min_views) parts.push(`<div class="col-md-6"><strong>Min Views:</strong> ${escapeHtml(String(s.min_views))}</div>`);
-    parts.push(`<div class="col-md-6"><strong>Intro:</strong> ${intro ? 'Yes' : 'No'}</div>`);
-    parts.push(`<div class="col-md-6"><strong>Outro:</strong> ${outro ? 'Yes' : 'No'}</div>`);
-    parts.push(`<div class="col-12"><strong>Clips (${clipCount}):</strong> ${clipTitles.map(escapeHtml).join(', ') || '—'}</div>`);
-    parts.push(`<div class="col-12"><strong>Transitions:</strong> ${transCount ? `${transCount} (${transMode})` : 'None'}</div>`);
-    parts.push('</div>');
-    details.innerHTML = parts.join('\n');
+    // Build combined meta line: "1080p, 60fps, mp4, (-1db)"
+    const norm = (typeof s.audio_norm_db === 'number' && !isNaN(s.audio_norm_db)) ? `, (${s.audio_norm_db.toString()}db)` : '';
+    const combined = `${s.resolution || ''}, ${s.fps || 60}fps, ${s.format || 'mp4'}${norm}`;
+    const yes = '<span class="text-success fw-semibold">Yes</span>';
+    const no = '<span class="text-danger fw-semibold">No</span>';
+    // Clip mini list (thumb, title, length)
+    const itemsHtml = clips.map(el => {
+      const title = (el.querySelector('.title')?.textContent || 'Clip');
+      const dur = (el.querySelector('.badge-duration')?.textContent || '');
+      const bg = el.querySelector('.thumb')?.style?.backgroundImage || '';
+      const m = /url\(["']?([^"')]+)["']?\)/.exec(bg);
+      const src = m ? m[1] : '';
+      return `
+        <div class="compile-clip-item">
+          <img class="compile-clip-thumb" src="${escapeHtml(src)}" alt="">
+          <div class="compile-clip-meta">
+            <div class="compile-clip-title">${escapeHtml(title)}</div>
+            <div class="compile-clip-len text-muted">${escapeHtml(dur)}</div>
+          </div>
+        </div>`;
+    }).join('');
+
+    details.innerHTML = `
+      <div class="compile-summary">
+        <div class="compile-left small">
+          <h6 class="mb-2">Render Summary</h6>
+          <div class="mb-1"><strong>Project:</strong> ${escapeHtml(s.name || 'My Compilation')}</div>
+          <div class="mb-1"><strong>Output:</strong> ${escapeHtml(combined)}</div>
+          <div class="mb-1"><strong>Intro/Outro:</strong> ${intro ? yes : no}, ${outro ? yes : no}</div>
+          <div class="mb-1"><strong>Transitions:</strong> ${transCount ? `${transCount} (${transMode})` : 'None'}</div>
+          <div class="text-muted">Clip limits: min ${s.min_len || 0}s • max ${s.max_len || 0}s • max clips ${s.max_clips || 0}${s.start_date || s.end_date ? ` • Dates: ${escapeHtml(s.start_date || '—')} → ${escapeHtml(s.end_date || '—')}` : ''}${s.min_views ? ` • Min views: ${escapeHtml(String(s.min_views))}` : ''}</div>
+        </div>
+        <div class="compile-right">
+          <div class="d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">Clips <span class="text-muted small">(${clipCount})</span></h6>
+          </div>
+          <div class="compile-clip-list">${itemsHtml || '<div class="text-muted small">No clips selected.</div>'}</div>
+        </div>
+      </div>`;
   }
   function escapeHtml(str){
     return String(str || '').replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[ch]));
@@ -359,6 +407,7 @@
           subtitle: [item.creator_name ? `By ${item.creator_name}` : '', item.game_name ? `• ${item.game_name}` : ''].filter(Boolean).join(' '),
           thumbUrl: (item.media && item.media.thumbnail_url) || '',
           clipId: item.id,
+          durationSec: (item.media && (typeof item.media.duration === 'number') ? item.media.duration : undefined),
           kind: 'clip'
         });
         // Insert new clips before Outro so Outro stays last

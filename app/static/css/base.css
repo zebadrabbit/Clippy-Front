@@ -17,6 +17,10 @@
     --navbar-bg: #212529;
     --navbar-text: #ffffff;
     --outline-color: var(--color-accent);
+    /* Themed disabled button colors */
+    --btn-disabled-bg: color-mix(in srgb, var(--bs-card-bg), #ffffff 8%);
+    --btn-disabled-text: color-mix(in srgb, var(--bs-body-color), #000000 45%);
+    --btn-disabled-border: var(--bs-border-color);
 }
 
 body {
@@ -100,6 +104,24 @@ body {
     background-color: var(--bs-body-bg);
     border-top: 1px solid var(--bs-border-color);
     margin-top: auto;
+}
+
+/* Theme-aware disabled buttons: avoid bright primary when disabled */
+.btn:disabled,
+.btn.disabled,
+fieldset:disabled .btn {
+    background-color: var(--btn-disabled-bg) !important;
+    color: var(--btn-disabled-text) !important;
+    border-color: var(--btn-disabled-border) !important;
+    opacity: 1 !important; /* keep readable on dark backgrounds */
+    cursor: not-allowed !important;
+}
+.btn-primary:disabled,
+.btn-primary.disabled,
+fieldset:disabled .btn-primary {
+    background-color: var(--btn-disabled-bg) !important;
+    border-color: var(--btn-disabled-border) !important;
+    color: var(--btn-disabled-text) !important;
 }
 
 .hero-section {

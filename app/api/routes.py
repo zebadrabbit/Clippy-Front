@@ -177,12 +177,14 @@ def job_details_api(job_id: int):
 def create_project_api():
     """Create a new project via JSON API for the wizard flow.
 
-    Expected JSON body:
-      - name (str, required)
-      - description (str, optional)
-      - output_resolution (str, optional)
-      - output_format (str, optional)
-      - max_clip_duration (int, optional)
+      Expected JSON body:
+    - name (str, required)
+    - description (str, optional)
+    - output_resolution (str, optional)
+    - output_format (str, optional)
+    - max_clip_duration (int, optional)
+          - audio_norm_profile (str, optional)
+          - audio_norm_db (float, optional; relative dB e.g., -1.0)
     """
     data = request.get_json(silent=True) or {}
     name = (data.get("name") or "").strip()
@@ -196,9 +198,29 @@ def create_project_api():
             name = "Compilation of Today"
 
     description = (data.get("description") or "").strip() or None
-    output_resolution = data.get("output_resolution") or "1080p"
-    output_format = data.get("output_format") or "mp4"
-    max_clip_duration = int(data.get("max_clip_duration") or 30)
+    # Use centralized defaults when not provided by client
+    output_resolution = data.get("output_resolution") or current_app.config.get(
+        "DEFAULT_OUTPUT_RESOLUTION", "1080p"
+    )
+    output_format = data.get("output_format") or current_app.config.get(
+        "DEFAULT_OUTPUT_FORMAT", "mp4"
+    )
+    max_clip_duration = int(
+        data.get("max_clip_duration")
+        or current_app.config.get("DEFAULT_MAX_CLIP_DURATION", 30)
+    )
+
+    # Optional audio normalization inputs
+    audio_norm_profile = (data.get("audio_norm_profile") or "").strip() or None
+    try:
+        audio_norm_db = (
+            float(data.get("audio_norm_db"))
+            if data.get("audio_norm_db") is not None
+            and str(data.get("audio_norm_db")).strip() != ""
+            else None
+        )
+    except Exception:
+        audio_norm_db = None
 
     try:
         # Ensure project has an opaque public_id
@@ -215,6 +237,8 @@ def create_project_api():
             output_resolution=output_resolution,
             output_format=output_format,
             public_id=pid,
+            audio_norm_profile=audio_norm_profile,
+            audio_norm_db=audio_norm_db,
         )
         db.session.add(project)
         db.session.commit()
@@ -534,6 +558,8 @@ def compile_project_api(project_id: int):
 
     try:
         from app.tasks.video_processing import compile_video_task
+        from app.quotas import check_render_quota
+        from sqlalchemy import func
 
         # Optional selections from client
         data = request.get_json(silent=True) or {}
@@ -586,6 +612,118 @@ def compile_project_api(project_id: int):
                     valid_transition_ids = [m.id for m in q.all()]
             except Exception:
                 valid_transition_ids = []
+
+        # Estimate planned output duration (seconds) for quota enforcement
+        try:
+            # Sum clip durations with max per-clip limit applied
+            # Use DB-side aggregate for performance when possible
+            total_clip_seconds = 0.0
+            try:
+                # Sum known durations
+                clip_durs = (
+                    db.session.query(func.coalesce(func.sum(Clip.duration), 0.0))
+                    .filter(Clip.project_id == project.id)
+                    .scalar()
+                    or 0.0
+                )
+                # Apply max_clip_duration where duration is missing or exceeds
+                # Approximate by capping average to max when necessary
+                max_dur = float(project.max_clip_duration or 0)
+                if max_dur > 0:
+                    # Count clips with null or overly large durations
+                    clip_count = project.clips.count()
+                    # Conservative: assume missing durations use max
+                    known_count = (
+                        db.session.query(func.count(Clip.id))
+                        .filter(
+                            Clip.project_id == project.id, Clip.duration.isnot(None)
+                        )
+                        .scalar()
+                        or 0
+                    )
+                    unknown = max(0, int(clip_count) - int(known_count))
+                    # Cap known sum at max per clip when clearly over
+                    # We can't easily cap per-row in a DB-agnostic way here, so treat as-is
+                    total_clip_seconds = float(clip_durs) + (unknown * max_dur)
+                else:
+                    total_clip_seconds = float(clip_durs)
+            except Exception:
+                total_clip_seconds = float(project.get_total_duration() or 0)
+
+            # Add intro/outro durations if provided/available
+            intro_seconds = 0.0
+            if intro_id is not None:
+                try:
+                    from app.models import MediaFile
+
+                    mf = MediaFile.query.filter_by(
+                        id=intro_id, user_id=current_user.id
+                    ).first()
+                    if mf and mf.duration:
+                        intro_seconds = float(mf.duration)
+                except Exception:
+                    intro_seconds = 0.0
+            outro_seconds = 0.0
+            if outro_id is not None:
+                try:
+                    from app.models import MediaFile
+
+                    mf = MediaFile.query.filter_by(
+                        id=outro_id, user_id=current_user.id
+                    ).first()
+                    if mf and mf.duration:
+                        outro_seconds = float(mf.duration)
+                except Exception:
+                    outro_seconds = 0.0
+
+            # Estimate transitions: average selected transition duration times number of gaps
+            trans_seconds = 0.0
+            try:
+                segs = (
+                    project.clips.count()
+                    + (1 if intro_id is not None else 0)
+                    + (1 if outro_id is not None else 0)
+                )
+                gaps = max(0, segs - 1)
+                avg_trans = 0.0
+                if valid_transition_ids:
+                    from app.models import MediaFile
+
+                    rows = (
+                        db.session.query(
+                            func.coalesce(func.avg(MediaFile.duration), 0.0)
+                        )
+                        .filter(MediaFile.id.in_(valid_transition_ids))
+                        .scalar()
+                        or 0.0
+                    )
+                    avg_trans = float(rows)
+                trans_seconds = gaps * avg_trans
+            except Exception:
+                trans_seconds = 0.0
+
+            estimated_seconds = int(
+                max(
+                    0.0,
+                    total_clip_seconds + intro_seconds + outro_seconds + trans_seconds,
+                )
+            )
+            qr = check_render_quota(current_user, planned_seconds=estimated_seconds)
+            if not qr.ok:
+                return (
+                    jsonify(
+                        {
+                            "error": "Render time quota exceeded",
+                            "remaining_seconds": qr.remaining,
+                            "limit_seconds": qr.limit,
+                            "estimated_seconds": estimated_seconds,
+                        }
+                    ),
+                    403,
+                )
+        except Exception:
+            # If any estimation/check fails, continue; enforcement will occur post-compile usage recording
+            pass
 
         # Attempt to enqueue first; only mark PROCESSING if enqueue succeeds
         # Explicitly route to the GPU queue when enabled to avoid default-queue fallback
@@ -867,6 +1005,8 @@ def get_project_details_api(project_id: int):
             "output_filename": project.output_filename,
             "output_file_size": project.output_file_size,
             "download_url": download_url,
+            "audio_norm_profile": getattr(project, "audio_norm_profile", None),
+            "audio_norm_db": getattr(project, "audio_norm_db", None),
         }
     )
 

@@ -6,6 +6,7 @@ Exposes quality parameters, overlay construction, and font/binary resolution.
 from __future__ import annotations
 
 import os
+import shlex
 from typing import Any
 
 # Defaults inspired by CLI config
@@ -24,6 +25,44 @@ DEFAULTS: dict[str, Any] = {
     "enable_overlay": True,
     "fontfile": "assets/fonts/Roboto-Medium.ttf",
 }
+
+
+def parse_cli_args(val: str | None) -> list[str]:
+    """Parse a shell-like string into argv list using shlex.split.
+
+    Returns [] when val is falsy.
+    """
+    if not val:
+        return []
+    try:
+        return shlex.split(str(val))
+    except Exception:
+        # Fallback: naive split
+        return str(val).split()
+
+
+def config_args(app, tool: str, context: str | None = None) -> list[str]:
+    """Return extra CLI args from app.config for a given tool/context.
+
+    tool: 'ffmpeg' | 'ffprobe' | 'yt-dlp'
+    context (for ffmpeg): 'encode' | 'thumbnail' | 'concat' | None
+    """
+    t = (tool or "").lower()
+    if t == "ffprobe":
+        return parse_cli_args(app.config.get("FFPROBE_ARGS"))
+    if t in {"yt-dlp", "ytdlp"}:
+        return parse_cli_args(app.config.get("YT_DLP_ARGS"))
+    if t == "ffmpeg":
+        args: list[str] = []
+        args += parse_cli_args(app.config.get("FFMPEG_GLOBAL_ARGS"))
+        if context == "encode":
+            args += parse_cli_args(app.config.get("FFMPEG_ENCODE_ARGS"))
+        elif context == "thumbnail":
+            args += parse_cli_args(app.config.get("FFMPEG_THUMBNAIL_ARGS"))
+        elif context == "concat":
+            args += parse_cli_args(app.config.get("FFMPEG_CONCAT_ARGS"))
+        return args
+    return []
 
 
 def _repo_root() -> str:

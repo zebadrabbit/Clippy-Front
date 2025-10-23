@@ -1,0 +1,205 @@
+.
+├── app
+│   ├── admin
+│   │   ├── __init__.py
+│   │   ├── __pycache__
+│   │   └── routes.py
+│   ├── api
+│   │   ├── __init__.py
+│   │   ├── __pycache__
+│   │   └── routes.py
+│   ├── auth
+│   │   ├── forms.py
+│   │   ├── __init__.py
+│   │   ├── __pycache__
+│   │   └── routes.py
+│   ├── ffmpeg_config.py
+│   ├── __init__.py
+│   ├── integrations
+│   │   ├── discord.py
+│   │   ├── __pycache__
+│   │   └── twitch.py
+│   ├── main
+│   │   ├── __init__.py
+│   │   ├── __pycache__
+│   │   └── routes.py
+│   ├── models.py
+│   ├── __pycache__
+│   │   ├── ffmpeg_config.cpython-310.pyc
+│   │   ├── __init__.cpython-310.pyc
+│   │   ├── models.cpython-310.pyc
+│   │   └── version.cpython-310.pyc
+│   ├── static
+│   │   ├── css
+│   │   ├── img
+│   │   ├── js
+│   │   ├── README.md
+│   │   └── vendor
+│   ├── tasks
+│   │   ├── celery_app.py
+│   │   ├── __init__.py
+│   │   ├── media_maintenance.py
+│   │   ├── __pycache__
+│   │   └── video_processing.py
+│   ├── templates
+│   │   ├── admin
+│   │   ├── auth
+│   │   ├── base.html
+│   │   ├── errors
+│   │   └── main
+│   └── version.py
+├── bin
+│   ├── ffmpeg
+│   ├── ffprobe
+│   └── yt-dlp
+├── celery_worker.py
+├── CHANGELOG.md
+├── config
+│   ├── __init__.py
+│   ├── __pycache__
+│   │   ├── __init__.cpython-310.pyc
+│   │   └── settings.cpython-310.pyc
+│   └── settings.py
+├── CONTRIBUTING.md
+├── docker
+│   ├── docker-compose.gpu-worker.example.yml
+│   ├── docker-compose.gpu-worker.yml
+│   └── worker.Dockerfile
+├── docs
+│   ├── gpu-worker.md
+│   ├── samba-and-mounts.md
+│   ├── wireguard.md
+│   └── workers.md
+├── init_db.py
+├── instance
+│   ├── assets
+│   │   ├── avatars
+│   │   └── static.mp4
+│   ├── clippy_front_dev.db
+│   ├── compilations
+│   │   └── MyCompilation_20251019_083749.mp4
+│   ├── data
+│   ├── downloads
+│   │   ├── clip_163_Whitty fall down..mp4
+│   │   ├── clip_172_clip 14.mp4
+│   │   ├── clip_174_clip 5.mp4
+│   │   ├── clip_176_clip4.mp4
+│   │   ├── clip_178_clip9.mp4
+│   │   └── clip_179_clip 3.mp4
+│   ├── tmp
+│   │   ├── pymp-81_f6hv0
+│   │   ├── pymp-ed2cctwo
+│   │   └── pymp-tq8aruxo
+│   └── uploads
+│       ├── 1
+│       └── system
+├── LICENSE
+├── main.py
+├── migrations
+│   ├── alembic.ini
+│   ├── env.py
+│   ├── __pycache__
+│   │   └── env.cpython-310.pyc
+│   ├── README
+│   ├── script.py.mako
+│   └── versions
+│       ├── 084c3bc02dc5_init_migrations_and_add_user_date_format.py
+│       ├── 3b12f1a8b4b0_add_theme_outline_color.py
+│       ├── 6c8fe9b7c8a1_add_theme_media_color_compilation.py
+│       └── __pycache__
+├── pyproject.toml
+├── README.md
+├── repo-snapshot.sh
+├── requirements.txt
+├── scripts
+│   ├── bootstrap_infra.sh
+│   ├── check_nvenc.py
+│   ├── clear_storage.py
+│   ├── create_database.py
+│   ├── fetch_vendor_assets.sh
+│   ├── health_check.py
+│   ├── install_local_binaries.sh
+│   ├── __pycache__
+│   │   └── reindex_media.cpython-310.pyc
+│   ├── reindex_media.py
+│   ├── setup_samba_share.sh
+│   ├── wg_add_client.sh
+│   └── wg_setup_server.sh
+├── setup_dev.sh
+├── start_dev.sh
+├── tests
+│   ├── conftest.py
+│   ├── __init__.py
+│   ├── __pycache__
+│   │   ├── conftest.cpython-310-pytest-7.4.3.pyc
+│   │   ├── conftest.cpython-310-pytest-8.4.2.pyc
+│   │   ├── __init__.cpython-310.pyc
+│   │   ├── test_api.cpython-310-pytest-7.4.3.pyc
+│   │   ├── test_filters.cpython-310-pytest-7.4.3.pyc
+│   │   ├── test_media.cpython-310-pytest-7.4.3.pyc
+│   │   └── test_projects.cpython-310-pytest-7.4.3.pyc
+│   ├── test_api.py
+│   ├── test_filters.py
+│   ├── test_media.py
+│   └── test_projects.py
+├── venv
+│   ├── bin
+│   │   ├── activate
+│   │   ├── activate.csh
+│   │   ├── activate.fish
+│   │   ├── Activate.ps1
+│   │   ├── alembic
+│   │   ├── black
+│   │   ├── blackd
+│   │   ├── celery
+│   │   ├── coverage3
+│   │   ├── coverage-3.10
+│   │   ├── dotenv
+│   │   ├── email_validator
+│   │   ├── faker
+│   │   ├── flask
+│   │   ├── futurize
+│   │   ├── gunicorn
+│   │   ├── httpx
+│   │   ├── identify-cli
+│   │   ├── mako-render
+│   │   ├── markdown-it
+│   │   ├── mid3cp
+│   │   ├── mid3iconv
+│   │   ├── mid3v2
+│   │   ├── moggsplit
+│   │   ├── mutagen-inspect
+│   │   ├── mutagen-pony
+│   │   ├── nodeenv
+│   │   ├── normalizer
+│   │   ├── pasteurize
+│   │   ├── pip
+│   │   ├── pip3
+│   │   ├── pip3.10
+│   │   ├── pre-commit
+│   │   ├── pygmentize
+│   │   ├── py.test
+│   │   ├── pytest
+│   │   ├── python -> python3
+│   │   ├── python3 -> /usr/bin/python3
+│   │   ├── python3.10 -> python3
+│   │   ├── ruff
+│   │   ├── virtualenv
+│   │   ├── websockets
+│   │   ├── wheel
+│   │   └── yt-dlp
+│   ├── include
+│   │   └── site
+│   ├── lib
+│   │   └── python3.10
+│   ├── lib64 -> lib
+│   ├── pyvenv.cfg
+│   └── share
+│       ├── bash-completion
+│       ├── doc
+│       ├── fish
+│       ├── man
+│       └── zsh
+└── watch_and_commit.sh
+
+63 directories, 139 files

@@ -113,6 +113,7 @@ Adjust via environment variables (see `.env.example`):
 - FFMPEG_BINARY, YT_DLP_BINARY (resolves local ./bin first if provided)
 - FFMPEG_DISABLE_NVENC (set to 1/true to force CPU encoding)
 - FFMPEG_NVENC_PRESET (override NVENC preset if supported by your ffmpeg)
+- FFMPEG_GLOBAL_ARGS, FFMPEG_ENCODE_ARGS, FFMPEG_THUMBNAIL_ARGS, FFMPEG_CONCAT_ARGS, FFPROBE_ARGS, YT_DLP_ARGS (optional extra CLI flags injected at runtime)
 - TMPDIR (optional): set to `/app/instance/tmp` on workers bound to a network share to avoid EXDEV cross-device moves when saving final outputs.
 - RATELIMIT_DEFAULT/RATELIMIT_STORAGE_URL
 - UPLOAD_FOLDER, MAX_CONTENT_LENGTH
