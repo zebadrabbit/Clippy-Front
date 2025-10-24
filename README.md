@@ -142,8 +142,8 @@ Adjust via environment variables (see `.env.example`):
 - Instance storage mount (required in multi-host setups):
 	- Host path `/mnt/clippy` must exist and contain `uploads/`, `downloads/`, `compilations/`, `tmp/`, and `assets/`
 	- The app prefers `/mnt/clippy` automatically as its instance directory when present (outside tests)
-	- Set `CLIPPY_INSTANCE_PATH=/mnt/clippy` to force it explicitly; set `REQUIRE_INSTANCE_MOUNT=1` to fail fast if missing
-	- In containers, bind-mount `/mnt/clippy` to `/app/instance`
+	- Set `CLIPPY_INSTANCE_PATH=/mnt/clippy` on native hosts to force it explicitly; set `REQUIRE_INSTANCE_MOUNT=1` to fail fast if missing
+	- In containers, bind-mount `/mnt/clippy` to `/app/instance` and set `CLIPPY_INSTANCE_PATH=/app/instance` inside the container
 - RATELIMIT_DEFAULT/RATELIMIT_STORAGE_URL
 - UPLOAD_FOLDER, MAX_CONTENT_LENGTH
 - FLASK_HOST, FLASK_PORT, FLASK_DEBUG
@@ -172,7 +172,7 @@ Cross-host paths: If a remote worker writes media paths that differ from the web
 
 ```
 MEDIA_PATH_ALIAS_FROM=/app/instance/
-MEDIA_PATH_ALIAS_TO=/mnt/clippy/instance/
+MEDIA_PATH_ALIAS_TO=/mnt/clippy/
 ```
 
 The server also auto-rebases any path containing `/instance/` under its own `instance_path` if that location exists on disk.
