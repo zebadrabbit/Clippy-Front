@@ -310,33 +310,74 @@ def create_and_download_clips_api(project_id: int):
             except Exception:
                 return (u or "").strip()
 
+        # Extract a stable clip key for reuse detection (e.g., Twitch slug after /clip/)
+        def extract_key(u: str) -> str:
+            try:
+                s = normalize_url(u)
+                if not s:
+                    return ""
+                low = s.lower()
+                # Twitch clip URL pattern: /clip/<slug>
+                if "twitch.tv" in low and "/clip/" in low:
+                    try:
+                        slug = low.split("/clip/", 1)[1]
+                        # strip anything after next '/'
+                        slug = slug.split("/")[0]
+                        return slug
+                    except Exception:
+                        pass
+                # Fallback: return normalized base URL as key
+                return s
+            except Exception:
+                return normalize_url(u)
+
         seen = set()
 
         # Helper to try reuse: returns (reused: bool, media_file, source_platform)
         def try_reuse(url_s: str):
-            # Check if clip already exists in this project
-            # Check if clip already exists in this project
+            # Prefer matching by a stable key (e.g., Twitch slug) but also try normalized URL
+            key = extract_key(url_s)
+            norm = normalize_url(url_s)
+            # In-project duplicate check (raw or normalized key match)
             existing_here = (
-                Clip.query.filter_by(project_id=project.id, source_url=url_s)
+                Clip.query.filter(Clip.project_id == project.id)
                 .order_by(Clip.created_at.desc())
-                .first()
+                .all()
             )
-            if existing_here and existing_here.media_file_id:
-                return True, existing_here.media_file, existing_here.source_platform
-            # Find any previously downloaded clip by this user with same URL
-            prev = (
+            for ex in existing_here:
+                try:
+                    ex_key = extract_key(ex.source_url or "")
+                    ex_norm = normalize_url(ex.source_url or "")
+                except Exception:
+                    ex_key = ""
+                    ex_norm = ""
+                if (ex_key and key and ex_key == key) or (ex_norm and ex_norm == norm):
+                    if ex.media_file_id:
+                        return True, ex.media_file, ex.source_platform
+                    break
+            # If nothing matched in-loop above, fall through to cross-project check
+            # Find any previously downloaded clip by this user matching key or normalized URL
+            candidates = (
                 db.session.query(Clip)
                 .join(Project, Project.id == Clip.project_id)
                 .filter(
                     Project.user_id == current_user.id,
-                    Clip.source_url == url_s,
                     Clip.media_file_id.isnot(None),
                 )
                 .order_by(Clip.created_at.desc())
-                .first()
+                .limit(500)
+                .all()
             )
-            if prev and prev.media_file_id:
-                return True, prev.media_file, prev.source_platform
+            for prev in candidates:
+                try:
+                    pv_key = extract_key(prev.source_url or "")
+                    pv_norm = normalize_url(prev.source_url or "")
+                except Exception:
+                    pv_key = ""
+                    pv_norm = ""
+                if (pv_key and key and pv_key == key) or (pv_norm and pv_norm == norm):
+                    if prev.media_file_id:
+                        return True, prev.media_file, prev.source_platform
             return False, None, None
 
         # Structured clips if provided
