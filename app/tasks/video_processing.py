@@ -1631,9 +1631,28 @@ def download_with_yt_dlp(url: str, clip: Clip, max_bytes: int | None = None) -> 
     yt_bin = resolve_binary(app, "yt-dlp")
     from app.ffmpeg_config import config_args as _cfg_args
 
+    # Start from configured args but drop any explicit rate limits which can
+    # interfere with quota-based size limits or accidentally consume following
+    # tokens when misconfigured.
+    def _strip_rate_limit(args: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        skip_next = False
+        for tok in args:
+            if skip_next:
+                skip_next = False
+                continue
+            if tok in {"-r", "--limit-rate"}:
+                # drop this flag and its value if present
+                skip_next = True
+                continue
+            cleaned.append(tok)
+        return cleaned
+
+    base_args = _strip_rate_limit(_cfg_args(app, "yt-dlp"))
+
     cmd = [
         yt_bin,
-        *_cfg_args(app, "yt-dlp"),
+        *base_args,
         "--format",
         "best[ext=mp4]/best",
         "--output",
@@ -1643,8 +1662,16 @@ def download_with_yt_dlp(url: str, clip: Clip, max_bytes: int | None = None) -> 
     ]
 
     if max_bytes is not None and max_bytes > 0:
-        # Prevent downloading files larger than remaining quota
-        cmd.extend(["--max-filesize", f"{int(max_bytes)}B"])
+        # Prevent downloading files larger than remaining quota. Pass plain bytes
+        # to avoid unit parsing issues (some yt-dlp builds reject a trailing 'B').
+        cmd.extend(["--max-filesize", str(int(max_bytes))])
+
+    # Optional debug of the resolved command (without printing secrets)
+    if os.getenv("YT_DLP_DEBUG"):
+        try:
+            print("[yt-dlp] cmd:", " ".join(cmd[:-1]), "<URL>")
+        except Exception:
+            pass
 
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:

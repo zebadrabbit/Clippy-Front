@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Alembic migrations hardened to be idempotent on PostgreSQL: guard duplicate column/index creation to avoid aborted transactions during `flask db upgrade` on existing databases.
+- yt-dlp download on workers: corrected `--max-filesize` formatting (plain bytes, no trailing `B`) and dropped conflicting `--limit-rate` flags from custom args to prevent "invalid rate limit" errors.
 
 ## [0.7.2] - 2025-10-21
 
