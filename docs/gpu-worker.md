@@ -17,14 +17,18 @@ docker build -f docker/worker.Dockerfile -t clippyfront-gpu-worker:latest .
 
 ## Run (simple)
 ```
-# Map instance/ for downloads/outputs; pass GPU into container
+# REQUIREMENT: mount your shared storage at /mnt/clippy on the host and pass it
+# into the container at /app/instance. The app prefers /mnt/clippy as its
+# instance path automatically and can enforce the mount with REQUIRE_INSTANCE_MOUNT=1.
 docker run --rm \
   --gpus all \
   -e CELERY_BROKER_URL=redis://host.docker.internal:6379/0 \
   -e CELERY_RESULT_BACKEND=redis://host.docker.internal:6379/0 \
   -e DATABASE_URL=postgresql://<user>:<pass>@host.docker.internal/clippy_front \
   -e TMPDIR=/app/instance/tmp \
-  -v $(pwd)/instance:/app/instance \
+  -e REQUIRE_INSTANCE_MOUNT=1 \
+  -e CLIPPY_INSTANCE_PATH=/mnt/clippy \
+  -v /mnt/clippy:/app/instance \
   --name clippy-gpu-worker \
   clippyfront-gpu-worker:latest
 ```
@@ -73,7 +77,9 @@ docker run --rm --gpus all \
   -e CELERY_RESULT_BACKEND=redis://host.docker.internal:6379/0 \
   -e REDIS_URL=redis://host.docker.internal:6379/0 \
   -e TMPDIR=/app/instance/tmp \
-  -v $(pwd)/instance:/app/instance \
+  -e REQUIRE_INSTANCE_MOUNT=1 \
+  -e CLIPPY_INSTANCE_PATH=/mnt/clippy \
+  -v /mnt/clippy:/app/instance \
   --name clippy-gpu-worker clippyfront-gpu-worker:latest
 ```
 
@@ -112,7 +118,7 @@ Path aliasing for previews (optional): if the worker writes file paths with a di
 
 ```
 MEDIA_PATH_ALIAS_FROM=/app/instance/
-MEDIA_PATH_ALIAS_TO=/mnt/clippy/instance/
+MEDIA_PATH_ALIAS_TO=/mnt/clippy/
 ```
 
 Rebuild tip: if you recently changed code and still hit EXDEV or missing path resolutions, rebuild the worker image without cache:

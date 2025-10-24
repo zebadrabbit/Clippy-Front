@@ -45,7 +45,23 @@ def create_app(config_class=None):
     Returns:
         Flask: Configured Flask application instance
     """
-    app = Flask(__name__)
+    # Prefer a shared, host-mounted instance directory when configured
+    # or when a well-known mount exists (e.g., /mnt/clippy). Avoid this
+    # auto-detection during pytest to keep tests hermetic.
+    _is_pytest = bool(os.environ.get("PYTEST_CURRENT_TEST"))
+    preferred_instance = os.environ.get("CLIPPY_INSTANCE_PATH")
+    if not _is_pytest and not preferred_instance and os.path.isdir("/mnt/clippy"):
+        preferred_instance = "/mnt/clippy"
+
+    if preferred_instance:
+        # Ensure the directory exists before constructing the app
+        try:
+            os.makedirs(preferred_instance, exist_ok=True)
+        except Exception:
+            pass
+        app = Flask(__name__, instance_path=preferred_instance)
+    else:
+        app = Flask(__name__)
 
     # Determine configuration class if not provided
     if config_class is None:
@@ -174,6 +190,25 @@ def create_app(config_class=None):
                     app.logger.info("Database: %s://… (redacted)", scheme)
     except Exception:
         pass
+
+    # Optionally require that the instance mount exists and is writable.
+    # Set REQUIRE_INSTANCE_MOUNT=1 to turn this on (recommended for workers).
+    try:
+        if str(os.environ.get("REQUIRE_INSTANCE_MOUNT", "")).lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }:
+            if not os.path.isdir(app.instance_path):
+                raise RuntimeError(
+                    f"Required instance mount is missing: {app.instance_path}. Configure CLIPPY_INSTANCE_PATH or mount the host path to this location."
+                )
+            # Basic writability check: create instance/tmp if needed
+            probe_dir = os.path.join(app.instance_path, "tmp")
+            os.makedirs(probe_dir, exist_ok=True)
+    except Exception:
+        raise
 
     # Create upload directory if it doesn't exist
     upload_dir = os.path.join(app.instance_path, app.config["UPLOAD_FOLDER"])

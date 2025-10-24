@@ -139,6 +139,11 @@ Adjust via environment variables (see `.env.example`):
 - FFMPEG_NVENC_PRESET (override NVENC preset if supported by your ffmpeg)
 - FFMPEG_GLOBAL_ARGS, FFMPEG_ENCODE_ARGS, FFMPEG_THUMBNAIL_ARGS, FFMPEG_CONCAT_ARGS, FFPROBE_ARGS, YT_DLP_ARGS (optional extra CLI flags injected at runtime)
 - TMPDIR (optional): set to `/app/instance/tmp` on workers bound to a network share to avoid EXDEV cross-device moves when saving final outputs.
+- Instance storage mount (required in multi-host setups):
+	- Host path `/mnt/clippy` must exist and contain `uploads/`, `downloads/`, `compilations/`, `tmp/`, and `assets/`
+	- The app prefers `/mnt/clippy` automatically as its instance directory when present (outside tests)
+	- Set `CLIPPY_INSTANCE_PATH=/mnt/clippy` to force it explicitly; set `REQUIRE_INSTANCE_MOUNT=1` to fail fast if missing
+	- In containers, bind-mount `/mnt/clippy` to `/app/instance`
 - RATELIMIT_DEFAULT/RATELIMIT_STORAGE_URL
 - UPLOAD_FOLDER, MAX_CONTENT_LENGTH
 - FLASK_HOST, FLASK_PORT, FLASK_DEBUG

@@ -13,9 +13,10 @@ If you only need the GPU-in-Docker recipe, see also `docs/gpu-worker.md`. It now
 
 - Redis and PostgreSQL reachable from the worker
   - Prefer private/VPN networking (see `docs/wireguard.md`). Avoid exposing 6379/5432 publicly.
-- Shared storage for media (the app’s `instance/` directory). Options:
-  - Bind-mount the web server’s `instance/` into the worker container
-  - Mount a Samba/CIFS share on the worker host, then bind-mount that path
+- Shared storage for media (the app’s `instance/` directory).
+  - REQUIRED: host mount at `/mnt/clippy` containing `uploads/`, `downloads/`, `compilations/`, `tmp/`, and `assets/`
+  - Bind-mount `/mnt/clippy` into the container at `/app/instance`
+  - The app prefers `/mnt/clippy` as its instance path and can enforce its presence with `REQUIRE_INSTANCE_MOUNT=1`
   - See `docs/samba-and-mounts.md` for Linux/Windows/WSL2 mounts
 - For GPU in Docker
   - Linux: NVIDIA drivers + nvidia-container-toolkit installed
@@ -49,7 +50,10 @@ docker run --rm --gpus all \
   -e CELERY_BROKER_URL=redis://host.docker.internal:6379/0 \
   -e CELERY_RESULT_BACKEND=redis://host.docker.internal:6379/0 \
   -e DATABASE_URL=postgresql://USER:PASSWORD@host.docker.internal/clippy_front \
-  -v "$(pwd)/instance:/app/instance" \
+  -e REQUIRE_INSTANCE_MOUNT=1 \
+  -e CLIPPY_INSTANCE_PATH=/mnt/clippy \
+  -e TMPDIR=/app/instance/tmp \
+  -v "/mnt/clippy:/app/instance" \
   clippyfront-gpu-worker:latest
 ```
 
@@ -70,6 +74,8 @@ Inside your Python venv on the worker host:
 export CELERY_BROKER_URL=redis://10.8.0.1:6379/0
 export CELERY_RESULT_BACKEND=redis://10.8.0.1:6379/0
 export DATABASE_URL=postgresql://USER:PASSWORD@10.8.0.1/clippy_front
+export CLIPPY_INSTANCE_PATH=/mnt/clippy
+export REQUIRE_INSTANCE_MOUNT=1
 
 # Optional: prefer local ffmpeg/yt-dlp
 export FFMPEG_BINARY=ffmpeg
@@ -91,14 +97,14 @@ On Windows, run this inside WSL2 with the repo checked out into the Linux filesy
 
 Workers and the web app must “see” the same files at the same logical paths:
 
-- Prefer bind-mounting the exact `instance/` directory into the container at `/app/instance`
-- When sharing over CIFS/SMB, mount the remote path on the worker host (Linux or WSL2) and bind-mount that into the container
+- REQUIRED mount: `/mnt/clippy` on the host; bind-mount to `/app/instance` for containers
+- When sharing over CIFS/SMB, mount the remote path on the worker host (Linux or WSL2) at `/mnt/clippy`, then bind-mount that into the container
 
 Cross-host path aliasing:
 
 - If file paths in the database have a different root on your worker than on the web server, use alias envs to translate:
   - `MEDIA_PATH_ALIAS_FROM=/app/instance/`
-  - `MEDIA_PATH_ALIAS_TO=/mnt/clippy/instance/`
+  - `MEDIA_PATH_ALIAS_TO=/mnt/clippy/`
 - The web app also auto-rebases any path containing `/instance/` under its own `instance_path` if it exists on disk
 - Enable `MEDIA_PATH_DEBUG=1` temporarily to log how paths are resolved (both web server and worker)
 
