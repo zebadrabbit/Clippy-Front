@@ -51,7 +51,7 @@ docker run --rm --gpus all \
   -e CELERY_RESULT_BACKEND=redis://host.docker.internal:6379/0 \
   -e DATABASE_URL=postgresql://USER:PASSWORD@host.docker.internal/clippy_front \
   -e REQUIRE_INSTANCE_MOUNT=1 \
-  -e CLIPPY_INSTANCE_PATH=/mnt/clippy \
+  -e CLIPPY_INSTANCE_PATH=/app/instance \
   -e TMPDIR=/app/instance/tmp \
   -v "/mnt/clippy:/app/instance" \
   clippyfront-gpu-worker:latest
@@ -74,6 +74,7 @@ Inside your Python venv on the worker host:
 export CELERY_BROKER_URL=redis://10.8.0.1:6379/0
 export CELERY_RESULT_BACKEND=redis://10.8.0.1:6379/0
 export DATABASE_URL=postgresql://USER:PASSWORD@10.8.0.1/clippy_front
+# For native (non-Docker) workers, the instance path is on the host
 export CLIPPY_INSTANCE_PATH=/mnt/clippy
 export REQUIRE_INSTANCE_MOUNT=1
 

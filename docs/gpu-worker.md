@@ -17,9 +17,10 @@ docker build -f docker/worker.Dockerfile -t clippyfront-gpu-worker:latest .
 
 ## Run (simple)
 ```
-# REQUIREMENT: mount your shared storage at /mnt/clippy on the host and pass it
-# into the container at /app/instance. The app prefers /mnt/clippy as its
-# instance path automatically and can enforce the mount with REQUIRE_INSTANCE_MOUNT=1.
+# REQUIREMENT: mount your shared storage at /mnt/clippy on the host and bind it
+# into the container at /app/instance. Inside the container, set
+# CLIPPY_INSTANCE_PATH=/app/instance so the app resolves paths correctly.
+# You can enforce the mount with REQUIRE_INSTANCE_MOUNT=1.
 docker run --rm \
   --gpus all \
   -e CELERY_BROKER_URL=redis://host.docker.internal:6379/0 \
@@ -27,7 +28,7 @@ docker run --rm \
   -e DATABASE_URL=postgresql://<user>:<pass>@host.docker.internal/clippy_front \
   -e TMPDIR=/app/instance/tmp \
   -e REQUIRE_INSTANCE_MOUNT=1 \
-  -e CLIPPY_INSTANCE_PATH=/mnt/clippy \
+  -e CLIPPY_INSTANCE_PATH=/app/instance \
   -v /mnt/clippy:/app/instance \
   --name clippy-gpu-worker \
   clippyfront-gpu-worker:latest
@@ -78,7 +79,7 @@ docker run --rm --gpus all \
   -e REDIS_URL=redis://host.docker.internal:6379/0 \
   -e TMPDIR=/app/instance/tmp \
   -e REQUIRE_INSTANCE_MOUNT=1 \
-  -e CLIPPY_INSTANCE_PATH=/mnt/clippy \
+  -e CLIPPY_INSTANCE_PATH=/app/instance \
   -v /mnt/clippy:/app/instance \
   --name clippy-gpu-worker clippyfront-gpu-worker:latest
 ```
