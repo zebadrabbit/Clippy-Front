@@ -6,8 +6,10 @@ system monitoring, and platform configuration for admin users only.
 """
 import os
 import secrets
+import stat as _stat
 from datetime import datetime
 from functools import wraps
+from urllib.parse import urlsplit, urlunsplit
 
 from flask import (
     Blueprint,
@@ -33,6 +35,7 @@ from app.models import (
     ProjectStatus,
     SystemSetting,
     Theme,
+    Tier,
     User,
     UserRole,
     db,
@@ -281,6 +284,23 @@ def user_edit(user_id):
             is_active_val = request.form.get("is_active")
             if is_active_val is not None:
                 user.is_active = is_active_val in ("1", "true", "on")
+            # Admin-only per-user watermark override
+            wm_disabled_val = request.form.get("watermark_disabled")
+            if wm_disabled_val is not None:
+                user.watermark_disabled = wm_disabled_val in ("1", "true", "on")
+            # Assign subscription tier
+            tier_id_val = request.form.get("tier_id")
+            if tier_id_val is not None:
+                try:
+                    t_id = int(tier_id_val) if tier_id_val else None
+                except Exception:
+                    t_id = None
+                if t_id:
+                    t = db.session.get(Tier, t_id)
+                    if t:
+                        user.tier_id = t.id
+                else:
+                    user.tier_id = None
             db.session.commit()
             flash("User updated", "success")
             return redirect(url_for("admin.user_details", user_id=user.id))
@@ -293,7 +313,136 @@ def user_edit(user_id):
         title=f"Edit User: {user.username}",
         user=user,
         user_roles=UserRole,
+        tiers=Tier.query.filter_by(is_active=True)
+        .order_by(Tier.is_unlimited.desc(), Tier.name.asc())
+        .all(),
     )
+
+
+@admin_bp.route("/tiers")
+@login_required
+@admin_required
+def tiers_list():
+    """List and manage subscription tiers."""
+    # Ensure defaults exist for convenience
+    try:
+        from app.quotas import ensure_default_tiers
+
+        ensure_default_tiers()
+    except Exception:
+        pass
+    tiers = Tier.query.order_by(
+        Tier.is_unlimited.desc(), Tier.is_active.desc(), Tier.name.asc()
+    ).all()
+    return render_template("admin/tiers_list.html", title="Tiers", tiers=tiers)
+
+
+@admin_bp.route("/tiers/create", methods=["GET", "POST"])
+@login_required
+@admin_required
+def tier_create():
+    if request.method == "POST":
+        try:
+            name = (request.form.get("name") or "").strip()
+            if not name:
+                flash("Name is required", "danger")
+                return redirect(url_for("admin.tier_create"))
+            desc = (request.form.get("description") or "").strip() or None
+            storage = request.form.get("storage_limit_bytes")
+            render = request.form.get("render_time_limit_seconds")
+            apply_wm = request.form.get("apply_watermark") in ("1", "true", "on")
+            is_unlim = request.form.get("is_unlimited") in ("1", "true", "on")
+            is_active = request.form.get("is_active") in ("1", "true", "on")
+
+            def _to_int_or_none(v):
+                try:
+                    v2 = str(v or "").strip()
+                    return int(v2) if v2 else None
+                except Exception:
+                    return None
+
+            tier = Tier(
+                name=name,
+                description=desc,
+                storage_limit_bytes=_to_int_or_none(storage),
+                render_time_limit_seconds=_to_int_or_none(render),
+                apply_watermark=apply_wm,
+                is_unlimited=is_unlim,
+                is_active=is_active,
+            )
+            db.session.add(tier)
+            db.session.commit()
+            flash("Tier created", "success")
+            return redirect(url_for("admin.tiers_list"))
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Tier create failed: {e}")
+            flash("Failed to create tier", "danger")
+    return render_template("admin/tiers_form.html", title="Create Tier", tier=None)
+
+
+@admin_bp.route("/tiers/<int:tier_id>/edit", methods=["GET", "POST"])
+@login_required
+@admin_required
+def tier_edit(tier_id: int):
+    tier = db.session.get(Tier, tier_id)
+    if not tier:
+        return abort(404)
+    if request.method == "POST":
+        try:
+            tier.name = (request.form.get("name") or tier.name).strip()
+            tier.description = (request.form.get("description") or "").strip() or None
+
+            def _to_int_or_none(v):
+                try:
+                    v2 = str(v or "").strip()
+                    return int(v2) if v2 else None
+                except Exception:
+                    return None
+
+            tier.storage_limit_bytes = _to_int_or_none(
+                request.form.get("storage_limit_bytes")
+            )
+            tier.render_time_limit_seconds = _to_int_or_none(
+                request.form.get("render_time_limit_seconds")
+            )
+            tier.apply_watermark = request.form.get("apply_watermark") in (
+                "1",
+                "true",
+                "on",
+            )
+            tier.is_unlimited = request.form.get("is_unlimited") in ("1", "true", "on")
+            tier.is_active = request.form.get("is_active") in ("1", "true", "on")
+            db.session.commit()
+            flash("Tier updated", "success")
+            return redirect(url_for("admin.tiers_list"))
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Tier update failed: {e}")
+            flash("Failed to update tier", "danger")
+    return render_template(
+        "admin/tiers_form.html", title=f"Edit Tier: {tier.name}", tier=tier
+    )
+
+
+@admin_bp.route("/tiers/<int:tier_id>/delete", methods=["POST"])
+@login_required
+@admin_required
+def tier_delete(tier_id: int):
+    tier = db.session.get(Tier, tier_id)
+    if not tier:
+        return jsonify({"error": "Tier not found"}), 404
+    try:
+        # Disallow deleting a tier that is assigned to users
+        if tier.users and tier.users.count() > 0:
+            return jsonify({"error": "Cannot delete a tier assigned to users"}), 400
+        db.session.delete(tier)
+        db.session.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Tier delete failed: {e}")
+        return jsonify({"error": "Failed to delete tier"}), 500
 
 
 @admin_bp.route("/users/<int:user_id>/toggle-status", methods=["POST"])
@@ -698,11 +847,27 @@ def system_config():
     Only a curated allowlist of settings is exposed. Secrets (tokens/passwords)
     must remain in environment variables or the .env file.
     """
-    # Define editable settings groups
-    groups = {
+    # Define editable settings groups and optional section filter
+    section = (request.args.get("section") or "").strip().lower()
+    base_groups = {
         "General": [
             {"key": "OUTPUT_VIDEO_QUALITY", "type": "str", "label": "Output Quality"},
             {"key": "USE_GPU_QUEUE", "type": "bool", "label": "Prefer GPU Queue"},
+            {
+                "key": "DEFAULT_OUTPUT_RESOLUTION",
+                "type": "str",
+                "label": "Default Output Resolution",
+            },
+            {
+                "key": "DEFAULT_OUTPUT_FORMAT",
+                "type": "str",
+                "label": "Default Output Format",
+            },
+            {
+                "key": "DEFAULT_MAX_CLIP_DURATION",
+                "type": "int",
+                "label": "Default Max Clip Duration (s)",
+            },
         ],
         "Security": [
             {"key": "FORCE_HTTPS", "type": "bool", "label": "Force HTTPS"},
@@ -717,15 +882,181 @@ def system_config():
         ],
         "Binaries": [
             {"key": "FFMPEG_BINARY", "type": "str", "label": "ffmpeg Binary"},
+            {"key": "FFPROBE_BINARY", "type": "str", "label": "ffprobe Binary"},
             {"key": "YT_DLP_BINARY", "type": "str", "label": "yt-dlp Binary"},
         ],
-        "Maintenance": [
+        "Thumbnails": [
             {
-                "key": "AUTO_REINDEX_ON_STARTUP",
-                "type": "bool",
-                "label": "Auto Reindex on Startup",
+                "key": "THUMBNAIL_TIMESTAMP_SECONDS",
+                "type": "int",
+                "label": "Thumbnail Timestamp (s)",
+            },
+            {"key": "THUMBNAIL_WIDTH", "type": "int", "label": "Thumbnail Width (px)"},
+        ],
+        "Pagination": [
+            {
+                "key": "PROJECTS_PER_PAGE",
+                "type": "int",
+                "label": "Projects per Page (UI)",
+            },
+            {
+                "key": "MEDIA_PER_PAGE",
+                "type": "int",
+                "label": "Media per Page (Library)",
+            },
+            {
+                "key": "ADMIN_USERS_PER_PAGE",
+                "type": "int",
+                "label": "Admin: Users per Page",
+            },
+            {
+                "key": "ADMIN_PROJECTS_PER_PAGE",
+                "type": "int",
+                "label": "Admin: Projects per Page",
             },
         ],
+        "CLI Arguments": [
+            {"key": "FFMPEG_GLOBAL_ARGS", "type": "str", "label": "ffmpeg Global Args"},
+            {"key": "FFMPEG_ENCODE_ARGS", "type": "str", "label": "ffmpeg Encode Args"},
+            {
+                "key": "FFMPEG_THUMBNAIL_ARGS",
+                "type": "str",
+                "label": "ffmpeg Thumbnail Args",
+            },
+            {"key": "FFMPEG_CONCAT_ARGS", "type": "str", "label": "ffmpeg Concat Args"},
+            {"key": "FFPROBE_ARGS", "type": "str", "label": "ffprobe Args"},
+            {"key": "YT_DLP_ARGS", "type": "str", "label": "yt-dlp Args"},
+        ],
+        "Watermark": [
+            {
+                "key": "WATERMARK_OPACITY",
+                "type": "float",
+                "label": "Watermark Opacity (0-1)",
+            },
+            {"key": "WATERMARK_POSITION", "type": "str", "label": "Watermark Position"},
+        ],
+    }
+
+    section_map = {
+        "general": ["General"],
+        "security": ["Security", "Rate Limiting"],
+        "binaries": ["Binaries", "CLI Arguments"],
+        # Display bucket includes pagination, thumbnails, and watermark
+        "pagination": ["Watermark", "Pagination", "Thumbnails"],
+    }
+    if section in section_map:
+        keys = section_map[section]
+        groups = {k: base_groups[k] for k in keys if k in base_groups}
+    else:
+        groups = base_groups
+
+    # Build configuration overview & checks
+    proj_root = os.path.dirname(current_app.root_path)
+    env_path = os.path.join(proj_root, ".env")
+    settings_path = os.path.join(proj_root, "config", "settings.py")
+    uploads_dir = os.path.join(
+        current_app.instance_path, current_app.config.get("UPLOAD_FOLDER", "uploads")
+    )
+
+    def _exists(p: str) -> bool:
+        try:
+            return os.path.exists(p)
+        except Exception:
+            return False
+
+    def _rw(p: str) -> tuple[bool, bool]:
+        try:
+            return (os.access(p, os.R_OK), os.access(p, os.W_OK))
+        except Exception:
+            return (False, False)
+
+    def _world_writable(p: str) -> bool:
+        try:
+            st = os.stat(p)
+            return bool(st.st_mode & _stat.S_IWOTH)
+        except Exception:
+            return False
+
+    def _redact(uri: str | None) -> str:
+        if not uri:
+            return ""
+        try:
+            sp = urlsplit(str(uri))
+            netloc = sp.netloc
+            if "@" in netloc:
+                creds, host = netloc.split("@", 1)
+                if ":" in creds:
+                    user, _pwd = creds.split(":", 1)
+                    netloc = f"{user}:***@{host}"
+                else:
+                    netloc = f"{creds}@{host}"
+            return urlunsplit((sp.scheme, netloc, sp.path, sp.query, sp.fragment))
+        except Exception:
+            return str(uri)
+
+    secret = str(current_app.config.get("SECRET_KEY") or "")
+    weak_secret = (
+        (len(secret) < 32)
+        or ("secret" in secret.lower())
+        or ("change" in secret.lower())
+    )
+    https_off_in_prod = (
+        not current_app.config.get("DEBUG")
+        and not current_app.config.get("TESTING")
+        and not current_app.config.get("FORCE_HTTPS", False)
+    )
+    env_world_w = _world_writable(env_path) if _exists(env_path) else False
+    settings_world_w = (
+        _world_writable(settings_path) if _exists(settings_path) else False
+    )
+
+    security_warnings: list[str] = []
+    if weak_secret:
+        security_warnings.append(
+            "SECRET_KEY looks weak or default; set a strong random value."
+        )
+    if https_off_in_prod:
+        security_warnings.append(
+            "HTTPS not enforced in production. Enable FORCE_HTTPS."
+        )
+    if env_world_w:
+        security_warnings.append(".env is world-writable; tighten file permissions.")
+    if settings_world_w:
+        security_warnings.append(
+            "config/settings.py is world-writable; tighten file permissions."
+        )
+
+    config_info = {
+        "env": {
+            "path": env_path,
+            "exists": _exists(env_path),
+            "read": _rw(env_path)[0],
+            "write": _rw(env_path)[1],
+        },
+        "settings_py": {
+            "path": settings_path,
+            "exists": _exists(settings_path),
+            "read": _rw(settings_path)[0],
+            "write": _rw(settings_path)[1],
+        },
+        "instance_path": {
+            "path": current_app.instance_path,
+            "exists": _exists(current_app.instance_path),
+            "read": _rw(current_app.instance_path)[0],
+            "write": _rw(current_app.instance_path)[1],
+        },
+        "uploads_dir": {
+            "path": uploads_dir,
+            "exists": _exists(uploads_dir),
+            "read": _rw(uploads_dir)[0],
+            "write": _rw(uploads_dir)[1],
+        },
+        "database": _redact(current_app.config.get("SQLALCHEMY_DATABASE_URI")),
+        "redis": _redact(current_app.config.get("REDIS_URL")),
+        "environment": {
+            "debug": bool(current_app.config.get("DEBUG")),
+            "testing": bool(current_app.config.get("TESTING")),
+        },
     }
 
     # Persist updates
@@ -734,7 +1065,7 @@ def system_config():
         if action == "save":
             try:
                 changed = 0
-                for section, items in groups.items():
+                for section_name, items in groups.items():
                     for item in items:
                         key = item["key"]
                         typ = item["type"]
@@ -763,7 +1094,7 @@ def system_config():
                         else:
                             row.value = val
                             row.value_type = typ
-                            row.group = section
+                            row.group = section_name
                             row.updated_by = current_user.id
                         changed += 1
                 db.session.commit()
@@ -777,6 +1108,46 @@ def system_config():
                 current_app.logger.error(f"Saving settings failed: {e}")
                 flash("Failed to save settings", "danger")
             return redirect(url_for("admin.system_config"))
+        elif action == "upload_watermark":
+            f = request.files.get("watermark")
+            if not f or f.filename == "":
+                flash("No watermark file selected", "warning")
+                return redirect(url_for("admin.system_config", section="pagination"))
+            try:
+                base_upload = os.path.join(
+                    current_app.instance_path,
+                    current_app.config["UPLOAD_FOLDER"],
+                    "system",
+                    "watermark",
+                )
+                os.makedirs(base_upload, exist_ok=True)
+                ext = os.path.splitext(f.filename)[1].lower() or ""
+                from werkzeug.utils import secure_filename as _sf
+
+                filename = _sf(f"watermark{ext}")
+                path = os.path.join(base_upload, filename)
+                f.save(path)
+                row = SystemSetting.query.filter_by(key="WATERMARK_PATH").first()
+                if not row:
+                    row = SystemSetting(
+                        key="WATERMARK_PATH",
+                        value=path,
+                        value_type="str",
+                        group="Watermark",
+                        updated_by=current_user.id,
+                    )
+                    db.session.add(row)
+                else:
+                    row.value = path
+                    row.group = "Watermark"
+                    row.updated_by = current_user.id
+                db.session.commit()
+                flash("Watermark uploaded.", "success")
+            except Exception as e:
+                db.session.rollback()
+                current_app.logger.error(f"Watermark upload failed: {e}")
+                flash("Failed to upload watermark", "danger")
+            return redirect(url_for("admin.system_config", section="pagination"))
         elif action in {"restart_web", "restart_workers"}:
             # Trigger restart endpoints
             return redirect(url_for("admin.restart", target=action.split("_")[1]))
@@ -792,10 +1163,17 @@ def system_config():
             else:
                 current_values[key] = str(current_app.config.get(key, ""))
 
+    # Add WATERMARK_PATH to values for display convenience
+    wm_path_row = SystemSetting.query.filter_by(key="WATERMARK_PATH").first()
+    current_values["WATERMARK_PATH"] = wm_path_row.value if wm_path_row else ""
+
     return render_template(
         "admin/system_config.html",
         title="System Configuration",
         groups=groups,
+        section=section,
+        config_info=config_info,
+        security_warnings=security_warnings,
         values=current_values,
     )
 

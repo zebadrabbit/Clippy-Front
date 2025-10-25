@@ -6,6 +6,7 @@ and configures all extensions, blueprints, and application settings.
 """
 import os
 import shutil
+import time
 
 from flask import Flask, render_template
 from flask_cors import CORS
@@ -45,7 +46,23 @@ def create_app(config_class=None):
     Returns:
         Flask: Configured Flask application instance
     """
-    app = Flask(__name__)
+    # Prefer a shared, host-mounted instance directory when configured
+    # or when a well-known mount exists (e.g., /mnt/clippy). Avoid this
+    # auto-detection during pytest to keep tests hermetic.
+    _is_pytest = bool(os.environ.get("PYTEST_CURRENT_TEST"))
+    preferred_instance = os.environ.get("CLIPPY_INSTANCE_PATH")
+    if not _is_pytest and not preferred_instance and os.path.isdir("/mnt/clippy"):
+        preferred_instance = "/mnt/clippy"
+
+    if preferred_instance:
+        # Ensure the directory exists before constructing the app
+        try:
+            os.makedirs(preferred_instance, exist_ok=True)
+        except Exception:
+            pass
+        app = Flask(__name__, instance_path=preferred_instance)
+    else:
+        app = Flask(__name__)
 
     # Determine configuration class if not provided
     if config_class is None:
@@ -70,6 +87,9 @@ def create_app(config_class=None):
                     "WTF_CSRF_ENABLED": False,
                     "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
                     "SQLALCHEMY_TRACK_MODIFICATIONS": False,
+                    # Critical for SQLite in-memory: strip pool options that are invalid
+                    # with SQLite's StaticPool to avoid create_engine TypeErrors.
+                    "SQLALCHEMY_ENGINE_OPTIONS": {},
                     "RATELIMIT_ENABLED": False,
                     "FORCE_HTTPS": False,
                 }
@@ -174,6 +194,25 @@ def create_app(config_class=None):
                     app.logger.info("Database: %s://… (redacted)", scheme)
     except Exception:
         pass
+
+    # Optionally require that the instance mount exists and is writable.
+    # Set REQUIRE_INSTANCE_MOUNT=1 to turn this on (recommended for workers).
+    try:
+        if str(os.environ.get("REQUIRE_INSTANCE_MOUNT", "")).lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }:
+            if not os.path.isdir(app.instance_path):
+                raise RuntimeError(
+                    f"Required instance mount is missing: {app.instance_path}. Configure CLIPPY_INSTANCE_PATH or mount the host path to this location."
+                )
+            # Basic writability check: create instance/tmp if needed
+            probe_dir = os.path.join(app.instance_path, "tmp")
+            os.makedirs(probe_dir, exist_ok=True)
+    except Exception:
+        raise
 
     # Create upload directory if it doesn't exist
     upload_dir = os.path.join(app.instance_path, app.config["UPLOAD_FOLDER"])
@@ -333,9 +372,9 @@ def init_extensions(app):
                         text("ALTER TABLE clips ADD COLUMN game_name VARCHAR(120)")
                     )
                 if "clip_created_at" not in clip_cols:
-                    # Use DATETIME which is friendlier across backends (SQLite stores as TEXT)
+                    # Use TIMESTAMP for broad backend compatibility (SQLite stores as TEXT)
                     statements.append(
-                        text("ALTER TABLE clips ADD COLUMN clip_created_at DATETIME")
+                        text("ALTER TABLE clips ADD COLUMN clip_created_at TIMESTAMP")
                     )
 
                 if statements:
@@ -358,6 +397,17 @@ def init_extensions(app):
                         text(
                             "CREATE UNIQUE INDEX IF NOT EXISTS ix_projects_public_id ON projects(public_id)"
                         )
+                    )
+                # Audio normalization settings (optional)
+                if "audio_norm_profile" not in proj_cols:
+                    proj_statements.append(
+                        text(
+                            "ALTER TABLE projects ADD COLUMN audio_norm_profile VARCHAR(32)"
+                        )
+                    )
+                if "audio_norm_db" not in proj_cols:
+                    proj_statements.append(
+                        text("ALTER TABLE projects ADD COLUMN audio_norm_db FLOAT")
                     )
                 if proj_statements:
                     with engine.begin() as conn:
@@ -388,6 +438,11 @@ def init_extensions(app):
                                 p.public_id = _secrets.token_urlsafe(12)
                             db.session.commit()
                 except Exception as _e:
+                    # Ensure DB session is usable for subsequent queries
+                    try:
+                        db.session.rollback()
+                    except Exception:
+                        pass
                     app.logger.warning(
                         f"Project public_id backfill skipped/failed: {_e}"
                     )
@@ -433,36 +488,17 @@ def init_extensions(app):
                         "Applied users table runtime updates: %s",
                         ", ".join(s.text for s in user_statements),
                     )
-                # Create system_settings table if missing
+                # Ensure system_settings table exists using ORM to avoid backend-specific DDL
                 try:
                     existing_tables = set(insp.get_table_names())
                     if "system_settings" not in existing_tables:
-                        with engine.begin() as conn:
-                            conn.execute(
-                                text(
-                                    """
-                                    CREATE TABLE system_settings (
-                                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                        key VARCHAR(100) UNIQUE NOT NULL,
-                                        value TEXT NOT NULL,
-                                        value_type VARCHAR(20) NOT NULL DEFAULT 'str',
-                                        "group" VARCHAR(50),
-                                        description TEXT,
-                                        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                                        updated_by INTEGER REFERENCES users(id)
-                                    )
-                                    """
-                                )
-                            )
-                        app.logger.info("Created system_settings table")
-                except Exception:
-                    # The above DDL is SQLite-friendly; for PostgreSQL, fall back to ORM create_all
-                    try:
                         with app.app_context():
                             db.create_all()
                         app.logger.info("Ensured system_settings via ORM create_all")
-                    except Exception as e2:
-                        app.logger.warning(f"system_settings table ensure failed: {e2}")
+                except Exception as e2:
+                    app.logger.warning(
+                        f"system_settings table ensure failed/skipped: {e2}"
+                    )
 
                 # Ensure themes table exists (safe creation via ORM if needed)
                 try:
@@ -506,7 +542,7 @@ def init_extensions(app):
                             "watermark_path VARCHAR(500)",
                             "watermark_opacity FLOAT",
                             "watermark_position VARCHAR(32)",
-                            "updated_at DATETIME",
+                            "updated_at TIMESTAMP",
                             "updated_by INTEGER",
                             "mode VARCHAR(10)",
                         ):
@@ -524,6 +560,26 @@ def init_extensions(app):
                             )
                 except Exception as e:
                     app.logger.warning(f"Themes table ensure failed/skipped: {e}")
+
+                # Ensure users table has watermark_disabled column for per-user override
+                try:
+                    existing_tables = set(insp.get_table_names())
+                    if "users" in existing_tables:
+                        user_cols = {c["name"] for c in insp.get_columns("users")}
+                        if "watermark_disabled" not in user_cols:
+                            with engine.begin() as conn:
+                                conn.execute(
+                                    text(
+                                        "ALTER TABLE users ADD COLUMN watermark_disabled BOOLEAN DEFAULT FALSE NOT NULL"
+                                    )
+                                )
+                            app.logger.info(
+                                "Applied runtime users schema update: watermark_disabled"
+                            )
+                except Exception as e:
+                    app.logger.warning(
+                        f"Users table watermark_disabled ensure failed/skipped: {e}"
+                    )
         except Exception as e:
             # Log and proceed; migrations should handle in production
             app.logger.warning(f"Schema check/upgrade skipped or failed: {e}")
@@ -533,6 +589,49 @@ def init_extensions(app):
 
     # CSRF Protection
     csrf.init_app(app)
+
+    # Ensure default subscription tiers exist (idempotent)
+    try:
+        if not app.config.get("TESTING"):
+            from app.quotas import ensure_default_tiers  # local import to avoid cycles
+
+            with app.app_context():
+                ensure_default_tiers()
+    except Exception:
+        # Non-fatal if quotas module unavailable or DB not ready yet
+        pass
+
+    # Defensive: ensure any aborted transactions are cleared at the start of a request
+    # This prevents 'InFailedSqlTransaction' errors from a previous failed statement
+    @app.before_request
+    def _ensure_clean_db_session():  # pragma: no cover - simple guard
+        try:
+            from app.models import db as _db
+
+            # Rollback clears any pending/aborted transaction state on the connection
+            _db.session.rollback()
+        except Exception:
+            # If DB isn't ready or rollback isn't needed, ignore
+            pass
+
+    # Extra safety: always clean up the session at the end of each request.
+    # This prevents 'InFailedSqlTransaction' from leaking across requests if any view errored.
+    @app.teardown_request
+    def _teardown_request(exc):  # pragma: no cover - simple guard
+        # On request errors, ensure the transaction is rolled back.
+        # Avoid forcibly removing the session here to keep Flask-SQLAlchemy's
+        # own appcontext-scoped cleanup behavior and prevent detaching models
+        # mid-request/redirect chains in tests.
+        try:
+            from app.models import db as _db
+
+            if exc is not None:
+                try:
+                    _db.session.rollback()
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     # Rate limiting (can be disabled via RATELIMIT_ENABLED=False)
     if app.config.get("RATELIMIT_ENABLED", True):
@@ -564,51 +663,99 @@ def init_extensions(app):
     # Apply settings overrides (allowlist only)
     try:
         if not app.config.get("TESTING"):
-            with app.app_context():
-                allowed = {
-                    "RATELIMIT_ENABLED": "bool",
-                    "RATELIMIT_DEFAULT": "str",
-                    "FORCE_HTTPS": "bool",
-                    "AUTO_REINDEX_ON_STARTUP": "bool",
-                    "USE_GPU_QUEUE": "bool",
-                    "OUTPUT_VIDEO_QUALITY": "str",
-                    "FFMPEG_BINARY": "str",
-                    "YT_DLP_BINARY": "str",
-                }
-                rows = SystemSetting.query.filter(
-                    SystemSetting.key.in_(allowed.keys())
-                ).all()
-                for row in rows:
-                    vtype = (row.value_type or allowed.get(row.key) or "str").lower()
-                    raw = row.value
-                    val = raw
-                    if vtype == "bool":
-                        val = raw.strip().lower() in {"1", "true", "yes", "on"}
-                    elif vtype == "int":
-                        try:
-                            val = int(raw)
-                        except Exception:
-                            continue
-                    elif vtype == "float":
-                        try:
-                            val = float(raw)
-                        except Exception:
-                            continue
-                    elif vtype == "json":
-                        import json as _json
+            # Retry a few times if DB is transiently overloaded
+            for _attempt in range(3):
+                try:
+                    with app.app_context():
+                        allowed = {
+                            "RATELIMIT_ENABLED": "bool",
+                            "RATELIMIT_DEFAULT": "str",
+                            "FORCE_HTTPS": "bool",
+                            "AUTO_REINDEX_ON_STARTUP": "bool",
+                            "USE_GPU_QUEUE": "bool",
+                            "OUTPUT_VIDEO_QUALITY": "str",
+                            "FFMPEG_BINARY": "str",
+                            "YT_DLP_BINARY": "str",
+                            "FFPROBE_BINARY": "str",
+                            # CLI args for multimedia tools
+                            "FFMPEG_GLOBAL_ARGS": "str",
+                            "FFMPEG_ENCODE_ARGS": "str",
+                            "FFMPEG_THUMBNAIL_ARGS": "str",
+                            "FFMPEG_CONCAT_ARGS": "str",
+                            "FFPROBE_ARGS": "str",
+                            "YT_DLP_ARGS": "str",
+                            "THUMBNAIL_TIMESTAMP_SECONDS": "int",
+                            "THUMBNAIL_WIDTH": "int",
+                            "PROJECTS_PER_PAGE": "int",
+                            "MEDIA_PER_PAGE": "int",
+                            "ADMIN_USERS_PER_PAGE": "int",
+                            "ADMIN_PROJECTS_PER_PAGE": "int",
+                            "AVATARS_PATH": "str",
+                            "DEFAULT_OUTPUT_RESOLUTION": "str",
+                            "DEFAULT_OUTPUT_FORMAT": "str",
+                            "DEFAULT_MAX_CLIP_DURATION": "int",
+                        }
+                        # Allowlist of System Settings that can override app.config at runtime
+                        allowed.update(
+                            {
+                                "WATERMARK_PATH": "str",
+                                "WATERMARK_OPACITY": "float",
+                                "WATERMARK_POSITION": "str",
+                            }
+                        )
+                        rows = SystemSetting.query.filter(
+                            SystemSetting.key.in_(allowed.keys())
+                        ).all()
+                        for row in rows:
+                            vtype = (
+                                row.value_type or allowed.get(row.key) or "str"
+                            ).lower()
+                            raw = row.value
+                            val = raw
+                            if vtype == "bool":
+                                val = raw.strip().lower() in {"1", "true", "yes", "on"}
+                            elif vtype == "int":
+                                try:
+                                    val = int(raw)
+                                except Exception:
+                                    continue
+                            elif vtype == "float":
+                                try:
+                                    val = float(raw)
+                                except Exception:
+                                    continue
+                            elif vtype == "json":
+                                import json as _json
 
+                                try:
+                                    val = _json.loads(raw)
+                                except Exception:
+                                    continue
+                            app.config[row.key] = val
+                        if rows:
+                            app.logger.info(
+                                "Applied %d system setting override(s): %s",
+                                len(rows),
+                                ", ".join(r.key for r in rows),
+                            )
+                    break
+                except Exception as e:
+                    # Retry on transient connection exhaustion
+                    if "too many clients" in str(e).lower() and _attempt < 2:
                         try:
-                            val = _json.loads(raw)
+                            db.session.rollback()
                         except Exception:
-                            continue
-                    app.config[row.key] = val
-                if rows:
-                    app.logger.info(
-                        "Applied %d system setting override(s): %s",
-                        len(rows),
-                        ", ".join(r.key for r in rows),
-                    )
+                            pass
+                        time.sleep(1 + _attempt)
+                        continue
+                    # Otherwise, bubble to outer handler
+                    raise
     except Exception as e:
+        # Rollback session to clear any aborted transaction state
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
         app.logger.warning(f"Failed applying system settings: {e}")
 
 

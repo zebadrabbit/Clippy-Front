@@ -16,12 +16,30 @@ depends_on = None
 
 
 def upgrade():
-    with op.batch_alter_table("themes", schema=None) as batch_op:
-        batch_op.add_column(
-            sa.Column("media_color_compilation", sa.String(length=20), nullable=True)
-        )
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_cols = {col["name"] for col in inspector.get_columns("themes")}
+
+    if "media_color_compilation" not in existing_cols:
+        with op.batch_alter_table("themes", schema=None) as batch_op:
+            batch_op.add_column(
+                sa.Column(
+                    "media_color_compilation", sa.String(length=20), nullable=True
+                )
+            )
+    else:
+        # No-op if the column already exists
+        pass
 
 
 def downgrade():
-    with op.batch_alter_table("themes", schema=None) as batch_op:
-        batch_op.drop_column("media_color_compilation")
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_cols = {col["name"] for col in inspector.get_columns("themes")}
+
+    if "media_color_compilation" in existing_cols:
+        with op.batch_alter_table("themes", schema=None) as batch_op:
+            batch_op.drop_column("media_color_compilation")
+    else:
+        # No-op
+        pass

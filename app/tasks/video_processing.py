@@ -31,7 +31,14 @@ from app.models import (
     ProcessingJob,
     Project,
     ProjectStatus,
+    User,
     db,
+)
+from app.quotas import (
+    check_storage_quota,
+    record_render_usage,
+    should_apply_watermark,
+    storage_remaining_bytes,
 )
 from app.tasks.celery_app import celery_app
 
@@ -104,8 +111,88 @@ def _resolve_media_input_path(orig_path: str) -> str:
                     )
                 if os.path.exists(cand):
                     return cand
+                # Heuristic: if we're running in a different host (e.g., container), prefer
+                # remapped app.instance_path even if the file existence check fails here.
+                # This avoids trying to use the original host path inside the worker.
+                try:
+                    base_before_marker = ap.split(marker, 1)[0]
+                except Exception:
+                    base_before_marker = ""
+                # If the base differs from our instance_path and our instance_path exists, we may be inside a container
+                # where existence checks on host paths fail; in that case, the remap to app.instance_path is correct.
+                # Only trust this path when running in a container; otherwise continue to alternate strategies.
+                running_in_container = bool(
+                    os.getenv("RUNNING_IN_CONTAINER")
+                    or os.getenv("IN_CONTAINER")
+                    or os.path.exists("/.dockerenv")
+                )
+                if (
+                    base_before_marker.rstrip("/") != str(app.instance_path).rstrip("/")
+                    and os.path.isdir(app.instance_path)
+                    and running_in_container
+                ):
+                    if debug:
+                        print(
+                            f"[media-path] using remap path (container context) despite exists=False: '{cand}'"
+                        )
+                    return cand
             except Exception:
                 pass
+        # 3) Filename-suffix fallback: if file is missing but looks like 'clip_<id>_<name>.<ext>',
+        #    try to find any sibling file with the same '<name>.<ext>' under known roots (handles reuse across clip IDs).
+        try:
+            fname = os.path.basename(ap)
+            name_part = fname
+            # Strip 'clip_<digits>_' prefix if present
+            import re as _re
+
+            m = _re.match(r"^clip_\d+_(.+)$", fname)
+            if m:
+                name_part = m.group(1)
+            # Assemble candidate roots
+            roots: list[str] = []
+            try:
+                from app import create_app
+
+                app = create_app()
+                roots.append(os.path.join(app.instance_path, "downloads"))
+            except Exception:
+                pass
+            # Add alias-to root if configured
+            if alias_to:
+                roots.append(alias_to.rstrip("/"))
+                roots.append(os.path.join(alias_to.rstrip("/"), "downloads"))
+            # Add explicit search roots via env (colon-separated)
+            extra = os.getenv("MEDIA_PATH_SEARCH_ROOTS")
+            if extra:
+                for part in extra.split(":"):
+                    p = part.strip()
+                    if p:
+                        roots.append(p)
+            # Deduplicate while preserving order
+            seen_roots = set()
+            roots = [r for r in roots if not (r in seen_roots or seen_roots.add(r))]
+            # Search shallowly for a file ending with the name_part
+            for r in roots:
+                try:
+                    if not os.path.isdir(r):
+                        continue
+                    for entry in os.listdir(r):
+                        try:
+                            if entry.endswith(name_part):
+                                cand = os.path.join(r, entry)
+                                if os.path.exists(cand):
+                                    if debug:
+                                        print(
+                                            f"[media-path] suffix fallback matched '{entry}' under '{r}' for missing '{fname}': '{cand}'"
+                                        )
+                                    return cand
+                        except Exception:
+                            continue
+                except Exception:
+                    continue
+        except Exception:
+            pass
     except Exception:
         pass
     return orig_path
@@ -337,18 +424,23 @@ def compile_video_task(
                     thumb_path = os.path.join(thumbs_dir, f"{stem}.jpg")
                     if not os.path.exists(thumb_path):
                         ffmpeg_bin = resolve_binary(app, "ffmpeg")
+                        ts = str(app.config.get("THUMBNAIL_TIMESTAMP_SECONDS", 1))
+                        w = int(app.config.get("THUMBNAIL_WIDTH", 480))
+                        from app.ffmpeg_config import config_args as _cfg_args
+
                         subprocess.run(
                             [
                                 ffmpeg_bin,
+                                *_cfg_args(app, "ffmpeg", "thumbnail"),
                                 "-y",
                                 "-ss",
-                                "1",
+                                ts,
                                 "-i",
                                 final_output_path,
                                 "-frames:v",
                                 "1",
                                 "-vf",
-                                "scale=480:-1",
+                                f"scale={w}:-1",
                                 thumb_path,
                             ],
                             stdout=subprocess.DEVNULL,
@@ -369,6 +461,25 @@ def compile_video_task(
             project.completed_at = datetime.utcnow()
             project.output_filename = os.path.basename(final_output_path)
             project.output_file_size = os.path.getsize(final_output_path)
+
+            # Record render usage for this user/month based on final output duration
+            try:
+                seconds = None
+                try:
+                    # If we created a media record above, prefer its duration
+                    if "media" in locals() and getattr(media, "duration", None):
+                        seconds = int(float(media.duration))
+                except Exception:
+                    seconds = None
+                if seconds is None:
+                    meta2 = extract_video_metadata(final_output_path)
+                    seconds = int(float(meta2.get("duration") or 0)) if meta2 else 0
+                if seconds and seconds > 0:
+                    record_render_usage(
+                        project.user_id, project.id, int(seconds), session=session
+                    )
+            except Exception:
+                pass
 
             # Update job status
             job.status = "success"
@@ -482,8 +593,25 @@ def download_clip_task(self, clip_id: int, source_url: str) -> dict[str, Any]:
         except Exception:
             session.rollback()
 
-        # Download with yt-dlp
-        output_path = download_with_yt_dlp(source_url, clip)
+        # Enforce storage quota before download using remaining as yt-dlp --max-filesize
+        user_obj = session.get(User, clip.project.user_id)
+        rem_bytes = None
+        try:
+            if user_obj:
+                rem_bytes = storage_remaining_bytes(user_obj, session=session)
+        except Exception:
+            rem_bytes = None
+        if rem_bytes is not None and int(rem_bytes) <= 0:
+            raise RuntimeError(
+                "Storage quota exceeded: no remaining bytes for download"
+            )
+
+        # Download with yt-dlp (apply constraint when available)
+        output_path = download_with_yt_dlp(
+            source_url,
+            clip,
+            max_bytes=int(rem_bytes) if rem_bytes is not None else None,
+        )
 
         self.update_state(
             state="PROGRESS",
@@ -535,18 +663,23 @@ def download_clip_task(self, clip_id: int, source_url: str) -> dict[str, Any]:
 
             if not os.path.exists(thumb_path):
                 ffmpeg_bin = resolve_binary(app, "ffmpeg")
+                ts = str(app.config.get("THUMBNAIL_TIMESTAMP_SECONDS", 1))
+                w = int(app.config.get("THUMBNAIL_WIDTH", 480))
+                from app.ffmpeg_config import config_args as _cfg_args
+
                 subprocess.run(
                     [
                         ffmpeg_bin,
+                        *_cfg_args(app, "ffmpeg", "thumbnail"),
                         "-y",
                         "-ss",
-                        "1",
+                        ts,
                         "-i",
                         output_path,
                         "-frames:v",
                         "1",
                         "-vf",
-                        "scale=480:-1",
+                        f"scale={w}:-1",
                         thumb_path,
                     ],
                     stdout=subprocess.DEVNULL,
@@ -557,6 +690,20 @@ def download_clip_task(self, clip_id: int, source_url: str) -> dict[str, Any]:
         except Exception as thumb_err:
             # Do not fail the task if thumbnail creation fails
             print(f"Thumbnail generation failed for clip {clip.id}: {thumb_err}")
+
+        # Post-download storage enforcement: if we crossed the limit due to race, abort and clean up
+        try:
+            if user_obj:
+                chk = check_storage_quota(user_obj, additional_bytes=0, session=session)
+                if not chk.ok:
+                    try:
+                        if os.path.exists(output_path):
+                            os.remove(output_path)
+                    except Exception:
+                        pass
+                    raise RuntimeError("Storage quota exceeded after download")
+        except Exception:
+            pass
 
         session.add(media_file)
         session.flush()  # ensure media_file.id is available
@@ -626,7 +773,25 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
     if not clip.media_file:
         raise ValueError(f"Clip {clip.id} has no associated media file")
 
-    input_path = _resolve_media_input_path(clip.media_file.file_path)
+    # Resolve and repair input path if DB path is stale
+    original_db_path = clip.media_file.file_path if clip.media_file else None
+    input_path = _resolve_media_input_path(original_db_path or "")
+    try:
+        if (
+            original_db_path
+            and (not os.path.exists(original_db_path))
+            and input_path
+            and os.path.exists(input_path)
+        ):
+            # Persist the corrected path so future runs don't hit the fallback again
+            clip.media_file.file_path = input_path
+            try:
+                session.add(clip.media_file)
+                session.commit()
+            except Exception:
+                session.rollback()
+    except Exception:
+        pass
     output_path = os.path.join(temp_dir, f"clip_{clip.id}_processed.mp4")
 
     # Build ffmpeg command for clip processing with quality + overlay
@@ -634,7 +799,21 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
 
     app = create_app()
     ffmpeg_bin = resolve_binary(app, "ffmpeg")
-    cmd = [ffmpeg_bin]
+    # Debug NVENC availability and chosen ffmpeg
+    try:
+        if os.getenv("FFMPEG_DEBUG"):
+            from app.ffmpeg_config import detect_nvenc as _detect
+
+            ok, reason = _detect(ffmpeg_bin)
+            print(
+                f"[ffmpeg] using='{ffmpeg_bin}' nvenc_available={ok} reason='{reason}'"
+            )
+    except Exception:
+        pass
+    # Include configurable global/encode args
+    from app.ffmpeg_config import config_args as _cfg_args
+
+    cmd = [ffmpeg_bin, *_cfg_args(app, "ffmpeg", "encode")]
 
     # Add clip trimming if specified
     if clip.start_time is not None and clip.end_time is not None:
@@ -653,6 +832,51 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
     # Overlay chain handled via filter_complex above when available
     author = (clip.creator_name or "").strip() if clip.creator_name else ""
     game = (clip.game_name or "").strip() if clip.game_name else ""
+
+    # Resolve optional global watermark (system setting) considering user tier
+    def _watermark_cfg():
+        try:
+            u = session.get(User, project.user_id)
+            # If tier or per-user override disables watermark, skip applying it
+            if u and not should_apply_watermark(u, session=session):
+                return None
+        except Exception:
+            # Fall back to system setting when user lookup fails
+            pass
+        wm_path = app.config.get("WATERMARK_PATH")
+        if not wm_path or not os.path.exists(str(wm_path)):
+            return None
+        try:
+            op = float(app.config.get("WATERMARK_OPACITY", 0.3) or 0.3)
+        except Exception:
+            op = 0.3
+        op = max(0.0, min(1.0, op))
+        pos = (app.config.get("WATERMARK_POSITION") or "bottom-right").strip().lower()
+        # normalize synonyms
+        if pos == "lower-right":
+            pos = "bottom-right"
+        if pos == "lower-left":
+            pos = "bottom-left"
+        # 20px margin
+        x = {
+            "top-left": "20",
+            "bottom-left": "20",
+            "top-right": "main_w-overlay_w-20",
+            "bottom-right": "main_w-overlay_w-20",
+            "center": "(main_w-overlay_w)/2",
+        }.get(pos, "main_w-overlay_w-20")
+        y = {
+            "top-left": "20",
+            "top-right": "20",
+            "bottom-left": "main_h-overlay_h-20",
+            "bottom-right": "main_h-overlay_h-20",
+            "center": "(main_h-overlay_h)/2",
+        }.get(pos, "main_h-overlay_h-20")
+        return {"path": wm_path, "opacity": op, "x": x, "y": y}
+
+    wm = _watermark_cfg()
+
+    looped_avatar = False  # whether we used -loop 1 for avatar image input
     if font and (author or game) and overlay_enabled():
         # Build the overlay chain, with optional avatar as a second input.
         # Inputs must precede any filter definitions.
@@ -667,14 +891,42 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
                 # First preference: a cached path stored on the clip
                 try:
                     if getattr(clip, "creator_avatar_path", None):
-                        if os.path.exists(clip.creator_avatar_path):
-                            return clip.creator_avatar_path
+                        orig = clip.creator_avatar_path
+                        # Remap path if it was created on a different host/container
+                        remapped = _resolve_media_input_path(orig)
+                        if os.getenv("OVERLAY_DEBUG"):
+                            try:
+                                print(
+                                    f"[overlay] avatar orig='{orig}' remapped='{remapped}' exists_orig={os.path.exists(orig)} exists_remap={os.path.exists(remapped) if remapped else False}"
+                                )
+                            except Exception:
+                                pass
+                        # Prefer remapped if it exists; else fall back to original if it exists
+                        if remapped and os.path.exists(remapped):
+                            return remapped
+                        if os.path.exists(orig):
+                            return orig
                 except Exception:
                     pass
                 # Allow env or app.config override for avatars base directory
                 base_override = os.getenv("AVATARS_PATH") or app.config.get(
                     "AVATARS_PATH"
                 )
+                # If override is set and points to a different host path, try remapping it too
+                if base_override:
+                    try:
+                        remapped_base = _resolve_media_input_path(base_override)
+                        if remapped_base and remapped_base != base_override:
+                            if os.getenv("OVERLAY_DEBUG"):
+                                try:
+                                    print(
+                                        f"[overlay] AVATARS_PATH remap: '{base_override}' -> '{remapped_base}'"
+                                    )
+                                except Exception:
+                                    pass
+                            base_override = remapped_base
+                    except Exception:
+                        pass
                 base = (
                     base_override
                     if base_override
@@ -682,6 +934,7 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
                 )
                 # Specific per-author avatar: <base>/avatars/<sanitized>.png|jpg|jpeg|webp
                 if author:
+                    import glob as _glob
                     import re as _re
 
                     safe = _re.sub(r"[^a-z0-9_-]+", "_", author.strip().lower())
@@ -689,6 +942,18 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
                         cand = os.path.join(base, "avatars", safe + ext)
                         if os.path.exists(cand):
                             return cand
+                        # Also support cached Twitch avatar pattern: <safe>_<rand><ext>
+                        try:
+                            pattern = os.path.join(base, "avatars", f"{safe}_*{ext}")
+                            matches = _glob.glob(pattern)
+                            if matches:
+                                # Prefer the most recently modified match
+                                matches.sort(
+                                    key=lambda p: os.path.getmtime(p), reverse=True
+                                )
+                                return matches[0]
+                        except Exception:
+                            pass
                 # Default avatar placeholder in base directory
                 for name in ("avatar.png", "avatar.jpg", "default_avatar.png"):
                     cand = os.path.join(base, name)
@@ -698,12 +963,25 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
                 static_base = os.path.join(app.root_path, "static")
                 for ext in (".png", ".jpg", ".jpeg", ".webp"):
                     if author:
+                        import glob as _glob
                         import re as _re
 
                         safe = _re.sub(r"[^a-z0-9_-]+", "_", author.strip().lower())
                         cand = os.path.join(static_base, "avatars", safe + ext)
                         if os.path.exists(cand):
                             return cand
+                        try:
+                            pattern = os.path.join(
+                                static_base, "avatars", f"{safe}_*{ext}"
+                            )
+                            matches = _glob.glob(pattern)
+                            if matches:
+                                matches.sort(
+                                    key=lambda p: os.path.getmtime(p), reverse=True
+                                )
+                                return matches[0]
+                        except Exception:
+                            pass
                 for name in ("avatar.png", "avatar.jpg", "default_avatar.png"):
                     cand = os.path.join(static_base, "avatars", name)
                     if os.path.exists(cand):
@@ -721,7 +999,19 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
 
         if avatar_path:
             # Include avatar as a second input before filter_complex
-            cmd.extend(["-i", avatar_path])
+            # Loop the static image so it persists for the whole clip duration
+            cmd.extend(["-loop", "1", "-i", avatar_path])
+            looped_avatar = True
+            if os.getenv("OVERLAY_DEBUG"):
+                try:
+                    print(f"[overlay] using avatar: {avatar_path}")
+                except Exception:
+                    pass
+            # Append watermark as third input if configured
+            wm_index = None
+            if wm:
+                cmd.extend(["-i", wm["path"]])
+                wm_index = 2
             # Replace final [v] with [bg], then overlay avatar onto background
             text_chain = ov
             if text_chain.endswith("[v]"):
@@ -733,26 +1023,113 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
                 f"[1:v]scale=128:128[ava];"
                 f"[bg][ava]overlay=x=40:y=main_h-254:enable='between(t,3,10)'[v]"
             )
-            cmd.extend(["-filter_complex", full_chain, "-map", "[v]", "-map", "0:a?"])
+            if wm and wm_index is not None:
+                wm_chain = (
+                    f"{full_chain};"
+                    f"[{wm_index}:v]format=rgba,colorchannelmixer=aa={wm['opacity']}[wm];"
+                    f"[v][wm]overlay=x={wm['x']}:y={wm['y']}:format=auto[vw]"
+                )
+                cmd.extend(
+                    ["-filter_complex", wm_chain, "-map", "[vw]", "-map", "0:a?"]
+                )
+            else:
+                cmd.extend(
+                    ["-filter_complex", full_chain, "-map", "[v]", "-map", "0:a?"]
+                )
         else:
             # No avatar; use text-only overlay chain
-            cmd.extend(["-filter_complex", ov, "-map", "[v]", "-map", "0:a?"])
+            if os.getenv("OVERLAY_DEBUG"):
+                try:
+                    print("[overlay] no avatar resolved for author='" + author + "'")
+                except Exception:
+                    pass
+            # Append watermark as second input if configured
+            wm_index = None
+            if wm:
+                cmd.extend(["-i", wm["path"]])
+                wm_index = 1
+                wm_chain = (
+                    f"{ov};"
+                    f"[{wm_index}:v]format=rgba,colorchannelmixer=aa={wm['opacity']}[wm];"
+                    f"[v][wm]overlay=x={wm['x']}:y={wm['y']}:format=auto[vw]"
+                )
+                cmd.extend(
+                    ["-filter_complex", wm_chain, "-map", "[vw]", "-map", "0:a?"]
+                )
+            else:
+                cmd.extend(["-filter_complex", ov, "-map", "[v]", "-map", "0:a?"])
     else:
         # No overlay; simple scale on video
-        cmd.extend(["-i", input_path, "-vf", scale_filter])
+        if wm:
+            cmd.extend(["-i", input_path, "-i", wm["path"]])
+            chain = (
+                f"[0:v]{scale_filter}[base];"
+                f"[1:v]format=rgba,colorchannelmixer=aa={wm['opacity']}[wm];"
+                f"[base][wm]overlay=x={wm['x']}:y={wm['y']}:format=auto[v]"
+            )
+            cmd.extend(["-filter_complex", chain, "-map", "[v]", "-map", "0:a?"])
+        else:
+            cmd.extend(["-i", input_path, "-vf", scale_filter])
 
     # Encoder args (NVENC preferred), audio args
+    # Optional audio normalization (volume in dB) if set on project
+    try:
+        if getattr(project, "audio_norm_db", None) is not None:
+            try:
+                db_gain = float(project.audio_norm_db)
+            except Exception:
+                db_gain = None
+            if db_gain is not None and abs(db_gain) > 1e-6:
+                cmd.extend(["-filter:a", f"volume={db_gain}dB"])
+    except Exception:
+        pass
     cmd.extend(encoder_args(ffmpeg_bin))
     cmd.extend(audio_args())
-    # Faststart for mp4
-    cmd.extend(["-movflags", "+faststart", "-y", output_path])  # Overwrite output
+    # Faststart for mp4; use -shortest when looping a static image
+    tail_args = ["-movflags", "+faststart"]
+    if looped_avatar:
+        tail_args.append("-shortest")
+    tail_args += ["-y", output_path]
+    cmd.extend(tail_args)
 
     # Execute ffmpeg command
     # Try processing; if NVENC path fails due to CUDA/driver issues, retry with CPU
     result = subprocess.run(cmd, capture_output=True, text=True)
+    # Retry without audio filter if failure indicates no audio stream
+    if (
+        result.returncode != 0
+        and "-filter:a" in cmd
+        and (
+            "matches no streams" in (result.stderr or "")
+            or "Stream specifier 'a'" in (result.stderr or "")
+        )
+    ):
+        try:
+
+            def _drop_audio_filter(args: list[str]) -> list[str]:
+                a = []
+                i = 0
+                while i < len(args):
+                    if args[i] == "-filter:a" and i + 1 < len(args):
+                        i += 2
+                        continue
+                    a.append(args[i])
+                    i += 1
+                return a
+
+            cmd_no_af = _drop_audio_filter(cmd)
+            result = subprocess.run(cmd_no_af, capture_output=True, text=True)
+        except Exception:
+            pass
     if result.returncode != 0 and "h264_nvenc" in " ".join(cmd):
         # Retry with CPU encoder
         try:
+            if os.getenv("FFMPEG_DEBUG"):
+                try:
+                    print("[ffmpeg] NVENC encode failed; retrying with CPU libx264")
+                except Exception:
+                    pass
+
             # Replace video encoder args: find index of -c:v and swap through next value
             def _replace_encoder(args: list[str]) -> list[str]:
                 a = []
@@ -780,9 +1157,41 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
 
             cmd_cpu = _replace_encoder(cmd)
             result = subprocess.run(cmd_cpu, capture_output=True, text=True)
+            if (
+                result.returncode != 0
+                and "-filter:a" in cmd_cpu
+                and (
+                    "matches no streams" in (result.stderr or "")
+                    or "Stream specifier 'a'" in (result.stderr or "")
+                )
+            ):
+                try:
+
+                    def _drop_audio_filter(args: list[str]) -> list[str]:
+                        a = []
+                        i = 0
+                        while i < len(args):
+                            if args[i] == "-filter:a" and i + 1 < len(args):
+                                i += 2
+                                continue
+                            a.append(args[i])
+                            i += 1
+                        return a
+
+                    cmd_cpu2 = _drop_audio_filter(cmd_cpu)
+                    result = subprocess.run(cmd_cpu2, capture_output=True, text=True)
+                except Exception:
+                    pass
         except Exception:
             pass
     if result.returncode != 0:
+        if os.getenv("FFMPEG_DEBUG"):
+            try:
+                print(
+                    f"[ffmpeg] final failure processing clip {clip.id}: {result.stderr}"
+                )
+            except Exception:
+                pass
         raise RuntimeError(f"FFmpeg error processing clip {clip.id}: {result.stderr}")
 
     return output_path
@@ -988,22 +1397,129 @@ def process_media_file(input_path: str, output_path: str, project: Project) -> N
     # Normalize input path if coming from a different host
     input_path = _resolve_media_input_path(input_path)
     ffmpeg_bin = resolve_binary(app, "ffmpeg")
-    cmd = [ffmpeg_bin, "-i", input_path]
+    from app.ffmpeg_config import config_args as _cfg_args
+
+    cmd = [ffmpeg_bin, *_cfg_args(app, "ffmpeg", "encode"), "-i", input_path]
 
     # Set output resolution to match project
     target_res = parse_resolution(None, project.output_resolution)
     scale_filter = (
         f"scale={target_res.split('x')[0]}:{target_res.split('x')[1]}:flags=lanczos"
     )
-    cmd.extend(["-vf", scale_filter])
+
+    # Optional global watermark overlay (system setting) considering user tier
+    def _wm_cfg():
+        try:
+            u = db.session.get(User, project.user_id)
+            if u and not should_apply_watermark(u, session=db.session):
+                return None
+        except Exception:
+            pass
+        wm_path = app.config.get("WATERMARK_PATH")
+        if not wm_path or not os.path.exists(str(wm_path)):
+            return None
+        try:
+            op = float(app.config.get("WATERMARK_OPACITY", 0.3) or 0.3)
+        except Exception:
+            op = 0.3
+        op = max(0.0, min(1.0, op))
+        pos = (app.config.get("WATERMARK_POSITION") or "bottom-right").strip().lower()
+        if pos == "lower-right":
+            pos = "bottom-right"
+        if pos == "lower-left":
+            pos = "bottom-left"
+        x = {
+            "top-left": "20",
+            "bottom-left": "20",
+            "top-right": "main_w-overlay_w-20",
+            "bottom-right": "main_w-overlay_w-20",
+            "center": "(main_w-overlay_w)/2",
+        }.get(pos, "main_w-overlay_w-20")
+        y = {
+            "top-left": "20",
+            "top-right": "20",
+            "bottom-left": "main_h-overlay_h-20",
+            "bottom-right": "main_h-overlay_h-20",
+            "center": "(main_h-overlay_h)/2",
+        }.get(pos, "main_h-overlay_h-20")
+        return {"path": wm_path, "opacity": op, "x": x, "y": y}
+
+    wm = _wm_cfg()
+
+    if wm:
+        # Use filter_complex: scale then overlay watermark
+        cmd.extend(
+            [
+                "-i",
+                wm["path"],
+                "-filter_complex",
+                (
+                    f"[0:v]{scale_filter}[base];"
+                    f"[1:v]format=rgba,colorchannelmixer=aa={wm['opacity']}[wm];"
+                    f"[base][wm]overlay=x={wm['x']}:y={wm['y']}:format=auto[v]"
+                ),
+                "-map",
+                "[v]",
+                "-map",
+                "0:a?",
+            ]
+        )
+    else:
+        cmd.extend(["-vf", scale_filter])
+
+    # Apply audio normalization if configured on the project
+    try:
+        if getattr(project, "audio_norm_db", None) is not None:
+            try:
+                db_gain = float(project.audio_norm_db)
+            except Exception:
+                db_gain = None
+            if db_gain is not None and abs(db_gain) > 1e-6:
+                cmd.extend(["-filter:a", f"volume={db_gain}dB"])
+    except Exception:
+        pass
 
     cmd.extend(encoder_args(ffmpeg_bin))
     cmd.extend(audio_args())
     cmd.extend(["-movflags", "+faststart", "-y", output_path])
 
     result = subprocess.run(cmd, capture_output=True, text=True)
+    # Retry without audio filter if failure indicates no audio stream
+    if (
+        result.returncode != 0
+        and "-filter:a" in cmd
+        and (
+            "matches no streams" in (result.stderr or "")
+            or "Stream specifier 'a'" in (result.stderr or "")
+        )
+    ):
+        try:
+
+            def _drop_audio_filter(args: list[str]) -> list[str]:
+                a = []
+                i = 0
+                while i < len(args):
+                    if args[i] == "-filter:a" and i + 1 < len(args):
+                        i += 2
+                        continue
+                    a.append(args[i])
+                    i += 1
+                return a
+
+            cmd_no_af = _drop_audio_filter(cmd)
+            result = subprocess.run(cmd_no_af, capture_output=True, text=True)
+        except Exception:
+            pass
     if result.returncode != 0 and "h264_nvenc" in " ".join(cmd):
         # Retry with CPU encoder if GPU path fails
+        if os.getenv("FFMPEG_DEBUG"):
+            try:
+                print(
+                    "[ffmpeg] NVENC encode failed in process_media_file; retrying with CPU libx264"
+                )
+            except Exception:
+                pass
+
         def _replace_encoder(args: list[str]) -> list[str]:
             a = []
             i = 0
@@ -1027,6 +1543,31 @@ def process_media_file(input_path: str, output_path: str, project: Project) -> N
 
         cmd_cpu = _replace_encoder(cmd)
         result = subprocess.run(cmd_cpu, capture_output=True, text=True)
+        if (
+            result.returncode != 0
+            and "-filter:a" in cmd_cpu
+            and (
+                "matches no streams" in (result.stderr or "")
+                or "Stream specifier 'a'" in (result.stderr or "")
+            )
+        ):
+            try:
+
+                def _drop_audio_filter(args: list[str]) -> list[str]:
+                    a = []
+                    i = 0
+                    while i < len(args):
+                        if args[i] == "-filter:a" and i + 1 < len(args):
+                            i += 2
+                            continue
+                        a.append(args[i])
+                        i += 1
+                    return a
+
+                cmd_cpu2 = _drop_audio_filter(cmd_cpu)
+                result = subprocess.run(cmd_cpu2, capture_output=True, text=True)
+            except Exception:
+                pass
     if result.returncode != 0:
         raise RuntimeError(f"FFmpeg error processing media file: {result.stderr}")
 
@@ -1058,8 +1599,11 @@ def compile_final_video(clips: list[str], temp_dir: str, project: Project) -> st
 
     app = create_app()
     ffmpeg_bin = resolve_binary(app, "ffmpeg")
+    from app.ffmpeg_config import config_args as _cfg_args
+
     cmd = [
         ffmpeg_bin,
+        *_cfg_args(app, "ffmpeg", "concat"),
         "-f",
         "concat",
         "-safe",
@@ -1121,7 +1665,7 @@ def save_final_video(temp_path: str, project: Project) -> str:
     return final_path
 
 
-def download_with_yt_dlp(url: str, clip: Clip) -> str:
+def download_with_yt_dlp(url: str, clip: Clip, max_bytes: int | None = None) -> str:
     """
     Download video using yt-dlp.
 
@@ -1145,8 +1689,30 @@ def download_with_yt_dlp(url: str, clip: Clip) -> str:
 
     # yt-dlp command
     yt_bin = resolve_binary(app, "yt-dlp")
+    from app.ffmpeg_config import config_args as _cfg_args
+
+    # Start from configured args but drop any explicit rate limits which can
+    # interfere with quota-based size limits or accidentally consume following
+    # tokens when misconfigured.
+    def _strip_rate_limit(args: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        skip_next = False
+        for tok in args:
+            if skip_next:
+                skip_next = False
+                continue
+            if tok in {"-r", "--limit-rate"}:
+                # drop this flag and its value if present
+                skip_next = True
+                continue
+            cleaned.append(tok)
+        return cleaned
+
+    base_args = _strip_rate_limit(_cfg_args(app, "yt-dlp"))
+
     cmd = [
         yt_bin,
+        *base_args,
         "--format",
         "best[ext=mp4]/best",
         "--output",
@@ -1154,6 +1720,18 @@ def download_with_yt_dlp(url: str, clip: Clip) -> str:
         "--no-playlist",
         url,
     ]
+
+    if max_bytes is not None and max_bytes > 0:
+        # Prevent downloading files larger than remaining quota. Pass plain bytes
+        # to avoid unit parsing issues (some yt-dlp builds reject a trailing 'B').
+        cmd.extend(["--max-filesize", str(int(max_bytes))])
+
+    # Optional debug of the resolved command (without printing secrets)
+    if os.getenv("YT_DLP_DEBUG"):
+        try:
+            print("[yt-dlp] cmd:", " ".join(cmd[:-1]), "<URL>")
+        except Exception:
+            pass
 
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
@@ -1181,8 +1759,11 @@ def extract_video_metadata(file_path: str) -> dict[str, Any]:
 
     app = create_app()
     ffprobe_bin = resolve_binary(app, "ffprobe")
+    from app.ffmpeg_config import config_args as _cfg_args
+
     cmd = [
         ffprobe_bin,
+        *_cfg_args(app, "ffprobe"),
         "-v",
         "quiet",
         "-print_format",
@@ -1230,10 +1811,14 @@ def extract_video_metadata(file_path: str) -> dict[str, Any]:
 
 
 def resolve_binary(app, name: str) -> str:
-    """Resolve a binary path using app config or local ./bin fallback.
+    """Resolve a binary path using app config or local ./bin vs system smart fallback.
 
-    Looks for config keys FFMPEG_BINARY, YT_DLP_BINARY, FFPROBE_BINARY based on name.
-    If not configured, prefers project-local bin/<name> if present, else returns name.
+    Order of precedence:
+      1) Explicit app.config override (FFMPEG_BINARY, YT_DLP_BINARY, FFPROBE_BINARY)
+      2) For ffmpeg only: if PREFER_SYSTEM_FFMPEG=1, prefer system 'ffmpeg'
+      3) Project-local ./bin/<name> if present
+         - For ffmpeg: if local ffmpeg lacks NVENC but system ffmpeg has NVENC, prefer system
+      4) Fallback to executable name (resolved via PATH)
     """
     cfg_key = None
     lname = name.lower()
@@ -1250,7 +1835,85 @@ def resolve_binary(app, name: str) -> str:
             return path
 
     proj_root = os.path.dirname(app.root_path)
-    candidate = os.path.join(proj_root, "bin", name)
-    if os.path.exists(candidate):
-        return candidate
+    local_bin = os.path.join(proj_root, "bin", name)
+
+    # For ffmpeg specifically, allow preferring system binary (useful in GPU containers)
+    if lname == "ffmpeg":
+        prefer_system = str(
+            os.getenv(
+                "PREFER_SYSTEM_FFMPEG", app.config.get("PREFER_SYSTEM_FFMPEG", "")
+            )
+        ).lower() in {"1", "true", "yes", "on"}
+        if prefer_system:
+            if os.getenv("FFMPEG_DEBUG"):
+                try:
+                    print("[ffmpeg] prefer system ffmpeg via PREFER_SYSTEM_FFMPEG=1")
+                except Exception:
+                    pass
+            return "ffmpeg"
+
+        # If local exists, but we're in a GPU context, pick the one that supports NVENC
+        def _has_nvenc(bin_path: str) -> bool:
+            try:
+                import subprocess
+
+                res = subprocess.run(
+                    [bin_path, "-hide_banner", "-encoders"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    timeout=5,
+                )
+                return "h264_nvenc" in (res.stdout or "")
+            except Exception:
+                return False
+
+        gpu_context = (
+            str(os.getenv("USE_GPU_QUEUE", app.config.get("USE_GPU_QUEUE", ""))).lower()
+            in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+            or os.getenv("NVIDIA_VISIBLE_DEVICES")
+            or os.getenv("CUDA_VISIBLE_DEVICES")
+        )
+
+        if os.path.exists(local_bin):
+            if gpu_context:
+                # Prefer the binary that actually has NVENC
+                local_has = _has_nvenc(local_bin)
+                sys_has = _has_nvenc("ffmpeg")
+                if os.getenv("FFMPEG_DEBUG"):
+                    try:
+                        print(
+                            f"[ffmpeg] gpu_context=1 local_bin='{local_bin}' local_nvenc={local_has} system_nvenc={sys_has}"
+                        )
+                    except Exception:
+                        pass
+                if sys_has and not local_has:
+                    if os.getenv("FFMPEG_DEBUG"):
+                        try:
+                            print("[ffmpeg] selecting system ffmpeg (has NVENC)")
+                        except Exception:
+                            pass
+                    return "ffmpeg"
+            if os.getenv("FFMPEG_DEBUG"):
+                try:
+                    print(f"[ffmpeg] selecting local ffmpeg: {local_bin}")
+                except Exception:
+                    pass
+            return local_bin
+        # No local bin; system
+        if os.getenv("FFMPEG_DEBUG"):
+            try:
+                print("[ffmpeg] no local ffmpeg; using system 'ffmpeg'")
+            except Exception:
+                pass
+        return "ffmpeg"
+
+    # Non-ffmpeg tools: prefer project-local if present, else PATH
+    if os.path.exists(local_bin):
+        return local_bin
     return name

@@ -177,12 +177,14 @@ def job_details_api(job_id: int):
 def create_project_api():
     """Create a new project via JSON API for the wizard flow.
 
-    Expected JSON body:
-      - name (str, required)
-      - description (str, optional)
-      - output_resolution (str, optional)
-      - output_format (str, optional)
-      - max_clip_duration (int, optional)
+      Expected JSON body:
+    - name (str, required)
+    - description (str, optional)
+    - output_resolution (str, optional)
+    - output_format (str, optional)
+    - max_clip_duration (int, optional)
+          - audio_norm_profile (str, optional)
+          - audio_norm_db (float, optional; relative dB e.g., -1.0)
     """
     data = request.get_json(silent=True) or {}
     name = (data.get("name") or "").strip()
@@ -196,9 +198,29 @@ def create_project_api():
             name = "Compilation of Today"
 
     description = (data.get("description") or "").strip() or None
-    output_resolution = data.get("output_resolution") or "1080p"
-    output_format = data.get("output_format") or "mp4"
-    max_clip_duration = int(data.get("max_clip_duration") or 30)
+    # Use centralized defaults when not provided by client
+    output_resolution = data.get("output_resolution") or current_app.config.get(
+        "DEFAULT_OUTPUT_RESOLUTION", "1080p"
+    )
+    output_format = data.get("output_format") or current_app.config.get(
+        "DEFAULT_OUTPUT_FORMAT", "mp4"
+    )
+    max_clip_duration = int(
+        data.get("max_clip_duration")
+        or current_app.config.get("DEFAULT_MAX_CLIP_DURATION", 30)
+    )
+
+    # Optional audio normalization inputs
+    audio_norm_profile = (data.get("audio_norm_profile") or "").strip() or None
+    try:
+        audio_norm_db = (
+            float(data.get("audio_norm_db"))
+            if data.get("audio_norm_db") is not None
+            and str(data.get("audio_norm_db")).strip() != ""
+            else None
+        )
+    except Exception:
+        audio_norm_db = None
 
     try:
         # Ensure project has an opaque public_id
@@ -215,6 +237,8 @@ def create_project_api():
             output_resolution=output_resolution,
             output_format=output_format,
             public_id=pid,
+            audio_norm_profile=audio_norm_profile,
+            audio_norm_db=audio_norm_db,
         )
         db.session.add(project)
         db.session.commit()
@@ -286,33 +310,74 @@ def create_and_download_clips_api(project_id: int):
             except Exception:
                 return (u or "").strip()
 
+        # Extract a stable clip key for reuse detection (e.g., Twitch slug after /clip/)
+        def extract_key(u: str) -> str:
+            try:
+                s = normalize_url(u)
+                if not s:
+                    return ""
+                low = s.lower()
+                # Twitch clip URL pattern: /clip/<slug>
+                if "twitch.tv" in low and "/clip/" in low:
+                    try:
+                        slug = low.split("/clip/", 1)[1]
+                        # strip anything after next '/'
+                        slug = slug.split("/")[0]
+                        return slug
+                    except Exception:
+                        pass
+                # Fallback: return normalized base URL as key
+                return s
+            except Exception:
+                return normalize_url(u)
+
         seen = set()
 
         # Helper to try reuse: returns (reused: bool, media_file, source_platform)
         def try_reuse(url_s: str):
-            # Check if clip already exists in this project
-            # Check if clip already exists in this project
+            # Prefer matching by a stable key (e.g., Twitch slug) but also try normalized URL
+            key = extract_key(url_s)
+            norm = normalize_url(url_s)
+            # In-project duplicate check (raw or normalized key match)
             existing_here = (
-                Clip.query.filter_by(project_id=project.id, source_url=url_s)
+                Clip.query.filter(Clip.project_id == project.id)
                 .order_by(Clip.created_at.desc())
-                .first()
+                .all()
             )
-            if existing_here and existing_here.media_file_id:
-                return True, existing_here.media_file, existing_here.source_platform
-            # Find any previously downloaded clip by this user with same URL
-            prev = (
+            for ex in existing_here:
+                try:
+                    ex_key = extract_key(ex.source_url or "")
+                    ex_norm = normalize_url(ex.source_url or "")
+                except Exception:
+                    ex_key = ""
+                    ex_norm = ""
+                if (ex_key and key and ex_key == key) or (ex_norm and ex_norm == norm):
+                    if ex.media_file_id:
+                        return True, ex.media_file, ex.source_platform
+                    break
+            # If nothing matched in-loop above, fall through to cross-project check
+            # Find any previously downloaded clip by this user matching key or normalized URL
+            candidates = (
                 db.session.query(Clip)
                 .join(Project, Project.id == Clip.project_id)
                 .filter(
                     Project.user_id == current_user.id,
-                    Clip.source_url == url_s,
                     Clip.media_file_id.isnot(None),
                 )
                 .order_by(Clip.created_at.desc())
-                .first()
+                .limit(500)
+                .all()
             )
-            if prev and prev.media_file_id:
-                return True, prev.media_file, prev.source_platform
+            for prev in candidates:
+                try:
+                    pv_key = extract_key(prev.source_url or "")
+                    pv_norm = normalize_url(prev.source_url or "")
+                except Exception:
+                    pv_key = ""
+                    pv_norm = ""
+                if (pv_key and key and pv_key == key) or (pv_norm and pv_norm == norm):
+                    if prev.media_file_id:
+                        return True, prev.media_file, prev.source_platform
             return False, None, None
 
         # Structured clips if provided
@@ -403,38 +468,93 @@ def create_and_download_clips_api(project_id: int):
                             avatar_url = twitch_get_user_profile_image_url(creator_id)
                             if avatar_url:
                                 # Cache under instance/assets/avatars/
-                                base_assets = os.path.join(
+                                base_avatars = os.path.join(
                                     current_app.instance_path, "assets", "avatars"
                                 )
-                                os.makedirs(base_assets, exist_ok=True)
+                                os.makedirs(base_avatars, exist_ok=True)
                                 import re as _re
+                                import glob as _glob
                                 import secrets
                                 import httpx as _httpx
 
-                                safe = (
-                                    _re.sub(
-                                        r"[^a-z0-9_-]+",
-                                        "_",
-                                        (creator_name or "").lower().strip(),
-                                    )
-                                    or creator_id
-                                )
-                                # Keep original extension if possible
-                                ext = (
-                                    os.path.splitext(avatar_url.split("?")[0])[1]
-                                    or ".png"
-                                )
-                                out_path = os.path.join(
-                                    base_assets, f"{safe}_{secrets.token_hex(4)}{ext}"
-                                )
+                                safe = _re.sub(
+                                    r"[^a-z0-9_-]+",
+                                    "_",
+                                    (creator_name or "").lower().strip(),
+                                ) or str(creator_id)
+                                # If we already have any cached avatar for this author, reuse latest
+                                existing: list[str] = []
                                 try:
-                                    r = _httpx.get(avatar_url, timeout=10)
-                                    if r.status_code == 200 and r.content:
-                                        with open(out_path, "wb") as fp:
-                                            fp.write(r.content)
-                                        clip.creator_avatar_path = out_path
+                                    for extx in (".png", ".jpg", ".jpeg", ".webp"):
+                                        existing.extend(
+                                            _glob.glob(
+                                                os.path.join(
+                                                    base_avatars, f"{safe}_*{extx}"
+                                                )
+                                            )
+                                        )
                                 except Exception:
-                                    pass
+                                    existing = []
+                                if existing:
+                                    try:
+                                        existing.sort(
+                                            key=lambda p: os.path.getmtime(p),
+                                            reverse=True,
+                                        )
+                                        clip.creator_avatar_path = existing[0]
+                                    except Exception:
+                                        pass
+                                else:
+                                    # Download a fresh copy once and store with a short random suffix
+                                    try:
+                                        ext = (
+                                            os.path.splitext(avatar_url.split("?")[0])[
+                                                1
+                                            ]
+                                            or ".png"
+                                        )
+                                        out_path = os.path.join(
+                                            base_avatars,
+                                            f"{safe}_{secrets.token_hex(4)}{ext}",
+                                        )
+                                        r = _httpx.get(avatar_url, timeout=10)
+                                        if r.status_code == 200 and r.content:
+                                            with open(out_path, "wb") as fp:
+                                                fp.write(r.content)
+                                            clip.creator_avatar_path = out_path
+                                            # Prune older avatars for this author, keep most recent 5
+                                            try:
+                                                matches: list[str] = []
+                                                for extx in (
+                                                    ".png",
+                                                    ".jpg",
+                                                    ".jpeg",
+                                                    ".webp",
+                                                ):
+                                                    matches.extend(
+                                                        _glob.glob(
+                                                            os.path.join(
+                                                                base_avatars,
+                                                                f"{safe}_*{extx}",
+                                                            )
+                                                        )
+                                                    )
+                                                if len(matches) > 5:
+                                                    matches.sort(
+                                                        key=lambda p: os.path.getmtime(
+                                                            p
+                                                        ),
+                                                        reverse=True,
+                                                    )
+                                                    for stale in matches[5:]:
+                                                        try:
+                                                            os.remove(stale)
+                                                        except Exception:
+                                                            pass
+                                            except Exception:
+                                                pass
+                                    except Exception:
+                                        pass
                     except Exception:
                         pass
 
@@ -534,6 +654,8 @@ def compile_project_api(project_id: int):
 
     try:
         from app.tasks.video_processing import compile_video_task
+        from app.quotas import check_render_quota
+        from sqlalchemy import func
 
         # Optional selections from client
         data = request.get_json(silent=True) or {}
@@ -586,6 +708,118 @@ def compile_project_api(project_id: int):
                     valid_transition_ids = [m.id for m in q.all()]
             except Exception:
                 valid_transition_ids = []
+
+        # Estimate planned output duration (seconds) for quota enforcement
+        try:
+            # Sum clip durations with max per-clip limit applied
+            # Use DB-side aggregate for performance when possible
+            total_clip_seconds = 0.0
+            try:
+                # Sum known durations
+                clip_durs = (
+                    db.session.query(func.coalesce(func.sum(Clip.duration), 0.0))
+                    .filter(Clip.project_id == project.id)
+                    .scalar()
+                    or 0.0
+                )
+                # Apply max_clip_duration where duration is missing or exceeds
+                # Approximate by capping average to max when necessary
+                max_dur = float(project.max_clip_duration or 0)
+                if max_dur > 0:
+                    # Count clips with null or overly large durations
+                    clip_count = project.clips.count()
+                    # Conservative: assume missing durations use max
+                    known_count = (
+                        db.session.query(func.count(Clip.id))
+                        .filter(
+                            Clip.project_id == project.id, Clip.duration.isnot(None)
+                        )
+                        .scalar()
+                        or 0
+                    )
+                    unknown = max(0, int(clip_count) - int(known_count))
+                    # Cap known sum at max per clip when clearly over
+                    # We can't easily cap per-row in a DB-agnostic way here, so treat as-is
+                    total_clip_seconds = float(clip_durs) + (unknown * max_dur)
+                else:
+                    total_clip_seconds = float(clip_durs)
+            except Exception:
+                total_clip_seconds = float(project.get_total_duration() or 0)
+
+            # Add intro/outro durations if provided/available
+            intro_seconds = 0.0
+            if intro_id is not None:
+                try:
+                    from app.models import MediaFile
+
+                    mf = MediaFile.query.filter_by(
+                        id=intro_id, user_id=current_user.id
+                    ).first()
+                    if mf and mf.duration:
+                        intro_seconds = float(mf.duration)
+                except Exception:
+                    intro_seconds = 0.0
+            outro_seconds = 0.0
+            if outro_id is not None:
+                try:
+                    from app.models import MediaFile
+
+                    mf = MediaFile.query.filter_by(
+                        id=outro_id, user_id=current_user.id
+                    ).first()
+                    if mf and mf.duration:
+                        outro_seconds = float(mf.duration)
+                except Exception:
+                    outro_seconds = 0.0
+
+            # Estimate transitions: average selected transition duration times number of gaps
+            trans_seconds = 0.0
+            try:
+                segs = (
+                    project.clips.count()
+                    + (1 if intro_id is not None else 0)
+                    + (1 if outro_id is not None else 0)
+                )
+                gaps = max(0, segs - 1)
+                avg_trans = 0.0
+                if valid_transition_ids:
+                    from app.models import MediaFile
+
+                    rows = (
+                        db.session.query(
+                            func.coalesce(func.avg(MediaFile.duration), 0.0)
+                        )
+                        .filter(MediaFile.id.in_(valid_transition_ids))
+                        .scalar()
+                        or 0.0
+                    )
+                    avg_trans = float(rows)
+                trans_seconds = gaps * avg_trans
+            except Exception:
+                trans_seconds = 0.0
+
+            estimated_seconds = int(
+                max(
+                    0.0,
+                    total_clip_seconds + intro_seconds + outro_seconds + trans_seconds,
+                )
+            )
+            qr = check_render_quota(current_user, planned_seconds=estimated_seconds)
+            if not qr.ok:
+                return (
+                    jsonify(
+                        {
+                            "error": "Render time quota exceeded",
+                            "remaining_seconds": qr.remaining,
+                            "limit_seconds": qr.limit,
+                            "estimated_seconds": estimated_seconds,
+                        }
+                    ),
+                    403,
+                )
+        except Exception:
+            # If any estimation/check fails, continue; enforcement will occur post-compile usage recording
+            pass
 
         # Attempt to enqueue first; only mark PROCESSING if enqueue succeeds
         # Explicitly route to the GPU queue when enabled to avoid default-queue fallback
@@ -867,6 +1101,8 @@ def get_project_details_api(project_id: int):
             "output_filename": project.output_filename,
             "output_file_size": project.output_file_size,
             "download_url": download_url,
+            "audio_norm_profile": getattr(project, "audio_norm_profile", None),
+            "audio_norm_db": getattr(project, "audio_norm_db", None),
         }
     )
 

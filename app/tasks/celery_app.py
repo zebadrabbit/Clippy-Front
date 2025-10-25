@@ -3,6 +3,7 @@ Celery application configuration.
 """
 
 from celery import Celery
+from celery.signals import task_postrun
 from kombu import Queue
 
 from config.settings import Config
@@ -58,3 +59,16 @@ def make_celery(app_name=__name__):
 
 # Create Celery app
 celery_app = make_celery()
+
+
+# Ensure SQLAlchemy sessions are cleaned up after each task to avoid leaking
+# connections across Celery worker processes.
+@task_postrun.connect
+def _cleanup_db_session(*args, **kwargs):  # pragma: no cover - simple guard
+    try:
+        from app.models import db
+
+        db.session.remove()
+    except Exception:
+        # If DB isn't initialized yet or session not used, ignore
+        pass

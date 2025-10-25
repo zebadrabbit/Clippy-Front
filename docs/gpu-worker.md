@@ -17,14 +17,19 @@ docker build -f docker/worker.Dockerfile -t clippyfront-gpu-worker:latest .
 
 ## Run (simple)
 ```
-# Map instance/ for downloads/outputs; pass GPU into container
+# REQUIREMENT: mount your shared storage at /mnt/clippy on the host and bind it
+# into the container at /app/instance. Inside the container, set
+# CLIPPY_INSTANCE_PATH=/app/instance so the app resolves paths correctly.
+# You can enforce the mount with REQUIRE_INSTANCE_MOUNT=1.
 docker run --rm \
   --gpus all \
   -e CELERY_BROKER_URL=redis://host.docker.internal:6379/0 \
   -e CELERY_RESULT_BACKEND=redis://host.docker.internal:6379/0 \
   -e DATABASE_URL=postgresql://<user>:<pass>@host.docker.internal/clippy_front \
   -e TMPDIR=/app/instance/tmp \
-  -v $(pwd)/instance:/app/instance \
+  -e REQUIRE_INSTANCE_MOUNT=1 \
+  -e CLIPPY_INSTANCE_PATH=/app/instance \
+  -v /mnt/clippy:/app/instance \
   --name clippy-gpu-worker \
   clippyfront-gpu-worker:latest
 ```
@@ -38,6 +43,7 @@ docker compose -f docker/docker-compose.gpu-worker.yml run --gpus all --name cli
 
 ## Notes
 - FFmpeg is installed from Ubuntu packages; NVENC will be used automatically if available. The app will fall back to CPU encode if NVENC isn’t present.
+- If your image also includes a bundled `./bin/ffmpeg`, set `PREFER_SYSTEM_FFMPEG=1` so the worker prefers the system ffmpeg (typically the NVENC-enabled one).
 - Override concurrency/queues via env: `CELERY_CONCURRENCY=2`, `CELERY_QUEUES=gpu,celery`.
 - Ensure the web app and worker share the same database and broker.
  - Queue priority at enqueue is `gpu > cpu > celery`; start your worker with the appropriate `-Q` list.
@@ -73,7 +79,9 @@ docker run --rm --gpus all \
   -e CELERY_RESULT_BACKEND=redis://host.docker.internal:6379/0 \
   -e REDIS_URL=redis://host.docker.internal:6379/0 \
   -e TMPDIR=/app/instance/tmp \
-  -v $(pwd)/instance:/app/instance \
+  -e REQUIRE_INSTANCE_MOUNT=1 \
+  -e CLIPPY_INSTANCE_PATH=/app/instance \
+  -v /mnt/clippy:/app/instance \
   --name clippy-gpu-worker clippyfront-gpu-worker:latest
 ```
 
@@ -112,7 +120,7 @@ Path aliasing for previews (optional): if the worker writes file paths with a di
 
 ```
 MEDIA_PATH_ALIAS_FROM=/app/instance/
-MEDIA_PATH_ALIAS_TO=/mnt/clippy/instance/
+MEDIA_PATH_ALIAS_TO=/mnt/clippy/
 ```
 
 Rebuild tip: if you recently changed code and still hit EXDEV or missing path resolutions, rebuild the worker image without cache:

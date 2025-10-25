@@ -53,28 +53,7 @@
               <small class="text-muted">Current: {{ theme.favicon_path }}</small>
               {% endif %}
             </div>
-            <div class="mb-3">
-              <label class="form-label">Watermark</label>
-              <input class="form-control" type="file" name="watermark" accept="image/*">
-              {% if theme and theme.watermark_path %}
-              <small class="text-muted">Current: {{ theme.watermark_path }}</small>
-              {% endif %}
-            </div>
-            <div class="row">
-              <div class="col-md-6 mb-3">
-                <label class="form-label">Watermark Opacity (0-1)</label>
-                <input class="form-control" type="number" name="watermark_opacity" step="0.05" min="0" max="1" value="{{ theme.watermark_opacity if theme else 0.1 }}">
-              </div>
-              <div class="col-md-6 mb-3">
-                <label class="form-label">Watermark Position</label>
-                <select class="form-select" name="watermark_position">
-                  {% set pos = theme.watermark_position if theme else 'bottom-right' %}
-                  {% for p in ['top-left','top-right','bottom-left','bottom-right','center'] %}
-                  <option value="{{ p }}" {% if pos==p %}selected{% endif %}>{{ p }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-            </div>
+            <!-- Watermark controls moved to System Config > Display -->
           </div>
         </div>
       </div>

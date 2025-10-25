@@ -45,14 +45,35 @@
             </div>
           </div>
           <div class="col-12">
-            <div class="row g-2">
+            <div class="row g-3 align-items-stretch">
               <div class="col-md-6">
                 <label class="form-label">Project Name</label>
                 <input class="form-control" name="name" placeholder="My Compilation">
+                <label class="form-label mt-3">Description (optional)</label>
+                <textarea class="form-control" name="description" rows="4" placeholder="Short description..."></textarea>
+              </div>
+              <div class="col-md-5 offset-md-1">
+                <div class="card audio-norm-card">
+                  <div class="card-body">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                      <label class="form-label mb-0">Audio Normalization</label>
+                      <span class="text-muted small">optional</span>
+                    </div>
+                    <div class="opt-slider" id="audio-norm-slider" data-count="4">
+                      <input type="radio" name="audio_norm_profile" id="an-music" value="music" data-db="-1" checked>
+                      <label for="an-music" data-label="Music (-1 dB)"></label>
+                      <input type="radio" name="audio_norm_profile" id="an-podcast" value="podcast" data-db="-3">
+                      <label for="an-podcast" data-label="Podcasts (-3 dB)"></label>
+                      <input type="radio" name="audio_norm_profile" id="an-broadcast" value="broadcast" data-db="-2">
+                      <label for="an-broadcast" data-label="Broadcast (-2 dB)"></label>
+                      <input type="radio" name="audio_norm_profile" id="an-gaming" value="gaming" data-db="-4">
+                      <label for="an-gaming" data-label="Gaming (-4 dB)"></label>
+                      <div class="pos" aria-hidden="true"></div>
+                    </div>
+                    <input type="hidden" name="audio_norm_db" id="audio_norm_db" value="-1">
+                  </div>
                 </div>
-                <label class="form-label">Description (optional)</label>
-                <textarea class="form-control" name="description" rows="2" placeholder="Short description..."></textarea>
-
+              </div>
             </div>
           </div>
           </div>
@@ -117,8 +138,8 @@
           </div>
           </div>
         </form>
-        <div class="d-flex justify-content-end mt-3">
-          <button class="btn btn-primary" id="next-1">Next</button>
+        <div class="d-flex justify-content-end wizard-nav mt-4">
+          <button class="btn btn-primary btn-glow" id="next-1">Next: Get Clips</button>
         </div>
       </div>
 
@@ -136,11 +157,11 @@
             </ul>
           </div>
         </div>
-        <div class="mt-3 d-flex justify-content-between">
-          <button class="btn btn-outline-secondary" data-prev="1">Back</button>
-          <div>
+        <div class="mt-4 d-flex justify-content-between wizard-nav">
+          <button class="btn btn-outline-secondary" data-prev="1">Back: Setup</button>
+          <div class="d-flex gap-2">
             <button class="btn btn-outline-danger d-none" id="gc-cancel">Cancel</button>
-            <button class="btn btn-primary" id="next-2" disabled>Next</button>
+            <button class="btn btn-primary btn-glow" id="next-2" disabled>Next: Arrange Timeline</button>
           </div>
         </div>
       </div>
@@ -230,9 +251,9 @@
           <input class="form-check-input" type="checkbox" id="arranged-confirm">
           <label class="form-check-label" for="arranged-confirm">I have arranged my timeline</label>
         </div>
-        <div class="d-flex justify-content-between mt-3">
-          <button class="btn btn-outline-secondary" data-prev="2">Back</button>
-          <button class="btn btn-primary" id="next-3" disabled>Next</button>
+        <div class="d-flex justify-content-between wizard-nav mt-4">
+          <button class="btn btn-outline-secondary" data-prev="2">Back: Get Clips</button>
+          <button class="btn btn-primary btn-glow" id="next-3" disabled>Next: Compile</button>
         </div>
       </div>
 
@@ -244,11 +265,11 @@
           <button class="btn btn-primary" id="start-compile"><i class="bi bi-play-circle"></i> Start Compile</button>
           <button class="btn btn-outline-danger" id="cancel-compile" disabled>Cancel</button>
         </div>
-        <!-- Render summary/details -->
-        <div id="compile-details" class="mt-3"></div>
-        <div class="progress mt-3" role="progressbar" aria-label="Compile" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar" id="compile-progress" style="width: 0%">0%</div></div>
+  <!-- Render summary/details -->
+  <div id="compile-details" class="mt-3"></div>
+  <div class="progress mt-3 compile-progress" role="progressbar" aria-label="Compile" aria-valuemin="0" aria-valuemax="100" style="height: 25px"><div class="progress-bar" id="compile-progress" style="width: 0%">0%</div></div>
         <div class="mt-3"><pre class="bg-dark p-3 rounded" id="compile-log" style="min-height: 140px; max-height: 240px; overflow:auto;">Ready.</pre></div>
-        <div class="d-flex justify-content-between mt-3"><button class="btn btn-outline-secondary" data-prev="3">Back</button><button class="btn btn-primary" id="next-4" disabled>Next</button></div>
+        <div class="d-flex justify-content-between wizard-nav mt-4"><button class="btn btn-outline-secondary" data-prev="3">Back: Arrange</button><button class="btn btn-primary btn-glow" id="next-4" disabled>Next: Export</button></div>
       </div>
 
       <!-- Step 5: Export -->
@@ -263,7 +284,7 @@
           <button class="btn btn-outline-primary disabled" id="upload-discord" aria-disabled="true"><i class="bi bi-discord"></i> Upload to Discord</button>
         </div>
         <div class="d-flex justify-content-between mt-3">
-          <button class="btn btn-outline-secondary" data-prev="4">Back</button>
+          <button class="btn btn-outline-secondary" data-prev="4">Back: Compile</button>
           <a class="btn btn-primary" href="{{ url_for('main.projects') }}">Finish</a>
         </div>
       </div>

@@ -25,9 +25,26 @@
         {% endfor %}
       </select>
     </div>
+    <div class="mb-3">
+      <label class="form-label">Subscription Tier</label>
+      <select class="form-select" name="tier_id">
+        <option value="">(None / Default)</option>
+        {% for t in tiers %}
+        <option value="{{ t.id }}" {% if user.tier_id==t.id %}selected{% endif %}>
+          {{ t.name }}{% if t.is_unlimited %} (Unlimited){% endif %}{% if not t.is_active %} [inactive]{% endif %}
+        </option>
+        {% endfor %}
+      </select>
+      <div class="form-text">Controls storage/render limits and watermark policy; leave blank for default Free tier.</div>
+    </div>
     <div class="form-check mb-3">
       <input class="form-check-input" type="checkbox" name="is_active" id="is_active" {% if user.is_active %}checked{% endif %}>
       <label class="form-check-label" for="is_active">Active</label>
+    </div>
+    <div class="form-check mb-4">
+      <input class="form-check-input" type="checkbox" name="watermark_disabled" id="watermark_disabled" {% if user.watermark_disabled %}checked{% endif %}>
+      <label class="form-check-label" for="watermark_disabled">Disable watermark overlay for this user</label>
+      <div class="form-text">Global watermark is applied by default; check to exempt this user.</div>
     </div>
     <button class="btn btn-primary" type="submit">Save</button>
     <a class="btn btn-secondary" href="{{ url_for('admin.user_details', user_id=user.id) }}">Cancel</a>

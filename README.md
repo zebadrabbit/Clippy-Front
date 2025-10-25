@@ -19,7 +19,22 @@ ClippyFront is a Flask-based web application for organizing media and assembling
 	- Type-colored borders and a dashed insert marker for clear placement during drag.
 - Compile pipeline: interleaves transitions and inserts a static bumper between all segments; clearer logs
 - Branded overlays: author and game text with optional avatar; NVENC detection with CPU fallback
+- Download deduplication across projects: normalized-URL reuse avoids re-downloading the same clip for the same user
+	- Creator avatars are auto-fetched (when available) during clip downloads, cached under `instance/assets/avatars/`, and pruned to keep only recent files per author
 - Tests with pytest and coverage; linting (Ruff) and formatting (Black)
+
+### Subscription tiers and quotas
+
+- Per-user subscription tiers define monthly render-time and total storage quotas.
+- Watermark policy is tier-aware: higher tiers can remove the watermark; admins/unlimited tier never apply it. A per-user override exists for special cases.
+- An Unlimited tier is available for admin/testing with no limits and no watermark.
+- Admin UI: manage tiers in Admin → Tiers (create/edit/delete) and assign a tier on the user edit page.
+- Quotas are enforced consistently:
+	- Storage: on uploads and clip downloads (pre-check, and cleanup on overflow)
+	- Render-time: pre-compile estimation and enforcement; usage recorded after successful compilation
+	- Monthly window: render usage resets each calendar month
+
+See docs/tiers-and-quotas.md for details.
 
 ## Quickstart
 
@@ -87,6 +102,17 @@ python init_db.py --drop
 python init_db.py --admin --password admin123
 ```
 
+8) Apply migrations (upgrades)
+
+```bash
+# Use Flask-Migrate to apply Alembic migrations
+flask db upgrade
+
+# Notes
+# - Migrations are idempotent on PostgreSQL; duplicate columns/indexes are guarded.
+# - Outside of pytest, the app requires PostgreSQL; set DATABASE_URL accordingly.
+```
+
 7) Start services
 
 ```bash
@@ -113,7 +139,13 @@ Adjust via environment variables (see `.env.example`):
 - FFMPEG_BINARY, YT_DLP_BINARY (resolves local ./bin first if provided)
 - FFMPEG_DISABLE_NVENC (set to 1/true to force CPU encoding)
 - FFMPEG_NVENC_PRESET (override NVENC preset if supported by your ffmpeg)
+- FFMPEG_GLOBAL_ARGS, FFMPEG_ENCODE_ARGS, FFMPEG_THUMBNAIL_ARGS, FFMPEG_CONCAT_ARGS, FFPROBE_ARGS, YT_DLP_ARGS (optional extra CLI flags injected at runtime)
 - TMPDIR (optional): set to `/app/instance/tmp` on workers bound to a network share to avoid EXDEV cross-device moves when saving final outputs.
+- Instance storage mount (required in multi-host setups):
+	- Host path `/mnt/clippy` must exist and contain `uploads/`, `downloads/`, `compilations/`, `tmp/`, and `assets/`
+	- The app prefers `/mnt/clippy` automatically as its instance directory when present (outside tests)
+	- Set `CLIPPY_INSTANCE_PATH=/mnt/clippy` on native hosts to force it explicitly; set `REQUIRE_INSTANCE_MOUNT=1` to fail fast if missing
+	- In containers, bind-mount `/mnt/clippy` to `/app/instance` and set `CLIPPY_INSTANCE_PATH=/app/instance` inside the container
 - RATELIMIT_DEFAULT/RATELIMIT_STORAGE_URL
 - UPLOAD_FOLDER, MAX_CONTENT_LENGTH
 - FLASK_HOST, FLASK_PORT, FLASK_DEBUG
@@ -142,7 +174,7 @@ Cross-host paths: If a remote worker writes media paths that differ from the web
 
 ```
 MEDIA_PATH_ALIAS_FROM=/app/instance/
-MEDIA_PATH_ALIAS_TO=/mnt/clippy/instance/
+MEDIA_PATH_ALIAS_TO=/mnt/clippy/
 ```
 
 The server also auto-rebases any path containing `/instance/` under its own `instance_path` if that location exists on disk.
@@ -154,9 +186,15 @@ The server also auto-rebases any path containing `/instance/` under its own `ins
 - Compile: Starts a background job that builds the sequence, interleaves transitions, and inserts a short static bumper between segments for a channel-switching effect.
 - Logs: The log window now shows which segment is processed next, e.g., “Concatenating: <name> (2 of 6)”.
 
-Avatars: To show a creator avatar next to the overlay text, place a PNG/JPG under `instance/assets/avatars/` named after a sanitized creator name (e.g., `pokimane.png`). A fallback avatar is used if present (e.g., `avatar.png`).
+Avatars: When downloading clips (e.g., from Twitch), the app auto-fetches creator avatars and caches them under `instance/assets/avatars/` (with reuse and pruning to avoid buildup). You can also place a PNG/JPG manually named after the sanitized creator (e.g., `pokimane.png`). A fallback avatar is used if present (e.g., `avatar.png`).
 
-NVENC: The app detects NVENC availability and performs a tiny test encode; if unavailable or failing (e.g., missing CUDA), it automatically falls back to CPU (libx264). You can force CPU via `FFMPEG_DISABLE_NVENC=1`. See `scripts/check_nvenc.py` to diagnose.
+NVENC: The app detects NVENC availability and performs a tiny test encode; if unavailable or failing (e.g., missing CUDA), it automatically falls back to CPU (libx264). You can force CPU via `FFMPEG_DISABLE_NVENC=1`. See `scripts/check_nvenc.py` to diagnose. On WSL2 host shells, if you see `Cannot load libcuda.so.1`, set `LD_LIBRARY_PATH=/usr/lib/wsl/lib:${LD_LIBRARY_PATH}` before running ffmpeg.
+
+Avatar cache maintenance: The system prunes older cached avatars automatically, but you can also run the helper script:
+
+```bash
+python scripts/cleanup_avatars.py --keep 5   # dry-run add --dry-run
+```
 
 ## Testing and Quality
 
