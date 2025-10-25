@@ -12,6 +12,7 @@ Keep changes safe, reproducible, and easy to review. Follow these concise rules 
 - When the venv is active, do NOT hardcode full paths to executables (e.g., `/path/to/venv/bin/ruff`). Prefer calling them by name (`python`, `ruff`, `pytest`) so the active shell resolves from the venv.
 - If a command fails due to a missing executable, (re-)activate the venv and try again:
   - `source venv/bin/activate` → rerun the command.
+- If you ever find yourself using a full path to a tool (e.g., `/home/winter/work/ClippyFront/venv/bin/ruff`), stop and activate the venv, then run the tool by name instead (e.g., `ruff`).
 - Use `python -m pip` for installs; never use global installs or `sudo pip`.
 - Respect `requirements.txt` and `pyproject.toml` as sources of truth. If deps change, update files and show the exact install command.
 - Run commands in this order when proposing or automating: 1) activate venv → 2) install/upgrade deps → 3) lint/format → 4) type-check (if configured) → 5) tests.

@@ -13,3 +13,9 @@ Current pages
 
 Vendors
 - Third-party CSS/JS (Dropzone, Video.js, Bootstrap Icons) are served from app/static/vendor to be CSP-friendly.
+
+If vendor assets are missing after a clean checkout, fetch them locally:
+
+```bash
+bash scripts/fetch_vendor_assets.sh
+```

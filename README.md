@@ -19,6 +19,8 @@ ClippyFront is a Flask-based web application for organizing media and assembling
 	- Type-colored borders and a dashed insert marker for clear placement during drag.
 - Compile pipeline: interleaves transitions and inserts a static bumper between all segments; clearer logs
 - Branded overlays: author and game text with optional avatar; NVENC detection with CPU fallback
+- Download deduplication across projects: normalized-URL reuse avoids re-downloading the same clip for the same user
+	- Creator avatars are auto-fetched (when available) during clip downloads, cached under `instance/assets/avatars/`, and pruned to keep only recent files per author
 - Tests with pytest and coverage; linting (Ruff) and formatting (Black)
 
 ### Subscription tiers and quotas
@@ -184,9 +186,15 @@ The server also auto-rebases any path containing `/instance/` under its own `ins
 - Compile: Starts a background job that builds the sequence, interleaves transitions, and inserts a short static bumper between segments for a channel-switching effect.
 - Logs: The log window now shows which segment is processed next, e.g., “Concatenating: <name> (2 of 6)”.
 
-Avatars: To show a creator avatar next to the overlay text, place a PNG/JPG under `instance/assets/avatars/` named after a sanitized creator name (e.g., `pokimane.png`). A fallback avatar is used if present (e.g., `avatar.png`).
+Avatars: When downloading clips (e.g., from Twitch), the app auto-fetches creator avatars and caches them under `instance/assets/avatars/` (with reuse and pruning to avoid buildup). You can also place a PNG/JPG manually named after the sanitized creator (e.g., `pokimane.png`). A fallback avatar is used if present (e.g., `avatar.png`).
 
-NVENC: The app detects NVENC availability and performs a tiny test encode; if unavailable or failing (e.g., missing CUDA), it automatically falls back to CPU (libx264). You can force CPU via `FFMPEG_DISABLE_NVENC=1`. See `scripts/check_nvenc.py` to diagnose.
+NVENC: The app detects NVENC availability and performs a tiny test encode; if unavailable or failing (e.g., missing CUDA), it automatically falls back to CPU (libx264). You can force CPU via `FFMPEG_DISABLE_NVENC=1`. See `scripts/check_nvenc.py` to diagnose. On WSL2 host shells, if you see `Cannot load libcuda.so.1`, set `LD_LIBRARY_PATH=/usr/lib/wsl/lib:${LD_LIBRARY_PATH}` before running ffmpeg.
+
+Avatar cache maintenance: The system prunes older cached avatars automatically, but you can also run the helper script:
+
+```bash
+python scripts/cleanup_avatars.py --keep 5   # dry-run add --dry-run
+```
 
 ## Testing and Quality
 

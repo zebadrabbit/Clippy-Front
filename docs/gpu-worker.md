@@ -43,6 +43,7 @@ docker compose -f docker/docker-compose.gpu-worker.yml run --gpus all --name cli
 
 ## Notes
 - FFmpeg is installed from Ubuntu packages; NVENC will be used automatically if available. The app will fall back to CPU encode if NVENC isn’t present.
+- If your image also includes a bundled `./bin/ffmpeg`, set `PREFER_SYSTEM_FFMPEG=1` so the worker prefers the system ffmpeg (typically the NVENC-enabled one).
 - Override concurrency/queues via env: `CELERY_CONCURRENCY=2`, `CELERY_QUEUES=gpu,celery`.
 - Ensure the web app and worker share the same database and broker.
  - Queue priority at enqueue is `gpu > cpu > celery`; start your worker with the appropriate `-Q` list.

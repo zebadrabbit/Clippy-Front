@@ -180,7 +180,7 @@ def _detect_nvenc(ffmpeg_bin: str) -> bool:
             _NVENC_REASON = "h264_nvenc encoder not listed by ffmpeg"
             return _NVENC_AVAILABLE
 
-        # Try a tiny encode to verify CUDA/driver availability
+        # Try a small but valid encode to verify CUDA/driver availability
         fd, tmp_path = tempfile.mkstemp(suffix=".mp4")
         try:
             os.close(fd)
@@ -194,11 +194,14 @@ def _detect_nvenc(ffmpeg_bin: str) -> bool:
                     "-f",
                     "lavfi",
                     "-i",
-                    "color=size=16x16:rate=1:color=black",
+                    # Use a resolution above NVENC minimums and common 4:2:0
+                    "color=size=320x180:rate=30:color=black",
                     "-frames:v",
                     "1",
                     "-c:v",
                     "h264_nvenc",
+                    "-pix_fmt",
+                    "yuv420p",
                     tmp_path,
                 ],
                 stdout=subprocess.PIPE,

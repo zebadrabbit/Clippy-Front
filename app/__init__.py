@@ -6,6 +6,7 @@ and configures all extensions, blueprints, and application settings.
 """
 import os
 import shutil
+import time
 
 from flask import Flask, render_template
 from flask_cors import CORS
@@ -86,6 +87,9 @@ def create_app(config_class=None):
                     "WTF_CSRF_ENABLED": False,
                     "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
                     "SQLALCHEMY_TRACK_MODIFICATIONS": False,
+                    # Critical for SQLite in-memory: strip pool options that are invalid
+                    # with SQLite's StaticPool to avoid create_engine TypeErrors.
+                    "SQLALCHEMY_ENGINE_OPTIONS": {},
                     "RATELIMIT_ENABLED": False,
                     "FORCE_HTTPS": False,
                 }
@@ -659,76 +663,93 @@ def init_extensions(app):
     # Apply settings overrides (allowlist only)
     try:
         if not app.config.get("TESTING"):
-            with app.app_context():
-                allowed = {
-                    "RATELIMIT_ENABLED": "bool",
-                    "RATELIMIT_DEFAULT": "str",
-                    "FORCE_HTTPS": "bool",
-                    "AUTO_REINDEX_ON_STARTUP": "bool",
-                    "USE_GPU_QUEUE": "bool",
-                    "OUTPUT_VIDEO_QUALITY": "str",
-                    "FFMPEG_BINARY": "str",
-                    "YT_DLP_BINARY": "str",
-                    "FFPROBE_BINARY": "str",
-                    # CLI args for multimedia tools
-                    "FFMPEG_GLOBAL_ARGS": "str",
-                    "FFMPEG_ENCODE_ARGS": "str",
-                    "FFMPEG_THUMBNAIL_ARGS": "str",
-                    "FFMPEG_CONCAT_ARGS": "str",
-                    "FFPROBE_ARGS": "str",
-                    "YT_DLP_ARGS": "str",
-                    "THUMBNAIL_TIMESTAMP_SECONDS": "int",
-                    "THUMBNAIL_WIDTH": "int",
-                    "PROJECTS_PER_PAGE": "int",
-                    "MEDIA_PER_PAGE": "int",
-                    "ADMIN_USERS_PER_PAGE": "int",
-                    "ADMIN_PROJECTS_PER_PAGE": "int",
-                    "AVATARS_PATH": "str",
-                    "DEFAULT_OUTPUT_RESOLUTION": "str",
-                    "DEFAULT_OUTPUT_FORMAT": "str",
-                    "DEFAULT_MAX_CLIP_DURATION": "int",
-                }
-                # Allowlist of System Settings that can override app.config at runtime
-                allowed.update(
-                    {
-                        "WATERMARK_PATH": "str",
-                        "WATERMARK_OPACITY": "float",
-                        "WATERMARK_POSITION": "str",
-                    }
-                )
-                rows = SystemSetting.query.filter(
-                    SystemSetting.key.in_(allowed.keys())
-                ).all()
-                for row in rows:
-                    vtype = (row.value_type or allowed.get(row.key) or "str").lower()
-                    raw = row.value
-                    val = raw
-                    if vtype == "bool":
-                        val = raw.strip().lower() in {"1", "true", "yes", "on"}
-                    elif vtype == "int":
-                        try:
-                            val = int(raw)
-                        except Exception:
-                            continue
-                    elif vtype == "float":
-                        try:
-                            val = float(raw)
-                        except Exception:
-                            continue
-                    elif vtype == "json":
-                        import json as _json
+            # Retry a few times if DB is transiently overloaded
+            for _attempt in range(3):
+                try:
+                    with app.app_context():
+                        allowed = {
+                            "RATELIMIT_ENABLED": "bool",
+                            "RATELIMIT_DEFAULT": "str",
+                            "FORCE_HTTPS": "bool",
+                            "AUTO_REINDEX_ON_STARTUP": "bool",
+                            "USE_GPU_QUEUE": "bool",
+                            "OUTPUT_VIDEO_QUALITY": "str",
+                            "FFMPEG_BINARY": "str",
+                            "YT_DLP_BINARY": "str",
+                            "FFPROBE_BINARY": "str",
+                            # CLI args for multimedia tools
+                            "FFMPEG_GLOBAL_ARGS": "str",
+                            "FFMPEG_ENCODE_ARGS": "str",
+                            "FFMPEG_THUMBNAIL_ARGS": "str",
+                            "FFMPEG_CONCAT_ARGS": "str",
+                            "FFPROBE_ARGS": "str",
+                            "YT_DLP_ARGS": "str",
+                            "THUMBNAIL_TIMESTAMP_SECONDS": "int",
+                            "THUMBNAIL_WIDTH": "int",
+                            "PROJECTS_PER_PAGE": "int",
+                            "MEDIA_PER_PAGE": "int",
+                            "ADMIN_USERS_PER_PAGE": "int",
+                            "ADMIN_PROJECTS_PER_PAGE": "int",
+                            "AVATARS_PATH": "str",
+                            "DEFAULT_OUTPUT_RESOLUTION": "str",
+                            "DEFAULT_OUTPUT_FORMAT": "str",
+                            "DEFAULT_MAX_CLIP_DURATION": "int",
+                        }
+                        # Allowlist of System Settings that can override app.config at runtime
+                        allowed.update(
+                            {
+                                "WATERMARK_PATH": "str",
+                                "WATERMARK_OPACITY": "float",
+                                "WATERMARK_POSITION": "str",
+                            }
+                        )
+                        rows = SystemSetting.query.filter(
+                            SystemSetting.key.in_(allowed.keys())
+                        ).all()
+                        for row in rows:
+                            vtype = (
+                                row.value_type or allowed.get(row.key) or "str"
+                            ).lower()
+                            raw = row.value
+                            val = raw
+                            if vtype == "bool":
+                                val = raw.strip().lower() in {"1", "true", "yes", "on"}
+                            elif vtype == "int":
+                                try:
+                                    val = int(raw)
+                                except Exception:
+                                    continue
+                            elif vtype == "float":
+                                try:
+                                    val = float(raw)
+                                except Exception:
+                                    continue
+                            elif vtype == "json":
+                                import json as _json
 
+                                try:
+                                    val = _json.loads(raw)
+                                except Exception:
+                                    continue
+                            app.config[row.key] = val
+                        if rows:
+                            app.logger.info(
+                                "Applied %d system setting override(s): %s",
+                                len(rows),
+                                ", ".join(r.key for r in rows),
+                            )
+                    break
+                except Exception as e:
+                    # Retry on transient connection exhaustion
+                    if "too many clients" in str(e).lower() and _attempt < 2:
                         try:
-                            val = _json.loads(raw)
+                            db.session.rollback()
                         except Exception:
-                            continue
-                    app.config[row.key] = val
-                if rows:
-                    app.logger.info(
-                        "Applied %d system setting override(s): %s",
-                        len(rows),
-                        ", ".join(r.key for r in rows),
-                    )
+                            pass
+                        time.sleep(1 + _attempt)
+                        continue
+                    # Otherwise, bubble to outer handler
+                    raise
     except Exception as e:
         # Rollback session to clear any aborted transaction state
         try:

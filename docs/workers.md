@@ -161,6 +161,8 @@ Redundancies to avoid:
 - Cross-device link (EXDEV) when saving final outputs: set `TMPDIR=/app/instance/tmp`
 - Media path not found: verify the file exists on the bind-mounted path and consider `MEDIA_PATH_ALIAS_*` with `MEDIA_PATH_DEBUG=1`
 - NVENC not used: ensure the host GPU is available to Docker (`--gpus all`), and your ffmpeg supports NVENC. The app falls back to CPU (libx264) automatically.
+  - On WSL2 host shells (native worker, not container), if you see `Cannot load libcuda.so.1`, export `LD_LIBRARY_PATH=/usr/lib/wsl/lib:${LD_LIBRARY_PATH}` before invoking ffmpeg or the checker.
+  - If both a bundled `./bin/ffmpeg` and a system ffmpeg exist, set `PREFER_SYSTEM_FFMPEG=1` to prefer the system build (often NVENC-enabled).
 
 ---
 

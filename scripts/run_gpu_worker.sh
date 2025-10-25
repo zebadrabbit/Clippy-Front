@@ -14,6 +14,9 @@ export INSTANCE_HOST_PATH=/mnt/clippy        # REQUIRED mount on the host
 export CLIPPY_INSTANCE_PATH=/app/instance    # instance dir inside the container
 export REQUIRE_INSTANCE_MOUNT=1              # fail fast if missing
 export TMPDIR=/app/instance/tmp              # temp inside container (good for CIFS)
+# Path alias for media/avatars created on host (/mnt/clippy) to container path (/app/instance)
+export MEDIA_PATH_ALIAS_FROM=/mnt/clippy
+export MEDIA_PATH_ALIAS_TO=/app/instance
 #   EXTRA_DOCKER_ARGS="--detach"            # any extra flags for docker run
 #
 # On Linux, if you use host.docker.internal in URLs, we'll add the host-gateway mapping.
@@ -58,11 +61,15 @@ set -x
 exec docker run --rm \
   --gpus all \
   ${ADD_HOST_ARG} \
+  -e NVIDIA_DRIVER_CAPABILITIES=compute,video,utility \
   -e CELERY_BROKER_URL="${BROKER_URL}" \
   -e CELERY_RESULT_BACKEND="${RESULT_BACKEND}" \
   -e DATABASE_URL="${DATABASE_URL}" \
   -e REQUIRE_INSTANCE_MOUNT="${REQUIRE_INSTANCE_MOUNT}" \
   -e CLIPPY_INSTANCE_PATH="${CLIPPY_INSTANCE_PATH}" \
+  -e MEDIA_PATH_ALIAS_FROM="${MEDIA_PATH_ALIAS_FROM}" \
+  -e MEDIA_PATH_ALIAS_TO="${MEDIA_PATH_ALIAS_TO}" \
+  -e PREFER_SYSTEM_FFMPEG=1 \
   -e TMPDIR="${TMPDIR_IN_CONTAINER}" \
   -v "${INSTANCE_HOST_PATH}:/app/instance" \
   --name "${NAME}" \

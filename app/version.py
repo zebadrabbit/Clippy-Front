@@ -2,8 +2,8 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "0.8.0"
-__version_info__ = (0, 8, 0)
+__version__ = "0.8.1"
+__version_info__ = (0, 8, 1)
 
 # Version history tracking
 VERSION_HISTORY = {
@@ -63,6 +63,11 @@ VERSION_HISTORY = {
         "Added admin CRUD for tiers and user tier assignment. Enforced storage quotas on uploads & downloads, "
         "pre-compile render quota estimation (403 when exceeded), and post-compile usage accounting. "
         "Seed default tiers at startup and added tests for tier seeding, render quota enforcement, and storage quota on upload."
+    ),
+    "0.8.1": (
+        "Video pipeline & docs polish: NVENC probe now uses a valid 320x180 yuv420p test to avoid false negatives; "
+        "standalone NVENC checker updated; avatar cache maintenance script added; documentation overhauled (workers, GPU, Samba mounts, README) "
+        "including WSL2 CUDA library tip and option to prefer system ffmpeg. Import sorting fixed to satisfy lint."
     ),
 }
 

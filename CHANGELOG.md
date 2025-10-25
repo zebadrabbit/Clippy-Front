@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2025-10-25
+
+### Added
+- NVENC diagnostic improvements: probe encodes now use a valid 320x180 yuv420p frame to avoid false negatives from minimum-dimension limits; standalone `scripts/check_nvenc.py` updated accordingly.
+- Avatar cache maintenance script: `scripts/cleanup_avatars.py` to prune cached creator avatars (keep N, default 5).
+
+### Changed
+- Documentation overhauled across README and docs: clarified required instance mount (`/mnt/clippy` ↔ `/app/instance`), queue routing, NVENC troubleshooting (WSL2 `LD_LIBRARY_PATH`), and path alias examples.
+- Prefer system ffmpeg when present: document `PREFER_SYSTEM_FFMPEG=1` for GPU workers if both bundled and system ffmpeg exist.
+
 ### Fixed
 - Alembic migrations hardened to be idempotent on PostgreSQL: guard duplicate column/index creation to avoid aborted transactions during `flask db upgrade` on existing databases.
 - yt-dlp download on workers: corrected `--max-filesize` formatting (plain bytes, no trailing `B`) and dropped conflicting `--limit-rate` flags from custom args to prevent "invalid rate limit" errors.

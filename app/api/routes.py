@@ -468,38 +468,93 @@ def create_and_download_clips_api(project_id: int):
                             avatar_url = twitch_get_user_profile_image_url(creator_id)
                             if avatar_url:
                                 # Cache under instance/assets/avatars/
-                                base_assets = os.path.join(
+                                base_avatars = os.path.join(
                                     current_app.instance_path, "assets", "avatars"
                                 )
-                                os.makedirs(base_assets, exist_ok=True)
+                                os.makedirs(base_avatars, exist_ok=True)
                                 import re as _re
+                                import glob as _glob
                                 import secrets
                                 import httpx as _httpx
 
-                                safe = (
-                                    _re.sub(
-                                        r"[^a-z0-9_-]+",
-                                        "_",
-                                        (creator_name or "").lower().strip(),
-                                    )
-                                    or creator_id
-                                )
-                                # Keep original extension if possible
-                                ext = (
-                                    os.path.splitext(avatar_url.split("?")[0])[1]
-                                    or ".png"
-                                )
-                                out_path = os.path.join(
-                                    base_assets, f"{safe}_{secrets.token_hex(4)}{ext}"
-                                )
+                                safe = _re.sub(
+                                    r"[^a-z0-9_-]+",
+                                    "_",
+                                    (creator_name or "").lower().strip(),
+                                ) or str(creator_id)
+                                # If we already have any cached avatar for this author, reuse latest
+                                existing: list[str] = []
                                 try:
-                                    r = _httpx.get(avatar_url, timeout=10)
-                                    if r.status_code == 200 and r.content:
-                                        with open(out_path, "wb") as fp:
-                                            fp.write(r.content)
-                                        clip.creator_avatar_path = out_path
+                                    for extx in (".png", ".jpg", ".jpeg", ".webp"):
+                                        existing.extend(
+                                            _glob.glob(
+                                                os.path.join(
+                                                    base_avatars, f"{safe}_*{extx}"
+                                                )
+                                            )
+                                        )
                                 except Exception:
-                                    pass
+                                    existing = []
+                                if existing:
+                                    try:
+                                        existing.sort(
+                                            key=lambda p: os.path.getmtime(p),
+                                            reverse=True,
+                                        )
+                                        clip.creator_avatar_path = existing[0]
+                                    except Exception:
+                                        pass
+                                else:
+                                    # Download a fresh copy once and store with a short random suffix
+                                    try:
+                                        ext = (
+                                            os.path.splitext(avatar_url.split("?")[0])[
+                                                1
+                                            ]
+                                            or ".png"
+                                        )
+                                        out_path = os.path.join(
+                                            base_avatars,
+                                            f"{safe}_{secrets.token_hex(4)}{ext}",
+                                        )
+                                        r = _httpx.get(avatar_url, timeout=10)
+                                        if r.status_code == 200 and r.content:
+                                            with open(out_path, "wb") as fp:
+                                                fp.write(r.content)
+                                            clip.creator_avatar_path = out_path
+                                            # Prune older avatars for this author, keep most recent 5
+                                            try:
+                                                matches: list[str] = []
+                                                for extx in (
+                                                    ".png",
+                                                    ".jpg",
+                                                    ".jpeg",
+                                                    ".webp",
+                                                ):
+                                                    matches.extend(
+                                                        _glob.glob(
+                                                            os.path.join(
+                                                                base_avatars,
+                                                                f"{safe}_*{extx}",
+                                                            )
+                                                        )
+                                                    )
+                                                if len(matches) > 5:
+                                                    matches.sort(
+                                                        key=lambda p: os.path.getmtime(
+                                                            p
+                                                        ),
+                                                        reverse=True,
+                                                    )
+                                                    for stale in matches[5:]:
+                                                        try:
+                                                            os.remove(stale)
+                                                        except Exception:
+                                                            pass
+                                            except Exception:
+                                                pass
+                                    except Exception:
+                                        pass
                     except Exception:
                         pass
 

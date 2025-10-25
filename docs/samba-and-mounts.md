@@ -200,7 +200,7 @@ services:
 
 ```bash
 export MEDIA_PATH_ALIAS_FROM=/app/instance/
-export MEDIA_PATH_ALIAS_TO=/mnt/clippy/instance/
+export MEDIA_PATH_ALIAS_TO=/mnt/clippy/
 ```
 
 These allow the server to translate worker-produced paths when serving previews.

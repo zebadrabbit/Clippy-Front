@@ -32,9 +32,20 @@ class Config:
         or "postgresql://postgres:postgres@localhost/clippy_front"
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    # SQLAlchemy engine pool settings (tunable via env for different processes)
+    # Defaults are conservative to avoid exhausting Postgres connections when
+    # multiple worker processes are running.
     SQLALCHEMY_ENGINE_OPTIONS = {
         "pool_pre_ping": True,
-        "pool_recycle": 300,
+        "pool_recycle": int(os.environ.get("DB_POOL_RECYCLE", 300)),
+        "pool_size": int(os.environ.get("DB_POOL_SIZE", 5)),
+        "max_overflow": int(os.environ.get("DB_MAX_OVERFLOW", 10)),
+        # Optional: how long to wait for a connection from the pool
+        **(
+            {"pool_timeout": int(os.environ.get("DB_POOL_TIMEOUT", 30))}
+            if os.environ.get("DB_POOL_TIMEOUT")
+            else {}
+        ),
     }
 
     # Redis/Celery Configuration
@@ -187,6 +198,11 @@ class TestingConfig(Config):
 
     # In-memory database for testing (only place SQLite is used)
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+
+    # Override engine options for SQLite in-memory tests.
+    # The default pool options (pool_size, max_overflow, etc.) are invalid with
+    # SQLite's StaticPool used for in-memory DBs and cause create_engine errors.
+    SQLALCHEMY_ENGINE_OPTIONS = {}
 
     # Disable rate limiting for tests
     RATELIMIT_ENABLED = False

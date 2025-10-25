@@ -799,6 +799,17 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
 
     app = create_app()
     ffmpeg_bin = resolve_binary(app, "ffmpeg")
+    # Debug NVENC availability and chosen ffmpeg
+    try:
+        if os.getenv("FFMPEG_DEBUG"):
+            from app.ffmpeg_config import detect_nvenc as _detect
+
+            ok, reason = _detect(ffmpeg_bin)
+            print(
+                f"[ffmpeg] using='{ffmpeg_bin}' nvenc_available={ok} reason='{reason}'"
+            )
+    except Exception:
+        pass
     # Include configurable global/encode args
     from app.ffmpeg_config import config_args as _cfg_args
 
@@ -880,14 +891,42 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
                 # First preference: a cached path stored on the clip
                 try:
                     if getattr(clip, "creator_avatar_path", None):
-                        if os.path.exists(clip.creator_avatar_path):
-                            return clip.creator_avatar_path
+                        orig = clip.creator_avatar_path
+                        # Remap path if it was created on a different host/container
+                        remapped = _resolve_media_input_path(orig)
+                        if os.getenv("OVERLAY_DEBUG"):
+                            try:
+                                print(
+                                    f"[overlay] avatar orig='{orig}' remapped='{remapped}' exists_orig={os.path.exists(orig)} exists_remap={os.path.exists(remapped) if remapped else False}"
+                                )
+                            except Exception:
+                                pass
+                        # Prefer remapped if it exists; else fall back to original if it exists
+                        if remapped and os.path.exists(remapped):
+                            return remapped
+                        if os.path.exists(orig):
+                            return orig
                 except Exception:
                     pass
                 # Allow env or app.config override for avatars base directory
                 base_override = os.getenv("AVATARS_PATH") or app.config.get(
                     "AVATARS_PATH"
                 )
+                # If override is set and points to a different host path, try remapping it too
+                if base_override:
+                    try:
+                        remapped_base = _resolve_media_input_path(base_override)
+                        if remapped_base and remapped_base != base_override:
+                            if os.getenv("OVERLAY_DEBUG"):
+                                try:
+                                    print(
+                                        f"[overlay] AVATARS_PATH remap: '{base_override}' -> '{remapped_base}'"
+                                    )
+                                except Exception:
+                                    pass
+                            base_override = remapped_base
+                    except Exception:
+                        pass
                 base = (
                     base_override
                     if base_override
@@ -1085,6 +1124,12 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
     if result.returncode != 0 and "h264_nvenc" in " ".join(cmd):
         # Retry with CPU encoder
         try:
+            if os.getenv("FFMPEG_DEBUG"):
+                try:
+                    print("[ffmpeg] NVENC encode failed; retrying with CPU libx264")
+                except Exception:
+                    pass
+
             # Replace video encoder args: find index of -c:v and swap through next value
             def _replace_encoder(args: list[str]) -> list[str]:
                 a = []
@@ -1140,6 +1185,13 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
         except Exception:
             pass
     if result.returncode != 0:
+        if os.getenv("FFMPEG_DEBUG"):
+            try:
+                print(
+                    f"[ffmpeg] final failure processing clip {clip.id}: {result.stderr}"
+                )
+            except Exception:
+                pass
         raise RuntimeError(f"FFmpeg error processing clip {clip.id}: {result.stderr}")
 
     return output_path
@@ -1460,6 +1512,14 @@ def process_media_file(input_path: str, output_path: str, project: Project) -> N
             pass
     if result.returncode != 0 and "h264_nvenc" in " ".join(cmd):
         # Retry with CPU encoder if GPU path fails
+        if os.getenv("FFMPEG_DEBUG"):
+            try:
+                print(
+                    "[ffmpeg] NVENC encode failed in process_media_file; retrying with CPU libx264"
+                )
+            except Exception:
+                pass
+
         def _replace_encoder(args: list[str]) -> list[str]:
             a = []
             i = 0
@@ -1751,10 +1811,14 @@ def extract_video_metadata(file_path: str) -> dict[str, Any]:
 
 
 def resolve_binary(app, name: str) -> str:
-    """Resolve a binary path using app config or local ./bin fallback.
+    """Resolve a binary path using app config or local ./bin vs system smart fallback.
 
-    Looks for config keys FFMPEG_BINARY, YT_DLP_BINARY, FFPROBE_BINARY based on name.
-    If not configured, prefers project-local bin/<name> if present, else returns name.
+    Order of precedence:
+      1) Explicit app.config override (FFMPEG_BINARY, YT_DLP_BINARY, FFPROBE_BINARY)
+      2) For ffmpeg only: if PREFER_SYSTEM_FFMPEG=1, prefer system 'ffmpeg'
+      3) Project-local ./bin/<name> if present
+         - For ffmpeg: if local ffmpeg lacks NVENC but system ffmpeg has NVENC, prefer system
+      4) Fallback to executable name (resolved via PATH)
     """
     cfg_key = None
     lname = name.lower()
@@ -1771,7 +1835,85 @@ def resolve_binary(app, name: str) -> str:
             return path
 
     proj_root = os.path.dirname(app.root_path)
-    candidate = os.path.join(proj_root, "bin", name)
-    if os.path.exists(candidate):
-        return candidate
+    local_bin = os.path.join(proj_root, "bin", name)
+
+    # For ffmpeg specifically, allow preferring system binary (useful in GPU containers)
+    if lname == "ffmpeg":
+        prefer_system = str(
+            os.getenv(
+                "PREFER_SYSTEM_FFMPEG", app.config.get("PREFER_SYSTEM_FFMPEG", "")
+            )
+        ).lower() in {"1", "true", "yes", "on"}
+        if prefer_system:
+            if os.getenv("FFMPEG_DEBUG"):
+                try:
+                    print("[ffmpeg] prefer system ffmpeg via PREFER_SYSTEM_FFMPEG=1")
+                except Exception:
+                    pass
+            return "ffmpeg"
+
+        # If local exists, but we're in a GPU context, pick the one that supports NVENC
+        def _has_nvenc(bin_path: str) -> bool:
+            try:
+                import subprocess
+
+                res = subprocess.run(
+                    [bin_path, "-hide_banner", "-encoders"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    timeout=5,
+                )
+                return "h264_nvenc" in (res.stdout or "")
+            except Exception:
+                return False
+
+        gpu_context = (
+            str(os.getenv("USE_GPU_QUEUE", app.config.get("USE_GPU_QUEUE", ""))).lower()
+            in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+            or os.getenv("NVIDIA_VISIBLE_DEVICES")
+            or os.getenv("CUDA_VISIBLE_DEVICES")
+        )
+
+        if os.path.exists(local_bin):
+            if gpu_context:
+                # Prefer the binary that actually has NVENC
+                local_has = _has_nvenc(local_bin)
+                sys_has = _has_nvenc("ffmpeg")
+                if os.getenv("FFMPEG_DEBUG"):
+                    try:
+                        print(
+                            f"[ffmpeg] gpu_context=1 local_bin='{local_bin}' local_nvenc={local_has} system_nvenc={sys_has}"
+                        )
+                    except Exception:
+                        pass
+                if sys_has and not local_has:
+                    if os.getenv("FFMPEG_DEBUG"):
+                        try:
+                            print("[ffmpeg] selecting system ffmpeg (has NVENC)")
+                        except Exception:
+                            pass
+                    return "ffmpeg"
+            if os.getenv("FFMPEG_DEBUG"):
+                try:
+                    print(f"[ffmpeg] selecting local ffmpeg: {local_bin}")
+                except Exception:
+                    pass
+            return local_bin
+        # No local bin; system
+        if os.getenv("FFMPEG_DEBUG"):
+            try:
+                print("[ffmpeg] no local ffmpeg; using system 'ffmpeg'")
+            except Exception:
+                pass
+        return "ffmpeg"
+
+    # Non-ffmpeg tools: prefer project-local if present, else PATH
+    if os.path.exists(local_bin):
+        return local_bin
     return name
