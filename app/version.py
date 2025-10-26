@@ -2,8 +2,8 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "0.8.2"
-__version_info__ = (0, 8, 2)
+__version__ = "0.8.3"
+__version_info__ = (0, 8, 3)
 
 # Version history tracking
 VERSION_HISTORY = {
@@ -73,6 +73,11 @@ VERSION_HISTORY = {
         "Overlays & scheduling cleanup: fixed avatar resolution on GPU workers with AVATARS_PATH normalization (accepts assets root or avatars dir), "
         "added OVERLAY_DEBUG trace logs and a startup sanity warning when overlays enabled but no avatars found; reduced noisy startup logs (DB URI, runtime schema) to once per process; "
         "removed legacy 'once' schedules from UI and API (kept read-only backward compatibility), added monthly scheduling in UI; docs updated (README, workers, GPU)."
+    ),
+    "0.8.3": (
+        "Operational console & logging: introduced a two-pane Blessed TUI with runtime file toggles, quick search, verbosity presets, adjustable refresh, and persisted preferences; "
+        "centralized rotating logs under instance/logs (app.log, worker.log, beat.log); greatly reduced default startup noise by demoting banners to DEBUG and gating duplicate reloader logs; "
+        "[media-path] traces are now DEBUG-only behind MEDIA_PATH_DEBUG. README updated with TUI usage."
     ),
 }
 

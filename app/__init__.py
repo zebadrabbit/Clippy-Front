@@ -80,6 +80,15 @@ def create_app(config_class=None):
 
     app.config.from_object(config_class)
 
+    # Configure rotating file logging early (no-op during tests)
+    try:
+        from app.logging_config import configure_logging as _configure_logging
+
+        _configure_logging(app, role="web")
+    except Exception:
+        # Never fail startup due to logging setup
+        pass
+
     # If running under pytest, force test-friendly overrides BEFORE initializing extensions
     try:
         import os as _os
@@ -166,14 +175,17 @@ def create_app(config_class=None):
             # If any issue occurs, keep the original URI; better to proceed than fail startup
             pass
 
+    # Determine whether we're in the effective reloader child (to avoid duplicate parent logs)
+    _is_main_reloader = (not app.debug) or os.environ.get("WERKZEUG_RUN_MAIN") == "true"
+
     # Log the resolved DB target in a safe way (avoid leaking credentials)
     try:
         global _DB_URI_LOGGED
-        if not _DB_URI_LOGGED:
+        if not _DB_URI_LOGGED and _is_main_reloader:
             ruri = app.config.get("SQLALCHEMY_DATABASE_URI", "")
             if isinstance(ruri, str):
                 if ruri.startswith("sqlite///"):
-                    app.logger.info("Database: %s", ruri)
+                    app.logger.debug("Database: %s", ruri)
                 else:
                     # Try to extract host/port/db without secrets for better diagnostics
                     try:
@@ -183,7 +195,7 @@ def create_app(config_class=None):
                         host = u.host or ""
                         port = f":{u.port}" if u.port else ""
                         dbn = u.database or ""
-                        app.logger.info(
+                        app.logger.debug(
                             "Database: %s://%s%s/%s (redacted user/pass)",
                             u.drivername,
                             host or "<no-host>",
@@ -197,7 +209,7 @@ def create_app(config_class=None):
                     except Exception:
                         # Fallback: redact to scheme only
                         scheme = ruri.split(":", 1)[0] if ":" in ruri else "db"
-                        app.logger.info("Database: %s://… (redacted)", scheme)
+                        app.logger.debug("Database: %s://… (redacted)", scheme)
             _DB_URI_LOGGED = True
     except Exception:
         pass
@@ -375,7 +387,12 @@ def init_extensions(app):
     # Ensure minimal runtime schema updates (safe additive changes)
     # Only run these in non-testing environments to avoid touching the engine during pytest.
     global _RUNTIME_SCHEMA_CHECKED
-    if not app.config.get("TESTING") and not _RUNTIME_SCHEMA_CHECKED:
+    _is_main_reloader = (not app.debug) or os.environ.get("WERKZEUG_RUN_MAIN") == "true"
+    if (
+        not app.config.get("TESTING")
+        and not _RUNTIME_SCHEMA_CHECKED
+        and _is_main_reloader
+    ):
         try:
             with app.app_context():
                 # Flask-SQLAlchemy 3.x: use db.engine instead of deprecated get_engine()
@@ -473,8 +490,9 @@ def init_extensions(app):
                             conn.execute(stmt)
                     # Optionally re-inspect or log success
                     app.logger.info(
-                        "Applied runtime schema updates: %s",
-                        ", ".join(s.text for s in statements + sched_statements),
+                        "Applied runtime schema updates (%d change%s)",
+                        len(statements + sched_statements),
+                        "s" if len(statements + sched_statements) != 1 else "",
                     )
                 # Backfill public_id for projects: add column if missing, then populate empties
                 proj_statements = []
@@ -503,8 +521,9 @@ def init_extensions(app):
                         for stmt in proj_statements:
                             conn.execute(stmt)
                     app.logger.info(
-                        "Applied projects table runtime updates: %s",
-                        ", ".join(s.text for s in proj_statements),
+                        "Applied projects table runtime updates (%d change%s)",
+                        len(proj_statements),
+                        "s" if len(proj_statements) != 1 else "",
                     )
 
                 # Populate any missing/empty public_id values
@@ -579,8 +598,9 @@ def init_extensions(app):
                         for stmt in user_statements:
                             conn.execute(stmt)
                     app.logger.info(
-                        "Applied users table runtime updates: %s",
-                        ", ".join(s.text for s in user_statements),
+                        "Applied users table runtime updates (%d change%s)",
+                        len(user_statements),
+                        "s" if len(user_statements) != 1 else "",
                     )
                 # Ensure system_settings table exists using ORM to avoid backend-specific DDL
                 try:
@@ -588,7 +608,7 @@ def init_extensions(app):
                     if "system_settings" not in existing_tables:
                         with app.app_context():
                             db.create_all()
-                        app.logger.info("Ensured system_settings via ORM create_all")
+                        app.logger.debug("Ensured system_settings via ORM create_all")
                 except Exception as e2:
                     app.logger.warning(
                         f"system_settings table ensure failed/skipped: {e2}"
@@ -600,7 +620,7 @@ def init_extensions(app):
                     if "themes" not in existing_tables:
                         with app.app_context():
                             db.create_all()
-                        app.logger.info("Ensured themes table via ORM create_all")
+                        app.logger.debug("Ensured themes table via ORM create_all")
                     else:
                         # Additive columns for themes if missing (works for SQLite/Postgres)
                         theme_cols = {c["name"] for c in insp.get_columns("themes")}
@@ -649,8 +669,9 @@ def init_extensions(app):
                                 for stmt in add_theme_stmts:
                                     conn.execute(stmt)
                             app.logger.info(
-                                "Applied runtime theme schema updates: %s",
-                                ", ".join(s.text for s in add_theme_stmts),
+                                "Applied runtime theme schema updates (%d change%s)",
+                                len(add_theme_stmts),
+                                "s" if len(add_theme_stmts) != 1 else "",
                             )
                 except Exception as e:
                     app.logger.warning(f"Themes table ensure failed/skipped: {e}")
@@ -830,7 +851,7 @@ def init_extensions(app):
                                     continue
                             app.config[row.key] = val
                         if rows:
-                            app.logger.info(
+                            app.logger.debug(
                                 "Applied %d system setting override(s): %s",
                                 len(rows),
                                 ", ".join(r.key for r in rows),

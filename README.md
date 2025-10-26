@@ -329,6 +329,30 @@ celery -A app.tasks.celery_app worker -Q celery --loglevel=info
 
 Ensure workers point to the same Redis/Postgres as the web app. For VPN/storage patterns, see `docs/wireguard.md` and `docs/samba-and-mounts.md`.
 
+## Console TUI (experimental)
+
+A Blessed-based console is available to monitor workers, projects, and live logs in one screen.
+
+- Top pane: workers online, active tasks, and project/job counts.
+- Bottom pane: live log tail from `instance/logs/app.log` and `instance/logs/worker.log` with colorized levels.
+
+Run inside the venv:
+
+```bash
+python scripts/console.py
+```
+
+Controls:
+- q: quit
+- f: cycle filter (INFO → WARNING → ERROR → DEBUG)
+- d/i/w/e: toggle Debug/Info/Warning/Error
+- c: clear log view
+- PgUp/PgDn, Home/End: scroll logs
+
+Notes:
+- Logs are written to `instance/logs/` with size-based rotation (10MB x 5). Override with `LOG_DIR`.
+- If Celery workers are remote or unreachable, the top pane will show limited details without failing the UI.
+
 ## Contributing
 
 See CONTRIBUTING.md for guidelines.

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.3] - 2025-10-26
+
+### Added
+- Operational console (experimental): a two-pane Blessed TUI that tails rotating logs with runtime file toggles (app.log, worker.log, beat.log), quick search/filter box, verbosity presets, adjustable refresh rate, and persisted preferences (`instance/data/console_prefs.json`).
+
+### Changed
+- Centralized rotating logging under `instance/logs/` and attached dedicated handler for Celery Beat (`beat.log`).
+- Reduced default startup noise: logging banners (DB target, destinations, ensure-create) demoted to DEBUG; schema updates summarized once per process; logs gated to the effective reloader child to avoid duplicates.
+- [media-path] diagnostics are DEBUG-only and shown only when `MEDIA_PATH_DEBUG` is set.
+- README updated with a "Console TUI (experimental)" section describing usage and controls.
+
 ## [0.8.2] - 2025-10-26
 
 ### Changed

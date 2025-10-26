@@ -1,9 +1,11 @@
 """
 Celery application configuration.
 """
+# ruff: noqa: I001
 
+import logging
 from celery import Celery
-from celery.signals import task_postrun
+from celery.signals import after_setup_logger, after_setup_task_logger, task_postrun
 from kombu import Queue
 
 from config.settings import Config
@@ -69,6 +71,59 @@ def make_celery(app_name=__name__):
 
 # Create Celery app
 celery_app = make_celery()
+
+
+# Attach rotating file handlers for Celery loggers, using instance/logs/
+@after_setup_logger.connect
+def _setup_celery_logger(logger, *args, **kwargs):  # pragma: no cover - logging init
+    try:
+        # Detect instance path similarly to Flask's default for this project root
+        import os as _os
+
+        repo_root = _os.path.abspath(
+            _os.path.join(_os.path.dirname(__file__), "..", "..")
+        )
+        # Prefer CLIPPY_INSTANCE_PATH if set, else app default instance under repo
+        instance_path = _os.environ.get("CLIPPY_INSTANCE_PATH") or _os.path.join(
+            repo_root, "instance"
+        )
+
+        from app.logging_config import (
+            attach_celery_file_logging as _attach,
+            attach_named_file_logging as _attach_named,
+        )
+
+        _attach(logger, instance_path)
+        # Also attach a dedicated beat.log for Celery Beat (if present)
+        try:
+            beat_logger = logging.getLogger("celery.beat")
+            _attach_named(beat_logger, instance_path, "beat.log")
+        except Exception:
+            pass
+    except Exception:
+        # Non-fatal; fallback to stderr
+        pass
+
+
+@after_setup_task_logger.connect
+def _setup_celery_task_logger(
+    logger, *args, **kwargs
+):  # pragma: no cover - logging init
+    try:
+        import os as _os
+
+        repo_root = _os.path.abspath(
+            _os.path.join(_os.path.dirname(__file__), "..", "..")
+        )
+        instance_path = _os.environ.get("CLIPPY_INSTANCE_PATH") or _os.path.join(
+            repo_root, "instance"
+        )
+
+        from app.logging_config import attach_celery_file_logging as _attach
+
+        _attach(logger, instance_path)
+    except Exception:
+        pass
 
 
 # Ensure SQLAlchemy sessions are cleaned up after each task to avoid leaking

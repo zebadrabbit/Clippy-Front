@@ -1102,7 +1102,7 @@ def media_preview(media_id: int):
             }
             if orig_path and os.path.exists(orig_path):
                 if debug:
-                    current_app.logger.info(
+                    current_app.logger.debug(
                         "[media-path] using original path (exists): %s", orig_path
                     )
                 return orig_path
@@ -1114,7 +1114,7 @@ def media_preview(media_id: int):
             if alias_from and alias_to and ap.startswith(alias_from):
                 cand = alias_to + ap[len(alias_from) :]
                 if debug:
-                    current_app.logger.info(
+                    current_app.logger.debug(
                         "[media-path] alias candidate: FROM='%s' TO='%s' -> '%s' (exists=%s)",
                         alias_from,
                         alias_to,
@@ -1129,7 +1129,7 @@ def media_preview(media_id: int):
                     suffix = ap.split(marker, 1)[1]
                     cand = os.path.join(current_app.instance_path, suffix)
                     if debug:
-                        current_app.logger.info(
+                        current_app.logger.debug(
                             "[media-path] instance remap candidate: base='%s' suffix='/%s' -> '%s' (exists=%s)",
                             current_app.instance_path,
                             suffix,
@@ -1172,7 +1172,7 @@ def media_thumbnail(media_id: int):
             }
             if orig_path and os.path.exists(orig_path):
                 if debug:
-                    current_app.logger.info(
+                    current_app.logger.debug(
                         "[media-path] using original path (exists): %s", orig_path
                     )
                 return orig_path
@@ -1184,7 +1184,7 @@ def media_thumbnail(media_id: int):
             if alias_from and alias_to and ap.startswith(alias_from):
                 cand = alias_to + ap[len(alias_from) :]
                 if debug:
-                    current_app.logger.info(
+                    current_app.logger.debug(
                         "[media-path] alias candidate: FROM='%s' TO='%s' -> '%s' (exists=%s)",
                         alias_from,
                         alias_to,
@@ -1199,7 +1199,7 @@ def media_thumbnail(media_id: int):
                     suffix = ap.split(marker, 1)[1]
                     cand = os.path.join(current_app.instance_path, suffix)
                     if debug:
-                        current_app.logger.info(
+                        current_app.logger.debug(
                             "[media-path] instance remap candidate: base='%s' suffix='/%s' -> '%s' (exists=%s)",
                             current_app.instance_path,
                             suffix,
