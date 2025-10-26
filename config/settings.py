@@ -97,6 +97,13 @@ class Config:
     FFPROBE_ARGS = os.environ.get("FFPROBE_ARGS", "")
     YT_DLP_ARGS = os.environ.get("YT_DLP_ARGS", "")
     OUTPUT_VIDEO_QUALITY = os.environ.get("OUTPUT_VIDEO_QUALITY") or "high"
+    # Restrict external clip sources to Twitch/Discord URLs only when disabled
+    ALLOW_EXTERNAL_URLS = os.environ.get("ALLOW_EXTERNAL_URLS", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     # Queue selection: use a dedicated 'gpu' Celery queue for compile tasks when enabled
     USE_GPU_QUEUE = os.environ.get("USE_GPU_QUEUE", "false").lower() in {
         "1",

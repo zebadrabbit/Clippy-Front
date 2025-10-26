@@ -276,6 +276,40 @@ def create_and_download_clips_api(project_id: int):
     if not urls and not provided_clips:
         return jsonify({"error": "No URLs or clips provided"}), 400
 
+    # Optional policy: restrict to Twitch/Discord URLs when external URLs are disabled
+    allow_external = bool(current_app.config.get("ALLOW_EXTERNAL_URLS", False))
+    if not allow_external:
+
+        def _is_supported(u: str) -> bool:
+            try:
+                s = (u or "").strip().lower()
+                return (
+                    ("twitch.tv" in s)
+                    or ("discord.com" in s)
+                    or ("discordapp.com" in s)
+                )
+            except Exception:
+                return False
+
+        # Filter plain URLs and structured clips by policy
+        orig_urls_len = len(urls)
+        orig_clips_len = len(provided_clips)
+        urls = [u for u in urls if _is_supported(str(u))]
+        provided_clips = [
+            c for c in provided_clips if _is_supported(str(c.get("url", "")))
+        ]
+        if (orig_urls_len > 0 or orig_clips_len > 0) and (
+            len(urls) == 0 and len(provided_clips) == 0
+        ):
+            return (
+                jsonify(
+                    {
+                        "error": "External URLs are disabled by configuration. Only Twitch/Discord URLs are allowed.",
+                    }
+                ),
+                400,
+            )
+
     # Limit to a reasonable batch size and requested limit
     max_batch = 200
     if urls:
@@ -394,8 +428,8 @@ def create_and_download_clips_api(project_id: int):
                 seen.add(norm)
                 platform = (
                     "twitch"
-                    if "twitch" in url_s
-                    else ("discord" if "discord" in url_s else "external")
+                    if "twitch" in url_s.lower()
+                    else ("discord" if "discord" in url_s.lower() else "external")
                 )
                 title = (obj.get("title") or f"Clip {order_base + idx + 1}").strip()
                 creator_name = obj.get("creator_name")
@@ -583,8 +617,8 @@ def create_and_download_clips_api(project_id: int):
             seen.add(norm)
             platform = (
                 "twitch"
-                if "twitch" in url_s
-                else ("discord" if "discord" in url_s else "external")
+                if "twitch" in url_s.lower()
+                else ("discord" if "discord" in url_s.lower() else "external")
             )
             # Attempt reuse
             reused, media_file, src_platform = try_reuse(norm)

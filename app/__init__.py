@@ -791,6 +791,7 @@ def init_extensions(app):
                             "FORCE_HTTPS": "bool",
                             "AUTO_REINDEX_ON_STARTUP": "bool",
                             "USE_GPU_QUEUE": "bool",
+                            "ALLOW_EXTERNAL_URLS": "bool",
                             "OUTPUT_VIDEO_QUALITY": "str",
                             "FFMPEG_BINARY": "str",
                             "YT_DLP_BINARY": "str",
