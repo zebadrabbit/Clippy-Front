@@ -108,6 +108,11 @@ class User(UserMixin, db.Model):
         nullable=False,
         doc="Preferred date format: auto|mdy|dmy|ymd|long",
     )
+    timezone = db.Column(
+        db.String(64),
+        nullable=True,
+        doc="Preferred IANA timezone name for localizing schedules and times",
+    )
 
     # Relationships
     projects = db.relationship(
@@ -487,6 +492,19 @@ class Tier(db.Model):
     apply_watermark = db.Column(db.Boolean, default=True, nullable=False)
     is_unlimited = db.Column(db.Boolean, default=False, nullable=False)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
+    # Automation/scheduling capability flags
+    can_schedule_tasks = db.Column(
+        db.Boolean,
+        default=False,
+        nullable=False,
+        doc="Whether users on this tier can create scheduled automation tasks.",
+    )
+    max_schedules_per_user = db.Column(
+        db.Integer,
+        default=1,
+        nullable=False,
+        doc="Maximum number of active schedules per user for this tier.",
+    )
 
     # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
@@ -649,3 +667,108 @@ class Theme(db.Model):
 
     def __repr__(self) -> str:
         return f"<Theme {self.name}{' *' if self.is_active else ''}>"
+
+
+class CompilationTask(db.Model):
+    """Reusable, parameterized compilation task definition.
+
+    A task belongs to a single user and captures parameters for building a project
+    and compiling it, such as clip source/limit, intro/outro IDs, transitions, and
+    output settings overrides.
+    """
+
+    __tablename__ = "compilation_tasks"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    name = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text)
+
+    # Parameters blob; structure is validated in API layer
+    params = db.Column(db.JSON, nullable=False, default={})
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    last_run_at = db.Column(db.DateTime)
+
+    user = db.relationship(
+        "User",
+        backref=db.backref(
+            "compilation_tasks", lazy="dynamic", cascade="all, delete-orphan"
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"<CompilationTask {self.id} {self.name}>"
+
+
+class ScheduleType(Enum):
+    """Supported schedule types for scheduled tasks."""
+
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    # Keep ONCE for backward-compat read of legacy rows, but don't expose in UI anymore
+    ONCE = "once"
+    MONTHLY = "monthly"
+
+
+class ScheduledTask(db.Model):
+    """A schedule attached to a CompilationTask.
+
+    Minimal fields to avoid extra dependencies: supports one-time run, daily at HH:MM, or
+    weekly on a given weekday at HH:MM (24h). Time values are stored as strings and interpreted
+    in UTC unless a timezone is provided (tz name). The scheduler tick will compute next_run_at.
+    """
+
+    __tablename__ = "scheduled_tasks"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    task_id = db.Column(
+        db.Integer, db.ForeignKey("compilation_tasks.id"), nullable=False
+    )
+
+    schedule_type = db.Column(
+        db.Enum(
+            ScheduleType,
+            name="scheduletype",
+            values_callable=lambda enum: [e.value for e in enum],
+        ),
+        nullable=False,
+        default=ScheduleType.ONCE,
+    )
+    # When schedule_type=ONCE: run_at is used (UTC)
+    run_at = db.Column(db.DateTime)
+    # When DAILY/WEEKLY: time of day "HH:MM" 24h
+    daily_time = db.Column(db.String(5))
+    # When WEEKLY: 0=Mon .. 6=Sun
+    weekly_day = db.Column(db.Integer)
+    # When MONTHLY: 1..31 (clamped to month's last day)
+    monthly_day = db.Column(db.Integer)
+
+    timezone = db.Column(db.String(64), default="UTC")
+    enabled = db.Column(db.Boolean, default=True, nullable=False)
+
+    next_run_at = db.Column(db.DateTime)
+    last_run_at = db.Column(db.DateTime)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    user = db.relationship(
+        "User",
+        backref=db.backref(
+            "scheduled_tasks", lazy="dynamic", cascade="all, delete-orphan"
+        ),
+    )
+    task = db.relationship(
+        "CompilationTask",
+        backref=db.backref("schedules", lazy="dynamic", cascade="all, delete-orphan"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<ScheduledTask {self.id} {self.schedule_type.value} enabled={self.enabled}>"

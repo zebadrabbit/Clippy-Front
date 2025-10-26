@@ -23,6 +23,7 @@ def make_celery(app_name=__name__):
     celery_includes = [
         "app.tasks.video_processing",
         "app.tasks.media_maintenance",
+        "app.tasks.automation",
     ]
 
     celery_app.conf.update(include=celery_includes)
@@ -53,6 +54,15 @@ def make_celery(app_name=__name__):
             )
         ),
     )
+
+    # Optional beat schedule for the scheduler tick
+    if getattr(config, "SCHEDULER_ENABLE_TICK", False):
+        celery_app.conf.beat_schedule = {
+            "automation-scheduler-tick": {
+                "task": "app.tasks.automation.scheduled_tasks_tick",
+                "schedule": int(getattr(config, "SCHEDULER_TICK_SECONDS", 60) or 60),
+            }
+        }
 
     return celery_app
 

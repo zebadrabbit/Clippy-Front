@@ -61,6 +61,9 @@
                             <a class="nav-link" href="{{ url_for('main.projects') }}">Projects</a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('main.automation') }}">Automation</a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('main.media_library') }}">Media</a>
                         </li>
                         {% if current_user.is_admin() %}
@@ -127,6 +130,7 @@
                         <div class="d-flex">
                             <div class="toast-body">
                                 <i class="bi bi-{{ icon }} me-2"></i>
+                                {% if cat == 'success' %}<span class="me-2">🎬 Showtime!</span>{% endif %}
                                 {{ message }}
                             </div>
                             <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>

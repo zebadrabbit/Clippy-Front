@@ -348,11 +348,21 @@ def tier_create():
                 flash("Name is required", "danger")
                 return redirect(url_for("admin.tier_create"))
             desc = (request.form.get("description") or "").strip() or None
-            storage = request.form.get("storage_limit_bytes")
-            render = request.form.get("render_time_limit_seconds")
+            # Accept MB input from the form, fallback to legacy bytes key if provided
+            storage_mb = request.form.get("storage_limit_mb")
+            storage_bytes_legacy = request.form.get("storage_limit_bytes")
+            # Accept minutes for render time; fallback to legacy seconds field
+            render_minutes = request.form.get("render_time_limit_minutes")
+            render_seconds_legacy = request.form.get("render_time_limit_seconds")
             apply_wm = request.form.get("apply_watermark") in ("1", "true", "on")
             is_unlim = request.form.get("is_unlimited") in ("1", "true", "on")
             is_active = request.form.get("is_active") in ("1", "true", "on")
+            sched_enabled = request.form.get("can_schedule_tasks") in (
+                "1",
+                "true",
+                "on",
+            )
+            max_sched = request.form.get("max_schedules_per_user")
 
             def _to_int_or_none(v):
                 try:
@@ -361,14 +371,46 @@ def tier_create():
                 except Exception:
                     return None
 
+            # Convert MB to bytes if provided
+            def _mb_to_bytes(v):
+                try:
+                    s = str(v or "").strip()
+                    if not s:
+                        return None
+                    return int(float(s) * 1024 * 1024)
+                except Exception:
+                    return None
+
+            # Convert minutes to seconds if provided
+            def _min_to_sec(v):
+                try:
+                    s = str(v or "").strip()
+                    if not s:
+                        return None
+                    return int(float(s) * 60)
+                except Exception:
+                    return None
+
             tier = Tier(
                 name=name,
                 description=desc,
-                storage_limit_bytes=_to_int_or_none(storage),
-                render_time_limit_seconds=_to_int_or_none(render),
+                storage_limit_bytes=(
+                    _mb_to_bytes(storage_mb)
+                    if (storage_mb is not None and str(storage_mb).strip() != "")
+                    else _to_int_or_none(storage_bytes_legacy)
+                ),
+                render_time_limit_seconds=(
+                    _min_to_sec(render_minutes)
+                    if (
+                        render_minutes is not None and str(render_minutes).strip() != ""
+                    )
+                    else _to_int_or_none(render_seconds_legacy)
+                ),
                 apply_watermark=apply_wm,
                 is_unlimited=is_unlim,
                 is_active=is_active,
+                can_schedule_tasks=sched_enabled,
+                max_schedules_per_user=_to_int_or_none(max_sched),
             )
             db.session.add(tier)
             db.session.commit()
@@ -400,12 +442,49 @@ def tier_edit(tier_id: int):
                 except Exception:
                     return None
 
-            tier.storage_limit_bytes = _to_int_or_none(
-                request.form.get("storage_limit_bytes")
-            )
-            tier.render_time_limit_seconds = _to_int_or_none(
-                request.form.get("render_time_limit_seconds")
-            )
+            # Update storage from MB if present; fallback to legacy bytes field
+            def _mb_to_bytes(v):
+                try:
+                    s = str(v or "").strip()
+                    if not s:
+                        return None
+                    return int(float(s) * 1024 * 1024)
+                except Exception:
+                    return None
+
+            if (
+                request.form.get("storage_limit_mb") is not None
+                and str(request.form.get("storage_limit_mb")).strip() != ""
+            ):
+                tier.storage_limit_bytes = _mb_to_bytes(
+                    request.form.get("storage_limit_mb")
+                )
+            else:
+                tier.storage_limit_bytes = _to_int_or_none(
+                    request.form.get("storage_limit_bytes")
+                )
+
+            # Update render limit from minutes if present; fallback to legacy seconds
+            def _min_to_sec(v):
+                try:
+                    s = str(v or "").strip()
+                    if not s:
+                        return None
+                    return int(float(s) * 60)
+                except Exception:
+                    return None
+
+            if (
+                request.form.get("render_time_limit_minutes") is not None
+                and str(request.form.get("render_time_limit_minutes")).strip() != ""
+            ):
+                tier.render_time_limit_seconds = _min_to_sec(
+                    request.form.get("render_time_limit_minutes")
+                )
+            else:
+                tier.render_time_limit_seconds = _to_int_or_none(
+                    request.form.get("render_time_limit_seconds")
+                )
             tier.apply_watermark = request.form.get("apply_watermark") in (
                 "1",
                 "true",
@@ -413,6 +492,15 @@ def tier_edit(tier_id: int):
             )
             tier.is_unlimited = request.form.get("is_unlimited") in ("1", "true", "on")
             tier.is_active = request.form.get("is_active") in ("1", "true", "on")
+            # Scheduling policy
+            tier.can_schedule_tasks = request.form.get("can_schedule_tasks") in (
+                "1",
+                "true",
+                "on",
+            )
+            tier.max_schedules_per_user = _to_int_or_none(
+                request.form.get("max_schedules_per_user")
+            )
             db.session.commit()
             flash("Tier updated", "success")
             return redirect(url_for("admin.tiers_list"))

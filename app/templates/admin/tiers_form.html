@@ -26,13 +26,13 @@
                   <textarea class="form-control" rows="2" name="description">{{ tier.description if tier else '' }}</textarea>
                 </div>
                 <div class="mb-3">
-                  <label class="form-label">Storage Limit (bytes)</label>
-                  <input class="form-control" name="storage_limit_bytes" type="number" min="0" placeholder="e.g. 1073741824 for 1GB" value="{{ tier.storage_limit_bytes if tier and tier.storage_limit_bytes is not none else '' }}">
-                  <div class="form-text">Leave blank for unlimited.</div>
+                  <label class="form-label">Storage Limit (MB)</label>
+                  <input class="form-control" name="storage_limit_mb" type="number" min="0" step="1" placeholder="e.g. 1024 for 1 GB" value="{% if tier and tier.storage_limit_bytes is not none %}{{ (tier.storage_limit_bytes/1024/1024)|round(0, 'floor')|int }}{% endif %}">
+                  <div class="form-text">Leave blank for unlimited. Value is in megabytes.</div>
                 </div>
                 <div class="mb-3">
-                  <label class="form-label">Render Time Limit (seconds per month)</label>
-                  <input class="form-control" name="render_time_limit_seconds" type="number" min="0" placeholder="e.g. 1800 for 30 min" value="{{ tier.render_time_limit_seconds if tier and tier.render_time_limit_seconds is not none else '' }}">
+                  <label class="form-label">Render Time Limit (minutes per month)</label>
+                  <input class="form-control" name="render_time_limit_minutes" type="number" min="0" step="1" placeholder="e.g. 30 for 30 min" value="{% if tier and tier.render_time_limit_seconds is not none %}{{ (tier.render_time_limit_seconds/60)|round(0, 'floor')|int }}{% endif %}">
                   <div class="form-text">Leave blank for unlimited.</div>
                 </div>
               </div>
@@ -53,6 +53,16 @@
                 <div class="form-check mb-2">
                   <input class="form-check-input" type="checkbox" name="is_active" id="is_active" {% if (tier and tier.is_active) or not tier %}checked{% endif %}>
                   <label class="form-check-label" for="is_active">Active</label>
+                </div>
+                <hr>
+                <div class="form-check mb-2">
+                  <input class="form-check-input" type="checkbox" name="can_schedule_tasks" id="can_schedule_tasks" {% if tier and tier.can_schedule_tasks %}checked{% endif %}>
+                  <label class="form-check-label" for="can_schedule_tasks">Allow Automation Scheduling</label>
+                </div>
+                <div class="mb-2">
+                  <label class="form-label">Max Active Schedules per User</label>
+                  <input class="form-control" name="max_schedules_per_user" type="number" min="0" placeholder="e.g. 1" value="{% if tier and tier.max_schedules_per_user is not none %}{{ tier.max_schedules_per_user }}{% endif %}">
+                  <div class="form-text">0 or blank means not allowed unless Unlimited tier explicitly allows. Use a small number like 1–3.</div>
                 </div>
               </div>
             </div>

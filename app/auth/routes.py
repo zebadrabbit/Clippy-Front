@@ -59,11 +59,29 @@ def login():
         current_app.logger.debug(f"validate_on_submit (single-pass): {is_valid}")
 
         if is_valid:
+            # Defensive: ensure DB session is clean before querying
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
             # Find user by username or email
-            user = User.query.filter(
-                (User.username == form.username_or_email.data)
-                | (User.email == form.username_or_email.data)
-            ).first()
+            try:
+                user = User.query.filter(
+                    (User.username == form.username_or_email.data)
+                    | (User.email == form.username_or_email.data)
+                ).first()
+            except Exception as e:
+                # Clear aborted transaction and surface a friendly error
+                try:
+                    db.session.rollback()
+                except Exception:
+                    pass
+                current_app.logger.error(f"Login query error: {e}")
+                flash(
+                    "A database error occurred. Please retry in a moment.",
+                    "danger",
+                )
+                return render_template("auth/login.html", title="Sign In", form=form)
 
             # Verify user exists and password is correct
             if user and user.check_password(form.password.data):
@@ -197,6 +215,19 @@ def profile():
             current_user.twitch_username = form.twitch_username.data or None
             if form.date_format.data:
                 current_user.date_format = form.date_format.data
+            # Timezone: validate IANA name when provided
+            tz_input = (form.timezone.data or "").strip()
+            if tz_input:
+                try:
+                    from zoneinfo import ZoneInfo
+
+                    _ = ZoneInfo(tz_input)
+                    current_user.timezone = tz_input
+                except Exception:
+                    flash(
+                        "Invalid timezone. Please use a valid IANA name (e.g., America/Los_Angeles).",
+                        "warning",
+                    )
 
             db.session.commit()
 
@@ -220,6 +251,10 @@ def profile():
         form.discord_user_id.data = current_user.discord_user_id
         form.twitch_username.data = current_user.twitch_username
         form.date_format.data = current_user.date_format or "auto"
+        try:
+            form.timezone.data = current_user.timezone or ""
+        except Exception:
+            form.timezone.data = ""
 
     return render_template("auth/profile.html", title="Profile", form=form)
 

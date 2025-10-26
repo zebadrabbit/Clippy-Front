@@ -927,11 +927,28 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
                             base_override = remapped_base
                     except Exception:
                         pass
-                base = (
+                # Determine base roots. Support AVATARS_PATH pointing either to:
+                #  - the avatars directory itself (…/assets/avatars)
+                #  - the assets base directory that contains an 'avatars' subdir (…/assets)
+                base_root = (
                     base_override
                     if base_override
                     else os.path.join(app.instance_path, "assets")
                 )
+                avatars_dir = base_root
+                try:
+                    tail = os.path.basename(str(avatars_dir).rstrip("/"))
+                    if tail.lower() != "avatars":
+                        avatars_dir = os.path.join(avatars_dir, "avatars")
+                except Exception:
+                    avatars_dir = os.path.join(base_root, "avatars")
+                if os.getenv("OVERLAY_DEBUG"):
+                    try:
+                        print(
+                            f"[overlay] avatar search roots: base_root='{base_root}' avatars_dir='{avatars_dir}' exists_base={os.path.isdir(base_root)} exists_avatars={os.path.isdir(avatars_dir)}"
+                        )
+                    except Exception:
+                        pass
                 # Specific per-author avatar: <base>/avatars/<sanitized>.png|jpg|jpeg|webp
                 if author:
                     import glob as _glob
@@ -939,26 +956,53 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
 
                     safe = _re.sub(r"[^a-z0-9_-]+", "_", author.strip().lower())
                     for ext in (".png", ".jpg", ".jpeg", ".webp"):
-                        cand = os.path.join(base, "avatars", safe + ext)
+                        cand = os.path.join(avatars_dir, safe + ext)
                         if os.path.exists(cand):
+                            if os.getenv("OVERLAY_DEBUG"):
+                                try:
+                                    print(f"[overlay] matched specific avatar: {cand}")
+                                except Exception:
+                                    pass
                             return cand
                         # Also support cached Twitch avatar pattern: <safe>_<rand><ext>
                         try:
-                            pattern = os.path.join(base, "avatars", f"{safe}_*{ext}")
+                            pattern = os.path.join(avatars_dir, f"{safe}_*{ext}")
                             matches = _glob.glob(pattern)
                             if matches:
                                 # Prefer the most recently modified match
                                 matches.sort(
                                     key=lambda p: os.path.getmtime(p), reverse=True
                                 )
+                                if os.getenv("OVERLAY_DEBUG"):
+                                    try:
+                                        print(
+                                            f"[overlay] matched cached avatar pattern '{pattern}': using {matches[0]}"
+                                        )
+                                    except Exception:
+                                        pass
                                 return matches[0]
                         except Exception:
                             pass
-                # Default avatar placeholder in base directory
+                # Default avatar placeholder in base directories (root and avatars subdir)
                 for name in ("avatar.png", "avatar.jpg", "default_avatar.png"):
-                    cand = os.path.join(base, name)
+                    cand = os.path.join(base_root, name)
                     if os.path.exists(cand):
+                        if os.getenv("OVERLAY_DEBUG"):
+                            try:
+                                print(f"[overlay] using default avatar at base: {cand}")
+                            except Exception:
+                                pass
                         return cand
+                    cand2 = os.path.join(avatars_dir, name)
+                    if os.path.exists(cand2):
+                        if os.getenv("OVERLAY_DEBUG"):
+                            try:
+                                print(
+                                    f"[overlay] using default avatar in avatars_dir: {cand2}"
+                                )
+                            except Exception:
+                                pass
+                        return cand2
                 # Fallback to app static folder if present: app/static/avatars/
                 static_base = os.path.join(app.root_path, "static")
                 for ext in (".png", ".jpg", ".jpeg", ".webp"):

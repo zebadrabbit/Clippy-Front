@@ -692,6 +692,69 @@ def media_library():
     )
 
 
+@main_bp.route("/automation")
+@login_required
+def automation():
+    """Render the Automation page for creating and managing compilation tasks and schedules.
+
+    The page consumes the Automation APIs to list tasks, run them, and (if allowed by tier)
+    create schedules. Tier gating for scheduling is enforced server-side by the API and
+    reflected in the UI.
+    """
+    # Determine tier gating flags for UI hints only
+    can_schedule = False
+    max_sched = 0
+    try:
+        t = getattr(current_user, "tier", None)
+        if t is not None:
+            can_schedule = bool(getattr(t, "can_schedule_tasks", False))
+            try:
+                max_sched = int(getattr(t, "max_schedules_per_user", 0) or 0)
+            except Exception:
+                max_sched = 0
+    except Exception:
+        can_schedule = False
+        max_sched = 0
+    return render_template(
+        "main/automation.html",
+        title="Automation",
+        can_schedule=can_schedule,
+        max_schedules=max_sched,
+    )
+
+
+@main_bp.route("/automation/tasks/<int:task_id>")
+@login_required
+def automation_task_details(task_id: int):
+    """Render a dedicated detail page for a single automation task.
+
+    The page consumes the Automation APIs to fetch task details and manage schedules.
+    """
+    # We don't load the task server-side to keep the page simple and API-driven.
+    # Ownership is enforced by the APIs.
+    # Tier hints for UI gating
+    can_schedule = False
+    max_sched = 0
+    try:
+        t = getattr(current_user, "tier", None)
+        if t is not None:
+            can_schedule = bool(getattr(t, "can_schedule_tasks", False))
+            try:
+                max_sched = int(getattr(t, "max_schedules_per_user", 0) or 0)
+            except Exception:
+                max_sched = 0
+    except Exception:
+        can_schedule = False
+        max_sched = 0
+    return render_template(
+        "main/automation_task.html",
+        title="Task Details",
+        task_id=task_id,
+        can_schedule=can_schedule,
+        max_schedules=max_sched,
+    )
+
+
 def _media_type_folder(media_type: MediaType, mime_type: str) -> str:
     """
     Map a MediaType/mime to a folder name.
@@ -1526,6 +1589,30 @@ def theme_css():
             # Buttons - override base.css hardcoded hover color
             ".btn-primary{background-color: var(--bs-primary); border-color: var(--bs-primary);}",
             ".btn-primary:hover{background-color: var(--bs-primary); border-color: var(--bs-primary); filter: brightness(0.9);}",
+            # Tables - align Bootstrap table vars with theme colors
+            ".table{",
+            "--bs-table-color: var(--bs-body-color);",
+            "--bs-table-bg: var(--bs-card-bg);",
+            "--bs-table-border-color: var(--bs-border-color);",
+            "--bs-table-striped-bg: color-mix(in srgb, var(--bs-table-bg), #ffffff 6%);",
+            "--bs-table-striped-color: var(--bs-body-color);",
+            "--bs-table-active-bg: color-mix(in srgb, var(--bs-table-bg), #ffffff 10%);",
+            "--bs-table-active-color: var(--bs-body-color);",
+            "--bs-table-hover-bg: color-mix(in srgb, var(--bs-table-bg), #ffffff 8%);",
+            "--bs-table-hover-color: var(--bs-body-color);",
+            "}",
+            ".table-light{",
+            "--bs-table-color: var(--bs-body-color);",
+            "--bs-table-bg: color-mix(in srgb, var(--bs-card-bg), #ffffff 8%);",
+            "--bs-table-border-color: var(--bs-border-color);",
+            "--bs-table-striped-bg: color-mix(in srgb, var(--bs-table-bg), #ffffff 6%);",
+            "--bs-table-striped-color: var(--bs-body-color);",
+            "--bs-table-active-bg: color-mix(in srgb, var(--bs-table-bg), #ffffff 10%);",
+            "--bs-table-active-color: var(--bs-body-color);",
+            "--bs-table-hover-bg: color-mix(in srgb, var(--bs-table-bg), #ffffff 8%);",
+            "--bs-table-hover-color: var(--bs-body-color);",
+            "}",
+            ".table thead th{border-bottom-color: var(--bs-border-color)!important;}",
             # Generic focus outline fallback
             ":focus{outline-color: var(--outline-color);}",
         ]

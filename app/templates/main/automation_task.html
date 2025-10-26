@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4" data-task-id="{{ task_id }}">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+      <a class="btn btn-sm btn-outline-secondary me-2" href="{{ url_for('main.automation') }}"><i class="bi bi-arrow-left"></i> Back</a>
+      <h3 class="d-inline align-middle mb-0"><i class="bi bi-gear-wide-connected me-2"></i>Task <span id="taskName">#{{ task_id }}</span></h3>
+    </div>
+    <div class="btn-group">
+      <button id="btnRun" class="btn btn-primary"><i class="bi bi-play-fill"></i> Run</button>
+      <button id="btnEdit" class="btn btn-outline-info"><i class="bi bi-pencil"></i> Edit</button>
+      <button id="btnClone" class="btn btn-outline-secondary"><i class="bi bi-files"></i> Clone</button>
+      <button id="btnDelete" class="btn btn-outline-danger"><i class="bi bi-trash"></i></button>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-12 col-lg-6">
+      <div class="card h-100">
+        <div class="card-header fw-semibold">Details</div>
+        <div class="card-body">
+          <div><span class="text-muted">Description:</span> <span id="taskDesc" class=""></span></div>
+          <div class="mt-2 small text-muted">Last run: <span id="lastRun">-</span></div>
+          <div class="mt-2 small text-muted">Created: <span id="createdAt">-</span></div>
+          <div class="mt-2 small text-muted">Updated: <span id="updatedAt">-</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-lg-6">
+      <div class="card h-100">
+        <div class="card-header d-flex align-items-center justify-content-between">
+          <span class="fw-semibold">Schedules</span>
+          {% if can_schedule %}
+          <div class="d-flex align-items-center gap-2">
+            <select class="form-select form-select-sm w-auto" id="newSchedType">
+              <option value="once">Once</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+            </select>
+            <input type="datetime-local" class="form-control form-control-sm w-auto" id="newSchedOnce" style="display:none;">
+            <input type="time" class="form-control form-control-sm w-auto" id="newSchedTime" value="09:00">
+            <select class="form-select form-select-sm w-auto" id="newSchedWeekday" style="display:none;">
+              <option value="0">Mon</option><option value="1">Tue</option><option value="2">Wed</option>
+              <option value="3">Thu</option><option value="4">Fri</option><option value="5">Sat</option><option value="6">Sun</option>
+            </select>
+            <button class="btn btn-sm btn-primary" id="btnAddSched"><i class="bi bi-plus-lg"></i> Add</button>
+          </div>
+          {% else %}
+          <div class="small text-muted">Scheduling is disabled for your tier.</div>
+          {% endif %}
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Type</th><th>Time</th><th>Next</th><th>Last</th><th>Enabled</th><th class="text-end">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="schedTbody"><tr><td colspan="6" class="text-muted small">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% include "main/partials/task_edit_modal.html" %}
+{% include "main/partials/schedule_edit_modal.html" %}
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+(function(){
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+  const root = document.querySelector('[data-task-id]');
+  const taskId = root?.dataset.taskId;
+  const fmt = (dt) => dt ? (new Date(dt)).toLocaleString() : '-';
+
+  function typeLabel(s){
+    if (s==='daily') return 'Daily';
+    if (s==='weekly') return 'Weekly';
+    return 'Once';
+  }
+
+  async function fetchJSON(url, opts={}){ const r = await fetch(url, opts); if(!r.ok){ throw new Error(await r.text()); } try{ return await r.json(); }catch{ return {}; } }
+
+  async function loadTask(){
+    const url = "{{ url_for('api.get_compilation_task_api', task_id=0) }}".replace('0', String(taskId));
+    const t = await fetchJSON(url);
+    document.getElementById('taskName').textContent = t.name || ('#'+taskId);
+    document.getElementById('taskDesc').textContent = t.description || '-';
+    document.getElementById('lastRun').textContent = fmt(t.last_run_at);
+    document.getElementById('createdAt').textContent = fmt(t.created_at);
+    document.getElementById('updatedAt').textContent = fmt(t.updated_at);
+  }
+
+  async function loadSchedules(){
+    const tbody = document.getElementById('schedTbody');
+    tbody.innerHTML = '<tr><td colspan="6" class="text-muted small">Loading…</td></tr>';
+    try{
+      const url = "{{ url_for('api.list_schedules_api', task_id=0) }}".replace('0', String(taskId));
+      const data = await fetchJSON(url);
+      const items = data.items||[];
+      if (!items.length){ tbody.innerHTML = '<tr><td colspan="6" class="text-muted small">No schedules.</td></tr>'; return; }
+      tbody.innerHTML='';
+      for(const s of items){
+        const tr = document.createElement('tr');
+        const timeTxt = s.type==='once' ? fmt(s.run_at) : (s.type==='daily' ? s.time : `${s.time} (w${s.weekday})`);
+        tr.innerHTML = `
+          <td>${typeLabel(s.type)}</td>
+          <td>${timeTxt||'-'}</td>
+          <td>${fmt(s.next_run_at)}</td>
+          <td>${fmt(s.last_run_at)}</td>
+          <td><div class="form-check form-switch"><input class="form-check-input sched-enabled" type="checkbox" ${s.enabled?'checked':''}></div></td>
+          <td class="text-end">
+            <button class="btn btn-sm btn-outline-info me-2 sched-edit"><i class="bi bi-pencil"></i></button>
+            <button class="btn btn-sm btn-outline-danger sched-del"><i class="bi bi-trash"></i></button>
+          </td>`;
+        tr.querySelector('.sched-enabled')?.addEventListener('change', async (ev)=>{
+          const enabled = !!ev.target.checked;
+          try{
+            const url = "{{ url_for('api.update_schedule_api', schedule_id=0) }}".replace('0', String(s.id));
+            const resp = await fetch(url, { method:'PATCH', headers:{ 'Content-Type':'application/json', 'X-CSRFToken': csrf }, body: JSON.stringify({ enabled })});
+            if (!resp.ok){ ev.target.checked = !enabled; }
+          }catch{ ev.target.checked = !enabled; }
+        });
+        tr.querySelector('.sched-del')?.addEventListener('click', async ()=>{
+          if(!confirm('Delete this schedule?')) return;
+          const url = "{{ url_for('api.delete_schedule_api', schedule_id=0) }}".replace('0', String(s.id));
+          const resp = await fetch(url, { method:'DELETE', headers:{ 'X-CSRFToken': csrf }});
+          if (resp.ok) loadSchedules();
+        });
+        tr.querySelector('.sched-edit')?.addEventListener('click', ()=> openScheduleEditModal(s));
+        tbody.appendChild(tr);
+      }
+    }catch{ tbody.innerHTML = '<tr><td colspan="6" class="text-danger small">Failed to load schedules.</td></tr>'; }
+  }
+  // Expose for edit modal
+  window.loadSchedules = loadSchedules;
+
+  // New schedule controls
+  const typeSel = document.getElementById('newSchedType');
+  const onceInput = document.getElementById('newSchedOnce');
+  const timeInput = document.getElementById('newSchedTime');
+  const wdSel = document.getElementById('newSchedWeekday');
+  if (typeSel){
+    typeSel.addEventListener('change', ()=>{
+      const v = typeSel.value;
+      onceInput.style.display = (v==='once')?'':'none';
+      timeInput.style.display = (v!=='once')?'':'none';
+      wdSel.style.display = (v==='weekly')?'':'none';
+    });
+  }
+  document.getElementById('btnAddSched')?.addEventListener('click', async ()=>{
+    const type = typeSel.value;
+    const body = { type };
+    if (type==='once') body.run_at = onceInput.value;
+    if (type==='daily') body.time = timeInput.value||'00:00';
+    if (type==='weekly'){ body.time = timeInput.value||'00:00'; body.weekday = parseInt(wdSel.value||'0',10); }
+    const url = "{{ url_for('api.create_schedule_api', task_id=0) }}".replace('0', String(taskId));
+    const resp = await fetch(url, { method:'POST', headers:{ 'Content-Type':'application/json', 'X-CSRFToken': csrf }, body: JSON.stringify(body) });
+    if (resp.ok) loadSchedules();
+  });
+
+  // Header buttons
+  document.getElementById('btnRun')?.addEventListener('click', async ()=>{
+    const url = "{{ url_for('api.run_compilation_task_api', task_id=0) }}".replace('0', String(taskId));
+    const resp = await fetch(url, { method:'POST', headers:{ 'X-CSRFToken': csrf }});
+    const j = await resp.json().catch(()=>({}));
+    if (resp.ok){ alert('Started task: '+(j.task_id||'')); loadTask(); }
+    else { alert(j.error||'Failed to start'); }
+  });
+  document.getElementById('btnEdit')?.addEventListener('click', async ()=>{
+    const url = "{{ url_for('api.get_compilation_task_api', task_id=0) }}".replace('0', String(taskId));
+    const t = await fetchJSON(url);
+    openTaskEditModal(t);
+  });
+  document.getElementById('btnClone')?.addEventListener('click', async ()=>{
+    const url = "{{ url_for('api.clone_compilation_task_api', task_id=0) }}".replace('0', String(taskId));
+    const resp = await fetch(url, { method:'POST', headers:{ 'Content-Type':'application/json', 'X-CSRFToken': csrf }, body: JSON.stringify({ copy_schedules: true }) });
+    const j = await resp.json().catch(()=>({}));
+    if (resp.ok){ window.location.href = "{{ url_for('main.automation') }}"; }
+    else { alert(j.error||'Failed to clone'); }
+  });
+  document.getElementById('btnDelete')?.addEventListener('click', async ()=>{
+    if (!confirm('Delete this task and its schedules?')) return;
+    const url = "{{ url_for('api.delete_compilation_task_api', task_id=0) }}".replace('0', String(taskId));
+    const resp = await fetch(url, { method:'DELETE', headers:{ 'X-CSRFToken': csrf }});
+    if (resp.ok){ window.location.href = "{{ url_for('main.automation') }}"; }
+  });
+
+  // Initial load
+  loadTask();
+  loadSchedules();
+})();
+</script>
+{% endblock %}

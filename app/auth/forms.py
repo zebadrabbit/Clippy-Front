@@ -215,6 +215,11 @@ class ProfileForm(FlaskForm):
         ],
         validators=[Optional()],
     )
+    timezone = StringField(
+        "Timezone",
+        validators=[Optional(), Length(max=64)],
+        render_kw={"placeholder": "e.g., America/Los_Angeles"},
+    )
     submit = SubmitField("Update Profile")
 
     def __init__(self, current_user, *args, **kwargs):

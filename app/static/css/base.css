@@ -297,3 +297,5 @@ fieldset:disabled .btn-primary {
 
 /* Progress bar uses accent by default (can be overridden by /theme.css) */
 .progress-bar { background-color: var(--color-accent, var(--bs-primary)); }
+
+/* (removed) semantic accent helpers for CTAs; reverted per request */

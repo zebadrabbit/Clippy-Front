@@ -108,6 +108,23 @@
                                     <div class="form-text">Controls date display across the app (e.g., wizard placeholders).</div>
                                 </div>
 
+                                <!-- Timezone -->
+                                <div class="mb-3">
+                                    {{ form.timezone.label(class="form-label") }}
+                                    <div class="input-group">
+                                      {{ form.timezone(class="form-control" + (" is-invalid" if form.timezone.errors else "")) }}
+                                      <button class="btn btn-outline-secondary" type="button" id="btnUseBrowserTZ">Use Browser TZ</button>
+                                    </div>
+                                    {% if form.timezone.errors %}
+                                        <div class="invalid-feedback d-block">
+                                            {% for error in form.timezone.errors %}
+                                                {{ error }}
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                    <div class="form-text">IANA timezone name (e.g., America/Los_Angeles). Used for schedules and times.</div>
+                                </div>
+
                                 <h6 class="border-bottom pb-2 mb-3 mt-4">External Services</h6>
 
                                 <!-- Discord User ID -->
@@ -242,4 +259,21 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+(function(){
+    const btn = document.getElementById('btnUseBrowserTZ');
+    btn?.addEventListener('click', () => {
+        const input = document.querySelector('input[name="timezone"]');
+        if (!input) return;
+        try {
+            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+            input.value = tz;
+        } catch { input.value = 'UTC'; }
+    });
+})();
+</script>
 {% endblock %}

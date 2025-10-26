@@ -1,0 +1,97 @@
+<!-- Schedule Edit Modal (shared) -->
+<div class="modal fade" id="editScheduleModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="editScheduleForm">
+        <div class="modal-header">
+          <h5 class="modal-title">Edit Schedule</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-12">
+              <label class="form-label">Type</label>
+              <select class="form-select" name="type">
+                <option value="once">Once</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+              </select>
+            </div>
+            <div class="col-12 once-row" style="display:none;">
+              <label class="form-label">Run at (UTC)</label>
+              <input type="datetime-local" class="form-control" name="run_at">
+            </div>
+            <div class="col-6 daily-row" style="display:none;">
+              <label class="form-label">Time (UTC)</label>
+              <input type="time" class="form-control" name="time" value="09:00">
+            </div>
+            <div class="col-6 weekly-row" style="display:none;">
+              <label class="form-label">Weekday</label>
+              <select class="form-select" name="weekday">
+                <option value="0">Mon</option><option value="1">Tue</option><option value="2">Wed</option>
+                <option value="3">Thu</option><option value="4">Fri</option><option value="5">Sat</option><option value="6">Sun</option>
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Timezone</label>
+              <input class="form-control" name="timezone" placeholder="e.g., UTC or America/New_York">
+              <div class="form-text">Currently informational; scheduling runs in UTC.</div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+  function toggleRows(modalEl, type){
+    modalEl.querySelector('.once-row').style.display = (type==='once')?'':'';
+    modalEl.querySelector('.daily-row').style.display = (type!=='once')?'':'';
+    modalEl.querySelector('.weekly-row').style.display = (type==='weekly')?'':'none';
+  }
+  window.openScheduleEditModal = function(s){
+    const modalEl = document.getElementById('editScheduleModal');
+    const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+    modalEl.dataset.scheduleId = String(s.id);
+    const typeSel = modalEl.querySelector('select[name="type"]');
+    const runAt = modalEl.querySelector('input[name="run_at"]');
+    const timeIn = modalEl.querySelector('input[name="time"]');
+    const wdSel = modalEl.querySelector('select[name="weekday"]');
+    const tzIn = modalEl.querySelector('input[name="timezone"]');
+    typeSel.value = s.type || 'once';
+    runAt.value = s.run_at ? s.run_at.substring(0,16) : '';
+    timeIn.value = s.time || '09:00';
+    wdSel.value = String(s.weekday ?? 0);
+    tzIn.value = s.timezone || 'UTC';
+    toggleRows(modalEl, typeSel.value);
+    typeSel.onchange = ()=> toggleRows(modalEl, typeSel.value);
+    modal.show();
+  };
+
+  document.getElementById('editScheduleForm')?.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const modalEl = document.getElementById('editScheduleModal');
+    const scheduleId = modalEl.dataset.scheduleId;
+    const fd = new FormData(e.currentTarget);
+    const type = (fd.get('type')||'once').toString();
+    const run_at = (fd.get('run_at')||'').toString();
+    const time = (fd.get('time')||'').toString();
+    const weekday = parseInt((fd.get('weekday')||'0').toString(),10)||0;
+    const timezone = (fd.get('timezone')||'UTC').toString();
+    const body = { type, timezone };
+    if (type==='once') body.run_at = run_at; else { body.time = time; if (type==='weekly') body.weekday = weekday; }
+    try{
+      const url = "{{ url_for('api.update_schedule_api', schedule_id=0) }}".replace('0', String(scheduleId));
+      const resp = await fetch(url, { method:'PATCH', headers:{ 'Content-Type':'application/json', 'X-CSRFToken': csrf }, body: JSON.stringify(body) });
+      if (resp.ok){ (bootstrap.Modal.getInstance(modalEl)||new bootstrap.Modal(modalEl)).hide(); if (window.loadSchedules) window.loadSchedules(); }
+      else { const j = await resp.json().catch(()=>({})); alert(j.error||'Failed to update'); }
+    } catch { alert('Failed to update'); }
+  });
+})();
+</script>

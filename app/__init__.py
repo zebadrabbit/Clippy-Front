@@ -21,6 +21,10 @@ from sqlalchemy import text
 
 from config.settings import Config, DevelopmentConfig, ProductionConfig, TestingConfig
 
+# Module-level guards to avoid repeated noisy logs and schema checks per process
+_DB_URI_LOGGED = False
+_RUNTIME_SCHEMA_CHECKED = False
+
 # Optional typing-friendly import for SQLAlchemy Query detection in filters
 try:
     from sqlalchemy.orm import Query as SAQuery  # type: ignore
@@ -164,34 +168,37 @@ def create_app(config_class=None):
 
     # Log the resolved DB target in a safe way (avoid leaking credentials)
     try:
-        ruri = app.config.get("SQLALCHEMY_DATABASE_URI", "")
-        if isinstance(ruri, str):
-            if ruri.startswith("sqlite///"):
-                app.logger.info("Database: %s", ruri)
-            else:
-                # Try to extract host/port/db without secrets for better diagnostics
-                try:
-                    from sqlalchemy.engine.url import make_url as _make_url
+        global _DB_URI_LOGGED
+        if not _DB_URI_LOGGED:
+            ruri = app.config.get("SQLALCHEMY_DATABASE_URI", "")
+            if isinstance(ruri, str):
+                if ruri.startswith("sqlite///"):
+                    app.logger.info("Database: %s", ruri)
+                else:
+                    # Try to extract host/port/db without secrets for better diagnostics
+                    try:
+                        from sqlalchemy.engine.url import make_url as _make_url
 
-                    u = _make_url(ruri)
-                    host = u.host or ""
-                    port = f":{u.port}" if u.port else ""
-                    dbn = u.database or ""
-                    app.logger.info(
-                        "Database: %s://%s%s/%s (redacted user/pass)",
-                        u.drivername,
-                        host or "<no-host>",
-                        port,
-                        dbn,
-                    )
-                    if host in {"localhost", "127.0.0.1", "::1", ""}:
-                        app.logger.warning(
-                            "Database host looks like localhost. If this process runs in Docker, set DATABASE_URL to a reachable host/IP."
+                        u = _make_url(ruri)
+                        host = u.host or ""
+                        port = f":{u.port}" if u.port else ""
+                        dbn = u.database or ""
+                        app.logger.info(
+                            "Database: %s://%s%s/%s (redacted user/pass)",
+                            u.drivername,
+                            host or "<no-host>",
+                            port,
+                            dbn,
                         )
-                except Exception:
-                    # Fallback: redact to scheme only
-                    scheme = ruri.split(":", 1)[0] if ":" in ruri else "db"
-                    app.logger.info("Database: %s://… (redacted)", scheme)
+                        if host in {"localhost", "127.0.0.1", "::1", ""}:
+                            app.logger.warning(
+                                "Database host looks like localhost. If this process runs in Docker, set DATABASE_URL to a reachable host/IP."
+                            )
+                    except Exception:
+                        # Fallback: redact to scheme only
+                        scheme = ruri.split(":", 1)[0] if ":" in ruri else "db"
+                        app.logger.info("Database: %s://… (redacted)", scheme)
+            _DB_URI_LOGGED = True
     except Exception:
         pass
 
@@ -245,6 +252,51 @@ def create_app(config_class=None):
             strict_transport_security=app.config.get("STRICT_TRANSPORT_SECURITY", True),
             content_security_policy=app.config.get("CONTENT_SECURITY_POLICY"),
         )
+
+    # Optional startup sanity check: avatar directory presence when overlays are enabled
+    try:
+        from app.ffmpeg_config import overlay_enabled as _overlay_enabled
+
+        if not app.config.get("TESTING") and _overlay_enabled():
+            # Determine base and avatars dir similar to runtime resolution in tasks
+            base_root = os.environ.get("AVATARS_PATH") or os.path.join(
+                app.instance_path, "assets"
+            )
+            avatars_dir = base_root
+            try:
+                tail = os.path.basename(str(avatars_dir).rstrip("/"))
+                if tail.lower() != "avatars":
+                    avatars_dir = os.path.join(avatars_dir, "avatars")
+            except Exception:
+                avatars_dir = os.path.join(base_root, "avatars")
+
+            # Check existence and at least one image file
+            exists = os.path.isdir(avatars_dir)
+            has_images = False
+            try:
+                if exists:
+                    import glob as _glob
+
+                    matches = []
+                    for ext in ("*.png", "*.jpg", "*.jpeg", "*.webp"):
+                        matches.extend(_glob.glob(os.path.join(avatars_dir, ext)))
+                    has_images = len(matches) > 0
+            except Exception:
+                has_images = False
+
+            if not exists or not has_images:
+                app.logger.warning(
+                    "Overlay is enabled but no avatars directory or images were found."
+                    " Checked base_root='%s' avatars_dir='%s' exists=%s images=%s."
+                    " If you expect author avatars in overlays, mount your instance path and/or set AVATARS_PATH.",
+                    base_root,
+                    avatars_dir,
+                    exists,
+                    has_images,
+                )
+    except Exception:
+        # Never fail startup due to sanity checks
+        pass
 
     # Optionally auto-reindex media from disk when DB is empty (dev-friendly)
     try:
@@ -322,7 +374,8 @@ def init_extensions(app):
 
     # Ensure minimal runtime schema updates (safe additive changes)
     # Only run these in non-testing environments to avoid touching the engine during pytest.
-    if not app.config.get("TESTING"):
+    global _RUNTIME_SCHEMA_CHECKED
+    if not app.config.get("TESTING") and not _RUNTIME_SCHEMA_CHECKED:
         try:
             with app.app_context():
                 # Flask-SQLAlchemy 3.x: use db.engine instead of deprecated get_engine()
@@ -332,6 +385,12 @@ def init_extensions(app):
                 mf_cols = {c["name"] for c in insp.get_columns("media_files")}
                 clip_cols = {c["name"] for c in insp.get_columns("clips")}
                 proj_cols = {c["name"] for c in insp.get_columns("projects")}
+                try:
+                    sched_cols = {
+                        c["name"] for c in insp.get_columns("scheduled_tasks")
+                    }
+                except Exception:
+                    sched_cols = set()
                 try:
                     user_cols = {c["name"] for c in insp.get_columns("users")}
                 except Exception:
@@ -377,15 +436,45 @@ def init_extensions(app):
                         text("ALTER TABLE clips ADD COLUMN clip_created_at TIMESTAMP")
                     )
 
-                if statements:
+                # Schedules table: add monthly_day if missing, and ensure enum has 'monthly'
+                sched_statements = []
+                if "monthly_day" not in sched_cols:
+                    sched_statements.append(
+                        text(
+                            "ALTER TABLE scheduled_tasks ADD COLUMN monthly_day INTEGER"
+                        )
+                    )
+                # Add new enum value 'monthly' for PostgreSQL if missing
+                try:
+                    if engine.dialect.name == "postgresql":
+                        sched_statements.append(
+                            text(
+                                """
+                                DO $$
+                                BEGIN
+                                    IF NOT EXISTS (
+                                        SELECT 1 FROM pg_enum e
+                                        JOIN pg_type t ON e.enumtypid = t.oid
+                                        WHERE t.typname = 'scheduletype' AND e.enumlabel = 'monthly'
+                                    ) THEN
+                                        ALTER TYPE scheduletype ADD VALUE 'monthly';
+                                    END IF;
+                                END$$;
+                                """
+                            )
+                        )
+                except Exception:
+                    pass
+
+                if statements or sched_statements:
                     # Execute in a single transaction; SQLAlchemy 2.x style
                     with engine.begin() as conn:
-                        for stmt in statements:
+                        for stmt in statements + sched_statements:
                             conn.execute(stmt)
                     # Optionally re-inspect or log success
                     app.logger.info(
                         "Applied runtime schema updates: %s",
-                        ", ".join(s.text for s in statements),
+                        ", ".join(s.text for s in statements + sched_statements),
                     )
                 # Backfill public_id for projects: add column if missing, then populate empties
                 proj_statements = []
@@ -466,6 +555,11 @@ def init_extensions(app):
                         text(
                             "ALTER TABLE users ADD COLUMN date_format VARCHAR(32) DEFAULT 'auto'"
                         )
+                    )
+                # Add user timezone preference if missing (IANA name string)
+                if "timezone" not in user_cols:
+                    user_statements.append(
+                        text("ALTER TABLE users ADD COLUMN timezone VARCHAR(64)")
                     )
                 if "password_changed_at" not in user_cols:
                     # Track when user last changed password
@@ -583,6 +677,9 @@ def init_extensions(app):
         except Exception as e:
             # Log and proceed; migrations should handle in production
             app.logger.warning(f"Schema check/upgrade skipped or failed: {e}")
+        finally:
+            # Avoid re-running (and re-logging) this block on subsequent app creations in this process
+            _RUNTIME_SCHEMA_CHECKED = True
 
     # CORS for API access
     CORS(app, origins=["http://localhost:3000", "http://127.0.0.1:3000"])

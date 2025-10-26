@@ -1,0 +1,659 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h3 class="mb-0"><i class="bi bi-gear-wide-connected me-2"></i>Automation</h3>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newTaskModal">
+      <i class="bi bi-plus-lg"></i> New Task
+    </button>
+  </div>
+
+  <div class="alert alert-secondary small" role="alert">
+    Define reusable compilation tasks and run them on-demand. {% if can_schedule %}You can also schedule tasks (max {{ max_schedules }} active{% if max_schedules == 0 %}+{% endif %}).{% else %}<strong>Scheduling is not available for your tier.</strong>{% endif %}
+  </div>
+
+  <div class="card">
+    <div class="card-header d-flex align-items-center justify-content-between">
+      <span class="fw-semibold">Your Tasks</span>
+      <button class="btn btn-sm btn-outline-secondary" id="refreshTasks">Refresh</button>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Name</th>
+              <th>Description</th>
+              <th class="text-nowrap">Last Run</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tasksTbody">
+            <tr><td colspan="4" class="text-center py-4 text-muted">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <template id="taskRowTpl">
+    <tr>
+      <td>
+        <div class="fw-semibold name"></div>
+        <div class="text-muted small id"></div>
+      </td>
+      <td class="desc text-muted small"></td>
+      <td class="last"></td>
+      <td class="text-end">
+        <div class="d-flex flex-wrap gap-1 justify-content-end">
+          <button class="btn btn-sm btn-outline-primary run-now"><i class="bi bi-play-fill"></i> Run</button>
+          <button class="btn btn-sm btn-outline-secondary schedules-toggle"><i class="bi bi-calendar3"></i> Schedules</button>
+          <button class="btn btn-sm btn-outline-info edit-task"><i class="bi bi-pencil"></i> Edit</button>
+          <button class="btn btn-sm btn-outline-danger delete-task"><i class="bi bi-trash"></i></button>
+          <button class="btn btn-sm btn-outline-secondary clone-task"><i class="bi bi-files"></i> Clone</button>
+        </div>
+      </td>
+    </tr>
+    <tr class="schedules-row" style="display:none;">
+      <td colspan="4">
+        <div class="p-3 border-top">
+          <div class="mb-2">
+            <div class="d-flex flex-wrap align-items-end justify-content-between gap-2">
+              <div class="fw-semibold">Schedules</div>
+              {% if can_schedule %}
+              <div class="d-flex flex-wrap align-items-end gap-2">
+                <div>
+                  <label class="form-label small mb-1">Type</label>
+                  <select class="form-select form-select-sm d-inline-block w-auto sched-type">
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                </div>
+                <div class="align-self-end mb-1">
+                  <span class="badge rounded-pill bg-secondary" id="sched-tz-badge">Timezone: UTC</span>
+                </div>
+                <div class="repeat-only">
+                  <label class="form-label small mb-1">Time <span class="text-danger">*</span></label>
+                  <input type="time" class="form-control form-control-sm d-inline-block w-auto sched-time" value="09:00">
+                </div>
+                <div class="weekly-only" style="display:none;">
+                  <label class="form-label small mb-1">Weekday <span class="text-danger">*</span></label>
+                  <select class="form-select form-select-sm d-inline-block w-auto sched-weekday">
+                    <option value="0">Mon</option><option value="1">Tue</option><option value="2">Wed</option>
+                    <option value="3">Thu</option><option value="4">Fri</option><option value="5">Sat</option><option value="6">Sun</option>
+                  </select>
+                </div>
+                <div class="monthly-only" style="display:none;">
+                  <label class="form-label small mb-1">Day of Month <span class="text-danger">*</span></label>
+                  <input type="number" min="1" max="31" class="form-control form-control-sm d-inline-block w-auto sched-monthday" value="1">
+                </div>
+                <div class="d-flex align-items-end">
+                  <button class="btn btn-sm btn-primary add-sched"><i class="bi bi-plus-lg"></i> Add</button>
+                </div>
+              </div>
+              {% else %}
+                <div class="text-muted small">Scheduling is disabled for your tier.</div>
+              {% endif %}
+            </div>
+            <div class="text-muted small sched-hint">Choose a schedule type. Daily: set time. Weekly: set weekday and time. Monthly: set day-of-month and time. Times are local to your browser and stored with your timezone.</div>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th class="text-nowrap">Type</th>
+                  <th>Time</th>
+                  <th class="text-nowrap">Next Run</th>
+                  <th class="text-nowrap">Last Run</th>
+                  <th class="text-nowrap">Enabled</th>
+                  <th class="text-end text-nowrap">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="sched-tbody">
+                <tr><td colspan="4" class="text-muted small">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </td>
+    </tr>
+  </template>
+</div>
+
+<!-- New Task Modal -->
+<div class="modal fade" id="newTaskModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <form id="newTaskForm">
+        <div class="modal-header">
+          <h5 class="modal-title">Create Task</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-3 mb-2">
+            <div class="col-md-4">
+              <label class="form-label">Intro (optional)</label>
+              <select class="form-select" name="intro_id"><option value="">— None —</option></select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Outro (optional)</label>
+              <select class="form-select" name="outro_id"><option value="">— None —</option></select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Transitions</label>
+              <select multiple class="form-select" name="transition_ids"></select>
+              <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" id="newRandomizeTransitions">
+                <label class="form-check-label" for="newRandomizeTransitions">Randomize transitions</label>
+              </div>
+            </div>
+          </div>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Name</label>
+              <input class="form-control" name="name" placeholder="Auto-named if left blank">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Clip Limit</label>
+              <input type="number" min="1" class="form-control" name="clip_limit" value="10">
+            </div>
+            <div class="col-12">
+              <label class="form-label">Description</label>
+              <input class="form-control" name="description" placeholder="Optional note about this task">
+            </div>
+            <div class="col-12">
+              <hr class="my-2">
+              <div class="fw-semibold mb-1">Filters</div>
+              <div class="text-muted small mb-2">Applied when pulling from your library (e.g., when Twitch provides no URLs).</div>
+              <div class="row g-3">
+                <div class="col-md-4">
+                  <label class="form-label">Min Duration (seconds)</label>
+                  <input type="number" min="0" step="1" class="form-control" name="min_duration_seconds" placeholder="e.g., 10">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label">Max Duration (seconds)</label>
+                  <input type="number" min="0" step="1" class="form-control" name="max_duration_seconds" placeholder="e.g., 120">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label">Include Tags</label>
+                  <input class="form-control" name="include_tags" placeholder="Comma-separated, e.g., valorant, ace">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label">Exclude Tags</label>
+                  <input class="form-control" name="exclude_tags" placeholder="Comma-separated, e.g., boring, muted">
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+(function(){
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+  const tasksTbody = document.getElementById('tasksTbody');
+  const tpl = document.getElementById('taskRowTpl');
+  const refreshBtn = document.getElementById('refreshTasks');
+
+  async function fetchJSON(url, opts={}){
+    const resp = await fetch(url, opts);
+    if (!resp.ok) throw new Error((await resp.text())||('HTTP '+resp.status));
+    try { return await resp.json(); } catch { return {}; }
+  }
+
+  function fmt(dt){
+    if (!dt) return '-';
+    try { return new Date(dt).toLocaleString(); } catch { return dt; }
+  }
+
+  async function loadTasks(){
+    tasksTbody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-muted">Loading…</td></tr>';
+    try {
+  const data = await fetchJSON("{{ url_for('api.list_compilation_tasks_api') }}");
+      const items = data.items || [];
+      if (!items.length){
+        tasksTbody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-muted">No tasks yet. Create your first task.</td></tr>';
+        return;
+      }
+      tasksTbody.innerHTML = '';
+      for (const t of items){
+        const frag = tpl.content.cloneNode(true);
+        const row = frag.querySelector('tr');
+        row.dataset.id = t.id;
+        frag.querySelector('.name').textContent = t.name;
+        // Navigate to detail view on name click
+        const nameEl = frag.querySelector('.name');
+        nameEl.classList.add('link-primary');
+        nameEl.style.cursor = 'pointer';
+        nameEl.addEventListener('click', ()=>{
+          window.location.href = "{{ url_for('main.automation_task_details', task_id=0) }}".replace('0', String(t.id));
+        });
+        frag.querySelector('.id').textContent = `Task #${t.id}`;
+        frag.querySelector('.desc').textContent = t.description || '';
+        frag.querySelector('.last').textContent = fmt(t.last_run_at);
+        // Run now
+        frag.querySelector('.run-now').addEventListener('click', async () => {
+          try {
+            const url = "{{ url_for('api.run_compilation_task_api', task_id=0) }}".replace('0', String(t.id));
+            const resp = await fetch(url, { method:'POST', headers: { 'X-CSRFToken': csrf, 'Content-Type':'application/json' } });
+            const j = await resp.json().catch(()=>({}));
+            if (resp.ok){
+              alert('Started task. Task id: '+(j.task_id || 'unknown'));
+              await loadTasks();
+            } else {
+              alert(j.error || 'Failed to start task');
+            }
+          } catch (e) { alert('Failed to start task'); }
+        });
+        // Schedules
+  const schedToggle = frag.querySelector('.schedules-toggle');
+  const schedRow = frag.querySelector('.schedules-row');
+  const schedTbody = frag.querySelector('.sched-tbody');
+  const typeSel = frag.querySelector('.sched-type');
+  const onceDate = null; // removed 'once' type
+  const onceTime = null; // removed 'once' type
+  const timeInput = frag.querySelector('.sched-time');
+  const wdSel = frag.querySelector('.sched-weekday');
+  const monthDayInput = frag.querySelector('.sched-monthday');
+  const onceOnlyBlocks = [];
+  const repeatOnlyBlocks = frag.querySelectorAll('.repeat-only');
+  const weeklyOnlyBlocks = frag.querySelectorAll('.weekly-only');
+  const monthlyOnlyBlocks = frag.querySelectorAll('.monthly-only');
+  const hintEl = frag.querySelector('.sched-hint');
+  const tzBadge = frag.querySelector('#sched-tz-badge');
+  const addBtn = frag.querySelector('.add-sched');
+  // Inline error display
+  const controls = typeSel?.closest('div');
+  let errBox = document.createElement('div');
+  errBox.className = 'sched-error text-danger small mt-2';
+  errBox.style.display = 'none';
+  controls?.appendChild(errBox);
+
+        // Edit task
+        const editBtn = frag.querySelector('.edit-task');
+        editBtn?.addEventListener('click', async () => {
+          try {
+            const url = "{{ url_for('api.get_compilation_task_api', task_id=0) }}".replace('0', String(t.id));
+            const data = await fetchJSON(url);
+            openTaskEditModal(data);
+          } catch (e) {
+            alert('Failed to load task details');
+          }
+        });
+        // Delete task
+        const delBtn = frag.querySelector('.delete-task');
+        delBtn?.addEventListener('click', async () => {
+          if (!confirm('Delete this task and its schedules?')) return;
+          try {
+            const url = "{{ url_for('api.delete_compilation_task_api', task_id=0) }}".replace('0', String(t.id));
+            const resp = await fetch(url, { method:'DELETE', headers:{ 'X-CSRFToken': csrf } });
+            const j = await resp.json().catch(()=>({}));
+            if (resp.ok){ await loadTasks(); }
+            else { alert(j.error || 'Failed to delete task'); }
+          } catch { alert('Failed to delete task'); }
+        });
+
+        if (typeSel){
+          typeSel.addEventListener('change', () => {
+            const v = typeSel.value;
+            repeatOnlyBlocks.forEach(b=> b.style.display = '' );
+            weeklyOnlyBlocks.forEach(b=> b.style.display = (v === 'weekly') ? '' : 'none');
+            monthlyOnlyBlocks.forEach(b=> b.style.display = (v === 'monthly') ? '' : 'none');
+            // Clear previous validation state when switching type
+            [typeSel, timeInput, wdSel, monthDayInput].forEach(el=> el?.classList.remove('is-invalid'));
+            if (errBox){ errBox.textContent = ''; errBox.style.display = 'none'; }
+            if (hintEl){
+              hintEl.textContent = (v === 'daily')
+                ? 'Pick a time of day. The schedule will run every day at this time.'
+                : (v === 'weekly')
+                  ? 'Pick a weekday and time. The schedule will run weekly.'
+                  : 'Pick a day-of-month and a time. The schedule will run monthly.';
+            }
+          });
+        }
+
+        async function loadSchedules(){
+          schedTbody.innerHTML = '<tr><td colspan="4" class="text-muted small">Loading…</td></tr>';
+          try{
+            const url = "{{ url_for('api.list_schedules_api', task_id=0) }}".replace('0', String(t.id));
+            const data = await fetchJSON(url);
+            const items = data.items || [];
+            if (!items.length){
+              schedTbody.innerHTML = '<tr><td colspan="6" class="text-muted small">No schedules.</td></tr>';
+              return;
+            }
+            schedTbody.innerHTML = '';
+            for (const s of items){
+              const tr = document.createElement('tr');
+              let timeTxt;
+              if (s.type === 'daily') timeTxt = s.time;
+              else if (s.type === 'weekly') timeTxt = `${s.time} (w${s.weekday})`;
+              else if (s.type === 'monthly') timeTxt = `${s.time} (d${s.month_day})`;
+              else timeTxt = '-';
+              tr.innerHTML = `
+                <td class=\"text-nowrap\">${s.type}</td>
+                <td>${timeTxt||'-'}</td>
+                <td>${fmt(s.next_run_at)}</td>
+                <td>${fmt(s.last_run_at)}</td>
+                <td>
+                  <div class=\"form-check form-switch\">
+                    <input class=\"form-check-input sched-enabled\" type=\"checkbox\" ${s.enabled ? 'checked' : ''}>
+                  </div>
+                </td>
+                <td class=\"text-end\">
+                  <button class=\"btn btn-sm btn-outline-danger sched-delete\"><i class=\"bi bi-trash\"></i></button>
+                </td>`;
+              // Toggle
+              tr.querySelector('.sched-enabled')?.addEventListener('change', async (ev) => {
+                const enabled = !!ev.target.checked;
+                try{
+                  const url = "{{ url_for('api.update_schedule_api', schedule_id=0) }}".replace('0', String(s.id));
+                  const resp = await fetch(url, { method:'PATCH', headers:{ 'Content-Type':'application/json', 'X-CSRFToken': csrf }, body: JSON.stringify({ enabled }) });
+                  if (!resp.ok){
+                    ev.target.checked = !enabled;
+                    const j = await resp.json().catch(()=>({}));
+                    alert(j.error || 'Failed to update schedule');
+                  }
+                } catch {
+                  ev.target.checked = !enabled;
+                  alert('Failed to update schedule');
+                }
+              });
+              // Delete
+              tr.querySelector('.sched-delete')?.addEventListener('click', async () => {
+                if (!confirm('Delete this schedule?')) return;
+                try{
+                  const url = "{{ url_for('api.delete_schedule_api', schedule_id=0) }}".replace('0', String(s.id));
+                  const resp = await fetch(url, { method:'DELETE', headers:{ 'X-CSRFToken': csrf } });
+                  const j = await resp.json().catch(()=>({}));
+                  if (resp.ok){ await loadSchedules(); }
+                  else { alert(j.error || 'Failed to delete schedule'); }
+                } catch { alert('Failed to delete schedule'); }
+              });
+              schedTbody.appendChild(tr);
+            }
+          }catch{ schedTbody.innerHTML = '<tr><td colspan="4" class="text-danger small">Failed to load schedules.</td></tr>'; }
+        }
+        // Expose refresher for edit modal to call
+        window.loadSchedules = loadSchedules;
+
+        if (schedToggle){
+          schedToggle.addEventListener('click', async () => {
+            const isShown = schedRow.style.display !== 'none';
+            schedRow.style.display = isShown ? 'none' : '';
+            if (!isShown){ await loadSchedules(); }
+            // Update timezone badge from browser
+            try {
+              const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+              if (tzBadge) tzBadge.textContent = `Timezone: ${tz}`;
+            } catch { if (tzBadge) tzBadge.textContent = 'Timezone: UTC'; }
+          });
+        }
+
+        if (addBtn){
+          addBtn.addEventListener('click', async () => {
+            const type = typeSel.value;
+            let body = { type };
+            // Reset validation
+            [typeSel, timeInput, wdSel, monthDayInput].forEach(el=> el?.classList.remove('is-invalid'));
+            if (errBox){ errBox.textContent = ''; errBox.style.display = 'none'; }
+            if (type === 'daily') {
+              const tval = (timeInput?.value||'').trim();
+              if (!tval) { timeInput?.classList.add('is-invalid'); if (errBox){ errBox.textContent = 'Time is required for a daily schedule.'; errBox.style.display = ''; } return; }
+              body.time = tval;
+            }
+            if (type === 'weekly') {
+              const tval = (timeInput?.value||'').trim();
+              const wval = parseInt(wdSel?.value||'0', 10);
+              if (!tval) { timeInput?.classList.add('is-invalid'); if (errBox){ errBox.textContent = 'Time is required for a weekly schedule.'; errBox.style.display = ''; } return; }
+              body.time = tval; body.weekday = wval;
+            }
+            if (type === 'monthly') {
+              const tval = (timeInput?.value||'').trim();
+              const mday = parseInt(monthDayInput?.value||'1', 10);
+              if (!tval) { timeInput?.classList.add('is-invalid'); if (errBox){ errBox.textContent = 'Time is required for a monthly schedule.'; errBox.style.display = ''; } return; }
+              if (!(mday >= 1 && mday <= 31)) { monthDayInput?.classList.add('is-invalid'); if (errBox){ errBox.textContent = 'Day of month must be between 1 and 31.'; errBox.style.display = ''; } return; }
+              body.time = tval; body.month_day = mday;
+            }
+            // Attach browser timezone (IANA) so the server can compute correctly
+            try {
+              body.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+            } catch { body.timezone = 'UTC'; }
+            try{
+              const url = "{{ url_for('api.create_schedule_api', task_id=0) }}".replace('0', String(t.id));
+              // UI: disable while submitting
+              addBtn.disabled = true; addBtn.classList.add('disabled');
+              [typeSel, onceDate, onceTime, timeInput, wdSel].forEach(el=> el?.classList.remove('is-invalid'));
+              if (errBox){ errBox.textContent = ''; errBox.style.display = 'none'; }
+              const resp = await fetch(url, { method:'POST', headers:{ 'Content-Type':'application/json', 'X-CSRFToken': csrf }, body: JSON.stringify(body) });
+              const j = await resp.json().catch(()=>({}));
+              if (resp.ok){
+                await loadSchedules();
+              } else {
+                const msg = (j && (j.error_detail || j.error)) ? (j.error_detail || j.error) : 'Failed to create schedule';
+                // Heuristic field highlighting
+                if (msg.toLowerCase().includes('type')) { typeSel?.classList.add('is-invalid'); }
+                if (msg.toLowerCase().includes('run_at')) { /* once removed */ }
+                if (msg.toLowerCase().includes('schedule limit')) { /* no specific field */ }
+                if (errBox){ errBox.textContent = msg; errBox.style.display = ''; }
+                else { alert(msg); }
+              }
+            }catch{ alert('Failed to create schedule'); }
+            finally {
+              addBtn.disabled = false; addBtn.classList.remove('disabled');
+            }
+          });
+        }
+
+        tasksTbody.appendChild(frag);
+      }
+    } catch (e) {
+      tasksTbody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-danger">Failed to load tasks</td></tr>';
+    }
+  }
+
+  document.addEventListener('click', (e) => {
+    if (e.target === refreshBtn) loadTasks();
+  });
+
+  // New Task
+  const newTaskForm = document.getElementById('newTaskForm');
+  newTaskForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.currentTarget;
+    const form = new FormData(f);
+    let name = (form.get('name')||'').toString().trim();
+    const description = (form.get('description')||'').toString();
+    const clip_limit = parseInt((form.get('clip_limit')||'10').toString(), 10) || 10;
+
+    // Gather media selections
+    const intro_id_raw = (form.get('intro_id')||'').toString();
+    const outro_id_raw = (form.get('outro_id')||'').toString();
+    const transSel = document.querySelector('#newTaskModal select[name="transition_ids"]');
+    const transition_ids = Array.from(transSel?.selectedOptions || []).map(o=>parseInt(o.value,10)).filter(n=>!isNaN(n));
+    const randomize_transitions = !!document.getElementById('newRandomizeTransitions')?.checked;
+
+    const intro_id = intro_id_raw ? parseInt(intro_id_raw, 10) : null;
+    const outro_id = outro_id_raw ? parseInt(outro_id_raw, 10) : null;
+
+    // Default name if empty
+    if (!name) {
+      const now = new Date();
+      const pad = (n)=>String(n).padStart(2,'0');
+      const stamp = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      name = `Compilation ${stamp}`;
+    }
+
+    // Streamlined create: default to twitch source
+  const params = { source: 'twitch', clip_limit };
+    if (intro_id) params.intro_id = intro_id;
+    if (outro_id) params.outro_id = outro_id;
+    if (transition_ids.length) params.transition_ids = transition_ids;
+    if (randomize_transitions) params.randomize_transitions = true;
+  // Filters
+  const minDurRaw = (form.get('min_duration_seconds')||'').toString().trim();
+  const maxDurRaw = (form.get('max_duration_seconds')||'').toString().trim();
+  const includeTagsRaw = (form.get('include_tags')||'').toString().trim();
+  const excludeTagsRaw = (form.get('exclude_tags')||'').toString().trim();
+  const toList = (s) => s.split(',').map(x=>x.trim()).filter(Boolean);
+  if (minDurRaw !== '' && !isNaN(parseInt(minDurRaw,10))) params.min_duration_seconds = parseInt(minDurRaw,10);
+  if (maxDurRaw !== '' && !isNaN(parseInt(maxDurRaw,10))) params.max_duration_seconds = parseInt(maxDurRaw,10);
+  if (includeTagsRaw) params.include_tags = toList(includeTagsRaw);
+  if (excludeTagsRaw) params.exclude_tags = toList(excludeTagsRaw);
+    try{
+  const resp = await fetch("{{ url_for('api.create_compilation_task_api') }}", {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', 'X-CSRFToken': csrf },
+        body: JSON.stringify({ name, description, params })
+      });
+      const j = await resp.json().catch(()=>({}));
+      if (resp.ok){
+        // close modal
+        const modalEl = document.getElementById('newTaskModal');
+        const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+        modal.hide();
+        f.reset();
+        await loadTasks();
+      } else {
+        alert(j.error || 'Failed to create task');
+      }
+    } catch { alert('Failed to create task'); }
+  });
+
+  // Load media options when the new task modal opens
+  const newModalEl = document.getElementById('newTaskModal');
+  newModalEl?.addEventListener('show.bs.modal', async () => {
+    const nameInput = newModalEl.querySelector('input[name="name"]');
+    if (nameInput && !nameInput.value) nameInput.placeholder = 'e.g., Weekly Twitch Clips';
+
+    async function loadMedia(type, select) {
+      try {
+        const url = "{{ url_for('api.list_user_media_api') }}" + '?type=' + encodeURIComponent(type);
+        const data = await fetchJSON(url);
+        const items = data.items || [];
+        // Keep leading None option for intro/outro
+        const keepFirst = ['intro_id','outro_id'].includes(select.getAttribute('name'));
+        select.innerHTML = keepFirst ? '<option value="">— None —</option>' : '';
+        for (const m of items) {
+          const opt = document.createElement('option');
+          opt.value = String(m.id);
+          opt.textContent = m.filename || `Media #${m.id}`;
+          select.appendChild(opt);
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    const introSel = newModalEl.querySelector('select[name="intro_id"]');
+    const outroSel = newModalEl.querySelector('select[name="outro_id"]');
+    const transSelNew = newModalEl.querySelector('select[name="transition_ids"]');
+    if (introSel) loadMedia('intro', introSel);
+    if (outroSel) loadMedia('outro', outroSel);
+    if (transSelNew) loadMedia('transition', transSelNew);
+  });
+
+  // Initial load
+  loadTasks();
+
+  // Task edit modal implementation
+  function openTaskEditModal(task){
+    const modalEl = document.getElementById('editTaskModal');
+    const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+    // Fill fields
+    modalEl.querySelector('input[name="edit_name"]').value = task.name || '';
+    modalEl.querySelector('input[name="edit_description"]').value = task.description || '';
+    const sel = modalEl.querySelector('select[name="edit_source"]');
+    sel.value = (task.params?.source || 'twitch');
+    modalEl.querySelector('input[name="edit_clip_limit"]').value = (task.params?.clip_limit || 10);
+    const ta = modalEl.querySelector('textarea[name="edit_urls"]');
+    if (ta) ta.value = '';
+    modalEl.dataset.taskId = String(task.id);
+    // toggle visibility of URL field
+    if (ta) { ta.closest('.col-12').style.display = 'none'; }
+    modal.show();
+  }
+})();
+</script>
+<!-- Edit Task Modal -->
+<div class="modal fade" id="editTaskModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <form id="editTaskForm">
+        <div class="modal-header">
+          <h5 class="modal-title">Task Details</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Name</label>
+              <input class="form-control" name="edit_name" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Source</label>
+              <select class="form-select" name="edit_source">
+                <option value="twitch">Twitch (connected)</option>
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Description</label>
+              <input class="form-control" name="edit_description" placeholder="Optional">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Clip Limit</label>
+              <input type="number" min="1" class="form-control" name="edit_clip_limit" value="10">
+            </div>
+
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <script>
+  (function(){
+    const csrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content') || '';
+    const form = document.getElementById('editTaskForm');
+    form?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const modalEl = document.getElementById('editTaskModal');
+      const taskId = modalEl.dataset.taskId;
+      const fd = new FormData(form);
+      const name = (fd.get('edit_name')||'').toString().trim();
+      const description = (fd.get('edit_description')||'').toString();
+  const source = (fd.get('edit_source')||'twitch').toString();
+      const clip_limit = parseInt((fd.get('edit_clip_limit')||'10').toString(), 10) || 10;
+      const params = { source, clip_limit };
+      try{
+        const url = "{{ url_for('api.update_compilation_task_api', task_id=0) }}".replace('0', String(taskId));
+        const resp = await fetch(url, { method:'PATCH', headers:{ 'Content-Type':'application/json', 'X-CSRFToken': csrf }, body: JSON.stringify({ name, description, params }) });
+        const j = await resp.json().catch(()=>({}));
+        if (resp.ok){
+          const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+          modal.hide();
+          await (window.loadTasks ? window.loadTasks() : Promise.resolve());
+        } else {
+          alert(j.error || 'Failed to update task');
+        }
+      } catch { alert('Failed to update task'); }
+    });
+  })();
+  </script>
+</div>
+{% endblock %}

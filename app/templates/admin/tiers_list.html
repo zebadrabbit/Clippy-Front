@@ -24,6 +24,7 @@
                   <th class="text-nowrap">Render Limit</th>
                   <th>Watermark</th>
                   <th>Flags</th>
+                  <th class="text-nowrap">Scheduling</th>
                   <th class="text-end">Actions</th>
                 </tr>
               </thead>
@@ -54,6 +55,16 @@
                   <td>
                     {% if t.is_unlimited %}<span class="badge bg-warning text-dark">Unlimited</span>{% endif %}
                     {% if t.is_active %}<span class="badge bg-primary">Active</span>{% else %}<span class="badge bg-outline-secondary">Inactive</span>{% endif %}
+                  </td>
+                  <td>
+                    {% if t.can_schedule_tasks %}
+                      <span class="badge bg-success">Enabled</span>
+                      {% if t.max_schedules_per_user %}
+                        <span class="badge bg-secondary">Max {{ t.max_schedules_per_user }}</span>
+                      {% endif %}
+                    {% else %}
+                      <span class="badge bg-outline-secondary text-muted">Disabled</span>
+                    {% endif %}
                   </td>
                   <td class="text-end">
                     <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.tier_edit', tier_id=t.id) }}">Edit</a>

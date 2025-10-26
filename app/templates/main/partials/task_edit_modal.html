@@ -1,0 +1,146 @@
+<!-- Task Edit Modal (shared) -->
+<div class="modal fade" id="editTaskModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <form id="editTaskForm">
+        <div class="modal-header">
+          <h5 class="modal-title">Task Details</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Name</label>
+              <input class="form-control" name="edit_name" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Source</label>
+              <select class="form-select" name="edit_source">
+                <option value="twitch">Twitch (connected)</option>
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Description</label>
+              <input class="form-control" name="edit_description" placeholder="Optional">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Clip Limit</label>
+              <input type="number" min="1" class="form-control" name="edit_clip_limit" value="10">
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">Intro (optional)</label>
+              <select class="form-select" name="edit_intro_id"><option value="">— None —</option></select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Outro (optional)</label>
+              <select class="form-select" name="edit_outro_id"><option value="">— None —</option></select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Transitions</label>
+              <select multiple class="form-select" name="edit_transition_ids"></select>
+              <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" id="editRandomizeTransitions">
+                <label class="form-check-label" for="editRandomizeTransitions">Randomize transitions</label>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+  async function loadMediaOptions(container){
+    function opt(id, text){ const o = document.createElement('option'); o.value = String(id); o.textContent = text; return o; }
+    async function fetchList(type){
+      const url = "{{ url_for('api.list_user_media_api') }}?type="+encodeURIComponent(type);
+      const r = await fetch(url); if(!r.ok) return []; try{ const j = await r.json(); return j.items||[]; }catch{ return []; }
+    }
+    const introSel = container.querySelector('select[name="edit_intro_id"], select[name="intro_id"]');
+    const outroSel = container.querySelector('select[name="edit_outro_id"], select[name="outro_id"]');
+    const transSel = container.querySelector('select[name="edit_transition_ids"], select[name="transition_ids"]');
+    if (introSel){
+      const items = await fetchList('intro');
+      const keep = introSel.value;
+      introSel.innerHTML = '';
+      introSel.appendChild(opt('', '— None —'));
+      for(const m of items){ introSel.appendChild(opt(m.id, m.filename)); }
+      if (keep) introSel.value = keep;
+    }
+    if (outroSel){
+      const items = await fetchList('outro');
+      const keep = outroSel.value;
+      outroSel.innerHTML = '';
+      outroSel.appendChild(opt('', '— None —'));
+      for(const m of items){ outroSel.appendChild(opt(m.id, m.filename)); }
+      if (keep) outroSel.value = keep;
+    }
+    if (transSel){
+      const items = await fetchList('transition');
+      const selected = new Set(Array.from(transSel.selectedOptions||[]).map(o=>o.value));
+      transSel.innerHTML='';
+      for(const m of items){ const o = opt(m.id, m.filename); if(selected.has(String(m.id))) o.selected = true; transSel.appendChild(o); }
+    }
+  }
+  window.loadMediaOptions = loadMediaOptions;
+
+  window.openTaskEditModal = async function(task){
+    const modalEl = document.getElementById('editTaskModal');
+    const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+    modalEl.dataset.taskId = String(task.id);
+    // Fill simple fields
+    modalEl.querySelector('input[name="edit_name"]').value = task.name || '';
+    modalEl.querySelector('input[name="edit_description"]').value = task.description || '';
+    const selSource = modalEl.querySelector('select[name="edit_source"]');
+  selSource.value = (task.params?.source || 'twitch');
+    modalEl.querySelector('input[name="edit_clip_limit"]').value = (task.params?.clip_limit || 10);
+  const ta = modalEl.querySelector('textarea[name="edit_urls"]');
+  if (ta) { ta.value = ''; ta.closest('.urls-row')?.remove(); }
+    // Load media selectors
+    await loadMediaOptions(modalEl);
+    // Fill selections
+    const introSel = modalEl.querySelector('select[name="edit_intro_id"]');
+    const outroSel = modalEl.querySelector('select[name="edit_outro_id"]');
+    const transSel = modalEl.querySelector('select[name="edit_transition_ids"]');
+    const randChk = document.getElementById('editRandomizeTransitions');
+    if (introSel) introSel.value = task.params?.intro_id ? String(task.params.intro_id) : '';
+    if (outroSel) outroSel.value = task.params?.outro_id ? String(task.params.outro_id) : '';
+    if (transSel){
+      const tids = (task.params?.transition_ids||[]).map(x=>String(x));
+      for(const o of Array.from(transSel.options)) o.selected = tids.includes(o.value);
+    }
+    randChk.checked = !!(task.params?.randomize_transitions);
+    modal.show();
+  };
+
+  document.getElementById('editTaskForm')?.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const modalEl = document.getElementById('editTaskModal');
+    const taskId = modalEl.dataset.taskId;
+    const fd = new FormData(e.currentTarget);
+    const name = (fd.get('edit_name')||'').toString().trim();
+    const description = (fd.get('edit_description')||'').toString();
+  const source = (fd.get('edit_source')||'twitch').toString();
+    const clip_limit = parseInt((fd.get('edit_clip_limit')||'10').toString(),10)||10;
+    const intro_id = (fd.get('edit_intro_id')||'').toString();
+    const outro_id = (fd.get('edit_outro_id')||'').toString();
+    const transSel = document.querySelector('#editTaskForm select[name="edit_transition_ids"]');
+    const transition_ids = Array.from(transSel?.selectedOptions||[]).map(o=>parseInt(o.value,10)).filter(n=>!isNaN(n));
+    const randomize_transitions = document.getElementById('editRandomizeTransitions').checked;
+  const params = { source, clip_limit, intro_id: intro_id?parseInt(intro_id,10):null, outro_id: outro_id?parseInt(outro_id,10):null, transition_ids, randomize_transitions };
+    try{
+      const url = "{{ url_for('api.update_compilation_task_api', task_id=0) }}".replace('0', String(taskId));
+      const resp = await fetch(url, { method:'PATCH', headers:{ 'Content-Type':'application/json', 'X-CSRFToken': csrf }, body: JSON.stringify({ name, description, params }) });
+      if (resp.ok){ (bootstrap.Modal.getInstance(modalEl)||new bootstrap.Modal(modalEl)).hide(); if (window.loadTasks) window.loadTasks(); }
+      else { const j = await resp.json().catch(()=>({})); alert(j.error||'Failed to update task'); }
+    } catch { alert('Failed to update task'); }
+  });
+})();
+</script>

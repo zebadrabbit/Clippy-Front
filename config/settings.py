@@ -104,6 +104,16 @@ class Config:
         "yes",
     }
 
+    # Automation scheduler (Celery Beat) optional enable
+    SCHEDULER_ENABLE_TICK = os.environ.get(
+        "SCHEDULER_ENABLE_TICK", "false"
+    ).lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    SCHEDULER_TICK_SECONDS = int(os.environ.get("SCHEDULER_TICK_SECONDS", 60))
+
     # Security Headers (Talisman)
     FORCE_HTTPS = False  # Set to True in production
     STRICT_TRANSPORT_SECURITY = True

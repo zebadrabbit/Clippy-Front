@@ -75,7 +75,7 @@
     if (target >= 4) {
       const arrangedConfirm = document.getElementById('arranged-confirm');
       if (arrangedConfirm && !arrangedConfirm.checked) {
-        alert('Please arrange your timeline before proceeding to compile.');
+        alert("Line up your timeline before we roll the render.");
         return;
       }
     }
@@ -161,8 +161,8 @@
       wizard.maxClips = Math.max(1, Math.min(100, isNaN(maxClips) ? 20 : maxClips));
       gotoStep(2);
       // Auto-run Get Clips behind the scenes
-      setGcActive('fetch');
-      setGcStatus('Fetching clips…');
+  setGcActive('fetch');
+  setGcStatus('Casting a net for clips…');
       setGcFill(5);
       try {
         let urls = [];
@@ -179,7 +179,7 @@
           await queueDownloads(urls);
           setGcDone('extract');
           setGcActive('queue');
-          setGcStatus(`Queued ${wizard.downloadTasks.length} download(s).`);
+          setGcStatus(`Stacking ${wizard.downloadTasks.length} download(s)…`);
           setGcFill(35);
           // Skip polling for reused items; only poll real tasks
           const hasRealTasks = (wizard.downloadTasks || []).some(t => t && t.task_id);
@@ -193,7 +193,7 @@
             setGcDone('download');
             setGcDone('done');
             setGcActive('done');
-            setGcStatus('All clips already downloaded. Reused existing media.');
+            setGcStatus('All clips were already on deck. Reusing media.');
             setGcFill(100);
             document.getElementById('next-2').disabled = false;
             try { await populateClipsGrid(); } catch (_) {}
@@ -201,7 +201,7 @@
         }
       } catch (_) {}
     } catch (e) {
-      alert('Failed to create project: ' + e.message);
+      alert('Couldn’t create the project: ' + e.message);
     }
   });
   document.querySelector('[data-prev="1"]')?.addEventListener('click', () => gotoStep(1));
@@ -219,11 +219,11 @@
       const items = data.items || [];
       const urls = items.map(it => it.url).filter(Boolean);
       wizard.fetchedClips = items;
-      setGcStatus(`Fetched ${items.length} clips for @${data.username}.`);
+      setGcStatus(`Reeled in ${items.length} clips for @${data.username}.`);
       return urls;
     } catch (e) {
       setGcError('fetch');
-      setGcStatus('Failed to fetch clips. Check your Twitch settings.');
+      setGcStatus('Couldn’t fetch clips. Check your Twitch settings.');
       return [];
     }
   }
@@ -234,11 +234,11 @@
       const data = await res.json();
       const items = data.items || [];
       const urls = (data.clip_urls || []).filter(Boolean);
-      setGcStatus(`Fetched ${items.length} messages • detected ${urls.length} clip URL(s).`);
+      setGcStatus(`Sifted ${items.length} messages • found ${urls.length} clip link(s).`);
       return urls;
     } catch (e) {
       setGcError('fetch');
-      setGcStatus('Failed to fetch Discord messages. Check DISCORD config.');
+      setGcStatus('Couldn’t fetch Discord messages. Check DISCORD config.');
       return [];
     }
   }
@@ -269,7 +269,7 @@
   // Download progress/polling
   let dlTimer = null;
   async function startDownloadPolling() {
-    setGcStatus('Downloading…');
+  setGcStatus('Pulling clips down…');
     // Only poll real tasks that have a valid task_id
     const realTasks = (wizard.downloadTasks || []).filter(t => t && t.task_id);
     const total = realTasks.length || 1;
@@ -292,7 +292,7 @@
         } catch (_) {}
       }
       const pct = Math.floor((done / total) * 100);
-      setGcStatus(`Downloading… ${pct}% (${done - failed}/${total} ok${failed?`, ${failed} failed`:''})`);
+  setGcStatus(`Pulling clips down… ${pct}% (${done - failed}/${total} ok${failed?`, ${failed} hiccuped`:''})`);
       // Map download progress into the overall focal bar: 40% → 95%
       const overall = 40 + Math.round((pct / 100) * 55);
       setGcFill(overall);
@@ -301,7 +301,7 @@
         setGcDone('download');
         setGcDone('done');
         setGcActive('done');
-        setGcStatus('Downloads complete.');
+        setGcStatus('Downloads wrapped.');
         setGcFill(100);
         document.getElementById('next-2').disabled = false;
         try { await populateClipsGrid(); } catch (_) {}
@@ -642,7 +642,7 @@
   // Compile and poll
   let compTimer = null;
   document.getElementById('start-compile')?.addEventListener('click', async () => {
-    if (!wizard.projectId) { alert('Project not set.'); return; }
+  if (!wizard.projectId) { alert('No project loaded yet.'); return; }
     const bar = document.getElementById('compile-progress');
     const log = document.getElementById('compile-log');
     // Disable start during active compilation
@@ -651,7 +651,7 @@
     bar.style.width = '0%'; bar.textContent = '0%';
     document.getElementById('cancel-compile').disabled = false;
     renderCompileSummary();
-    log.textContent = 'Starting compilation...';
+  log.textContent = 'Splicing your highlights together…';
     try {
       const body = { };
       if (wizard.selectedIntroId) body.intro_id = wizard.selectedIntroId;
@@ -686,7 +686,7 @@
             clearInterval(compTimer);
             document.getElementById('cancel-compile').disabled = true;
             if (startBtn) startBtn.disabled = true; // keep disabled after success
-            log.textContent = 'Compilation complete.';
+            log.textContent = "Show’s in the can!";
             document.getElementById('next-4').disabled = false;
             document.getElementById('export-ready').classList.remove('d-none');
             try { await refreshExportInfo(); } catch (e) {
@@ -702,7 +702,7 @@
             clearInterval(compTimer);
             document.getElementById('cancel-compile').disabled = true;
             if (startBtn) startBtn.disabled = false; // allow retry on failure
-            log.textContent = 'Compilation failed.';
+            log.textContent = 'The cut failed. Let’s tweak and retry.';
             return;
           }
         } catch (_) {}
@@ -710,12 +710,12 @@
       compTimer = setInterval(poll, 1200);
       poll();
     } catch (e) {
-      alert('Failed to start compilation: ' + e.message);
+      alert('Couldn’t start the cut: ' + e.message);
     }
   });
   document.getElementById('cancel-compile')?.addEventListener('click', () => {
     if (compTimer) { clearInterval(compTimer); }
-    document.getElementById('compile-log').textContent = 'Cancelled.';
+    document.getElementById('compile-log').textContent = 'Cut canceled.';
     const startBtn = document.getElementById('start-compile');
     if (startBtn) startBtn.disabled = false;
     document.getElementById('cancel-compile').disabled = true;
