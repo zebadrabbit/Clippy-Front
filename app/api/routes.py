@@ -1590,13 +1590,21 @@ def update_schedule_api(schedule_id: int):
         s.daily_time = None
         s.weekly_day = None
         s.monthly_day = None
-    # Time fields
-    if s.schedule_type == ScheduleType.ONCE and "run_at" in data:
-        ts = (str(data.get("run_at")) or "").strip()
-        try:
-            s.run_at = _dt.fromisoformat(ts.replace("Z", "+00:00")) if ts else None
-        except Exception:
-            return jsonify({"error": "Invalid run_at"}), 400
+    # Legacy 'once' schedules are read-only except for changing type away from 'once'
+    if s.schedule_type == ScheduleType.ONCE:
+        # If client attempts to modify fields other than 'enabled' or 'type', reject
+        forbidden_keys = {k for k in data.keys() if k not in {"enabled", "type"}}
+        if forbidden_keys:
+            return (
+                jsonify(
+                    {
+                        "error": "Legacy one-time schedules are read-only. Change type to daily/weekly/monthly to edit.",
+                        "forbidden": sorted(forbidden_keys),
+                    }
+                ),
+                400,
+            )
+    # Time fields for recurring schedules
     if s.schedule_type in (
         ScheduleType.DAILY,
         ScheduleType.WEEKLY,

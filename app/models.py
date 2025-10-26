@@ -717,9 +717,14 @@ class ScheduleType(Enum):
 class ScheduledTask(db.Model):
     """A schedule attached to a CompilationTask.
 
-    Minimal fields to avoid extra dependencies: supports one-time run, daily at HH:MM, or
-    weekly on a given weekday at HH:MM (24h). Time values are stored as strings and interpreted
-    in UTC unless a timezone is provided (tz name). The scheduler tick will compute next_run_at.
+    Minimal fields to avoid extra dependencies: supports daily at HH:MM, weekly on a given
+    weekday at HH:MM (24h), or monthly on a given day at HH:MM. Time values are stored as
+    strings and interpreted in UTC unless a timezone is provided (tz name). The scheduler
+    tick will compute next_run_at.
+
+    Note: legacy one-time ("once") schedules are still readable for backward compatibility
+    but are treated as read-only via the API. They are not offered in the UI and should be
+    migrated to a recurring type if further edits are needed.
     """
 
     __tablename__ = "scheduled_tasks"
