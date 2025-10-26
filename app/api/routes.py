@@ -1582,7 +1582,7 @@ def update_schedule_api(schedule_id: int):
     # Type change
     if "type" in data:
         stype = (str(data.get("type")) or "").strip().lower()
-        if stype not in {"daily", "weekly", "monthly", "once"}:
+        if stype not in {"daily", "weekly", "monthly"}:
             return jsonify({"error": "type must be daily|weekly|monthly"}), 400
         s.schedule_type = ScheduleType(stype)
         # Reset type-specific fields when switching types

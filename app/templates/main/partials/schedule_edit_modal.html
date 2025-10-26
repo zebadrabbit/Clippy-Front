@@ -12,14 +12,10 @@
             <div class="col-12">
               <label class="form-label">Type</label>
               <select class="form-select" name="type">
-                <option value="once">Once</option>
                 <option value="daily">Daily</option>
                 <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
               </select>
-            </div>
-            <div class="col-12 once-row" style="display:none;">
-              <label class="form-label">Run at (UTC)</label>
-              <input type="datetime-local" class="form-control" name="run_at">
             </div>
             <div class="col-6 daily-row" style="display:none;">
               <label class="form-label">Time (UTC)</label>
@@ -31,6 +27,10 @@
                 <option value="0">Mon</option><option value="1">Tue</option><option value="2">Wed</option>
                 <option value="3">Thu</option><option value="4">Fri</option><option value="5">Sat</option><option value="6">Sun</option>
               </select>
+            </div>
+            <div class="col-6 monthly-row" style="display:none;">
+              <label class="form-label">Day of Month</label>
+              <input type="number" min="1" max="31" class="form-control" name="month_day" value="1">
             </div>
             <div class="col-12">
               <label class="form-label">Timezone</label>
@@ -51,23 +51,23 @@
 (function(){
   const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
   function toggleRows(modalEl, type){
-    modalEl.querySelector('.once-row').style.display = (type==='once')?'':'';
-    modalEl.querySelector('.daily-row').style.display = (type!=='once')?'':'';
+    modalEl.querySelector('.daily-row').style.display = (type==='daily' || type==='weekly' || type==='monthly') ? '' : 'none';
     modalEl.querySelector('.weekly-row').style.display = (type==='weekly')?'':'none';
+    modalEl.querySelector('.monthly-row').style.display = (type==='monthly')?'':'none';
   }
   window.openScheduleEditModal = function(s){
     const modalEl = document.getElementById('editScheduleModal');
     const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
     modalEl.dataset.scheduleId = String(s.id);
     const typeSel = modalEl.querySelector('select[name="type"]');
-    const runAt = modalEl.querySelector('input[name="run_at"]');
     const timeIn = modalEl.querySelector('input[name="time"]');
     const wdSel = modalEl.querySelector('select[name="weekday"]');
+    const mdIn = modalEl.querySelector('input[name="month_day"]');
     const tzIn = modalEl.querySelector('input[name="timezone"]');
-    typeSel.value = s.type || 'once';
-    runAt.value = s.run_at ? s.run_at.substring(0,16) : '';
+    typeSel.value = s.type || 'daily';
     timeIn.value = s.time || '09:00';
     wdSel.value = String(s.weekday ?? 0);
+    mdIn.value = String(s.month_day ?? 1);
     tzIn.value = s.timezone || 'UTC';
     toggleRows(modalEl, typeSel.value);
     typeSel.onchange = ()=> toggleRows(modalEl, typeSel.value);
@@ -79,13 +79,15 @@
     const modalEl = document.getElementById('editScheduleModal');
     const scheduleId = modalEl.dataset.scheduleId;
     const fd = new FormData(e.currentTarget);
-    const type = (fd.get('type')||'once').toString();
-    const run_at = (fd.get('run_at')||'').toString();
+    const type = (fd.get('type')||'daily').toString();
     const time = (fd.get('time')||'').toString();
     const weekday = parseInt((fd.get('weekday')||'0').toString(),10)||0;
+    const month_day = parseInt((fd.get('month_day')||'1').toString(),10)||1;
     const timezone = (fd.get('timezone')||'UTC').toString();
     const body = { type, timezone };
-    if (type==='once') body.run_at = run_at; else { body.time = time; if (type==='weekly') body.weekday = weekday; }
+    if (type==='daily') { body.time = time; }
+    if (type==='weekly') { body.time = time; body.weekday = weekday; }
+    if (type==='monthly') { body.time = time; body.month_day = month_day; }
     try{
       const url = "{{ url_for('api.update_schedule_api', schedule_id=0) }}".replace('0', String(scheduleId));
       const resp = await fetch(url, { method:'PATCH', headers:{ 'Content-Type':'application/json', 'X-CSRFToken': csrf }, body: JSON.stringify(body) });

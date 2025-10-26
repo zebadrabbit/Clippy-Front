@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2] - 2025-10-26
+
+### Changed
+- Reduced noisy startup logs: database target and runtime schema update messages now log once per process (web and workers).
+- Scheduling UI/API: removed legacy one-time ("once") schedules from creation/update paths; monthly schedules are supported in UI. Legacy rows remain readable for backward compatibility.
+- GPU/Workers docs: added guidance for avatar overlays (AVATARS_PATH can point to assets root or avatars/; OVERLAY_DEBUG for tracing) and noted the startup overlay sanity warning.
+
+### Fixed
+- Avatar overlays on GPU worker: robust path normalization for AVATARS_PATH and improved fallback logic ensure avatars resolve correctly when running in containers or across mounts.
+
 ## [0.8.1] - 2025-10-25
 
 ### Added

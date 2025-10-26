@@ -48,6 +48,7 @@ docker compose -f docker/docker-compose.gpu-worker.yml run --gpus all --name cli
 - Ensure the web app and worker share the same database and broker.
  - Queue priority at enqueue is `gpu > cpu > celery`; start your worker with the appropriate `-Q` list.
  - `USE_GPU_QUEUE` affects how the web app routes compile tasks. Setting it inside this worker container does not change which queues the worker consumes; use `-Q`/`CELERY_QUEUES` instead.
+ - Avatars/overlays: Set `AVATARS_PATH` to the shared assets root (e.g., `/app/instance/assets`) or directly to `/app/instance/assets/avatars`. The app normalizes both. Enable `OVERLAY_DEBUG=1` to trace avatar resolution. On startup, if overlays are enabled but no avatars are found at the resolved path, a warning is logged once.
 
 ## Troubleshooting: Redis connection refused inside container
 

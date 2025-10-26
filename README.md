@@ -188,6 +188,10 @@ The server also auto-rebases any path containing `/instance/` under its own `ins
 
 Avatars: When downloading clips (e.g., from Twitch), the app auto-fetches creator avatars and caches them under `instance/assets/avatars/` (with reuse and pruning to avoid buildup). You can also place a PNG/JPG manually named after the sanitized creator (e.g., `pokimane.png`). A fallback avatar is used if present (e.g., `avatar.png`).
 
+- AVATARS_PATH: You may point this to either the assets root (e.g., `/app/instance/assets`) or directly to the avatars folder (e.g., `/app/instance/assets/avatars`). The app normalizes both forms to find avatars reliably across hosts/containers.
+- OVERLAY_DEBUG=1: Set to log how avatars are resolved (search roots, matches, fallbacks) during rendering.
+- Startup sanity: When overlays are enabled but no avatars directory or images are found at the resolved path, a one-time startup warning is logged to help catch misconfigurations early.
+
 NVENC: The app detects NVENC availability and performs a tiny test encode; if unavailable or failing (e.g., missing CUDA), it automatically falls back to CPU (libx264). You can force CPU via `FFMPEG_DISABLE_NVENC=1`. See `scripts/check_nvenc.py` to diagnose. On WSL2 host shells, if you see `Cannot load libcuda.so.1`, set `LD_LIBRARY_PATH=/usr/lib/wsl/lib:${LD_LIBRARY_PATH}` before running ffmpeg.
 
 Avatar cache maintenance: The system prunes older cached avatars automatically, but you can also run the helper script:
@@ -210,6 +214,8 @@ You can create reusable, parameterized compilation tasks and optionally schedule
 Notes:
 - Twitch source requires a connected `twitch_username` (same integration used by the wizard). The task fetches the most recent N clip URLs and processes them.
 - Scheduling availability and per-user limits are enforced by tier fields `can_schedule_tasks` and `max_schedules_per_user`.
+
+Removed legacy: One-time ("once") schedules are no longer creatable via the API or UI. Existing legacy rows continue to be read to avoid breaking older data, but they won’t be offered in the interface.
 
 ## Testing and Quality
 
@@ -289,7 +295,7 @@ It never modifies files on disk and does not regenerate thumbnails.
 	- Set `AUTO_REINDEX_ON_STARTUP=true` in your environment (or `.env`).
 	- By default this is disabled to avoid masking database issues.
 
-We recommend PostgreSQL exclusively outside tests. At startup, the app logs the resolved database target safely (e.g., `postgresql://host:port/db (redacted)`), which helps diagnose accidental DB misconfiguration.
+We recommend PostgreSQL exclusively outside tests. At startup, the app logs the resolved database target safely (e.g., `postgresql://host:port/db (redacted)`), which helps diagnose accidental DB misconfiguration. Repetitive startup messages (database target and runtime schema updates) are logged once per process to keep worker logs clean.
 
 ### Static bumper
 

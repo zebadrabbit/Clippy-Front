@@ -2,8 +2,8 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "0.8.1"
-__version_info__ = (0, 8, 1)
+__version__ = "0.8.2"
+__version_info__ = (0, 8, 2)
 
 # Version history tracking
 VERSION_HISTORY = {
@@ -68,6 +68,11 @@ VERSION_HISTORY = {
         "Video pipeline & docs polish: NVENC probe now uses a valid 320x180 yuv420p test to avoid false negatives; "
         "standalone NVENC checker updated; avatar cache maintenance script added; documentation overhauled (workers, GPU, Samba mounts, README) "
         "including WSL2 CUDA library tip and option to prefer system ffmpeg. Import sorting fixed to satisfy lint."
+    ),
+    "0.8.2": (
+        "Overlays & scheduling cleanup: fixed avatar resolution on GPU workers with AVATARS_PATH normalization (accepts assets root or avatars dir), "
+        "added OVERLAY_DEBUG trace logs and a startup sanity warning when overlays enabled but no avatars found; reduced noisy startup logs (DB URI, runtime schema) to once per process; "
+        "removed legacy 'once' schedules from UI and API (kept read-only backward compatibility), added monthly scheduling in UI; docs updated (README, workers, GPU)."
     ),
 }
 

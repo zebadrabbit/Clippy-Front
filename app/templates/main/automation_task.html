@@ -34,16 +34,16 @@
           {% if can_schedule %}
           <div class="d-flex align-items-center gap-2">
             <select class="form-select form-select-sm w-auto" id="newSchedType">
-              <option value="once">Once</option>
               <option value="daily">Daily</option>
               <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
             </select>
-            <input type="datetime-local" class="form-control form-control-sm w-auto" id="newSchedOnce" style="display:none;">
             <input type="time" class="form-control form-control-sm w-auto" id="newSchedTime" value="09:00">
             <select class="form-select form-select-sm w-auto" id="newSchedWeekday" style="display:none;">
               <option value="0">Mon</option><option value="1">Tue</option><option value="2">Wed</option>
               <option value="3">Thu</option><option value="4">Fri</option><option value="5">Sat</option><option value="6">Sun</option>
             </select>
+            <input type="number" min="1" max="31" class="form-control form-control-sm w-auto" id="newSchedMonthDay" style="display:none;" value="1" placeholder="Day">
             <button class="btn btn-sm btn-primary" id="btnAddSched"><i class="bi bi-plus-lg"></i> Add</button>
           </div>
           {% else %}
@@ -83,7 +83,8 @@
   function typeLabel(s){
     if (s==='daily') return 'Daily';
     if (s==='weekly') return 'Weekly';
-    return 'Once';
+    if (s==='monthly') return 'Monthly';
+    return s || '-';
   }
 
   async function fetchJSON(url, opts={}){ const r = await fetch(url, opts); if(!r.ok){ throw new Error(await r.text()); } try{ return await r.json(); }catch{ return {}; } }
@@ -109,7 +110,7 @@
       tbody.innerHTML='';
       for(const s of items){
         const tr = document.createElement('tr');
-        const timeTxt = s.type==='once' ? fmt(s.run_at) : (s.type==='daily' ? s.time : `${s.time} (w${s.weekday})`);
+  const timeTxt = s.type==='daily' ? s.time : (s.type==='weekly' ? `${s.time} (w${s.weekday})` : (s.type==='monthly' ? `${s.time} (d${s.month_day})` : '-'));
         tr.innerHTML = `
           <td>${typeLabel(s.type)}</td>
           <td>${timeTxt||'-'}</td>
@@ -144,23 +145,23 @@
 
   // New schedule controls
   const typeSel = document.getElementById('newSchedType');
-  const onceInput = document.getElementById('newSchedOnce');
   const timeInput = document.getElementById('newSchedTime');
   const wdSel = document.getElementById('newSchedWeekday');
+  const mdInput = document.getElementById('newSchedMonthDay');
   if (typeSel){
     typeSel.addEventListener('change', ()=>{
       const v = typeSel.value;
-      onceInput.style.display = (v==='once')?'':'none';
-      timeInput.style.display = (v!=='once')?'':'none';
+      timeInput.style.display = '';
       wdSel.style.display = (v==='weekly')?'':'none';
+      mdInput.style.display = (v==='monthly')?'':'none';
     });
   }
   document.getElementById('btnAddSched')?.addEventListener('click', async ()=>{
     const type = typeSel.value;
     const body = { type };
-    if (type==='once') body.run_at = onceInput.value;
     if (type==='daily') body.time = timeInput.value||'00:00';
     if (type==='weekly'){ body.time = timeInput.value||'00:00'; body.weekday = parseInt(wdSel.value||'0',10); }
+    if (type==='monthly'){ body.time = timeInput.value||'00:00'; body.month_day = parseInt(mdInput.value||'1',10); }
     const url = "{{ url_for('api.create_schedule_api', task_id=0) }}".replace('0', String(taskId));
     const resp = await fetch(url, { method:'POST', headers:{ 'Content-Type':'application/json', 'X-CSRFToken': csrf }, body: JSON.stringify(body) });
     if (resp.ok) loadSchedules();

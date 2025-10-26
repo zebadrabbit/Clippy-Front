@@ -108,6 +108,7 @@ Cross-host path aliasing:
   - `MEDIA_PATH_ALIAS_TO=/mnt/clippy/`
 - The web app also auto-rebases any path containing `/instance/` under its own `instance_path` if it exists on disk
 - Enable `MEDIA_PATH_DEBUG=1` temporarily to log how paths are resolved (both web server and worker)
+ - Overlays: Avatar images are resolved under the shared assets. Set `AVATARS_PATH` to either the assets root (e.g., `/app/instance/assets`) or directly to the avatars directory (e.g., `/app/instance/assets/avatars`). Both forms are supported and normalized. Use `OVERLAY_DEBUG=1` for detailed resolution logs. On startup, if overlays are enabled but no avatars path/images are found, a warning is logged once.
 
 ## Networking
 

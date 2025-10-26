@@ -737,7 +737,7 @@ class ScheduledTask(db.Model):
             values_callable=lambda enum: [e.value for e in enum],
         ),
         nullable=False,
-        default=ScheduleType.ONCE,
+        default=ScheduleType.DAILY,
     )
     # When schedule_type=ONCE: run_at is used (UTC)
     run_at = db.Column(db.DateTime)
