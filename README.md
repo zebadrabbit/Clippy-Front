@@ -140,6 +140,7 @@ Adjust via environment variables (see `.env.example`):
 - FFMPEG_DISABLE_NVENC (set to 1/true to force CPU encoding)
 - FFMPEG_NVENC_PRESET (override NVENC preset if supported by your ffmpeg)
 - FFMPEG_GLOBAL_ARGS, FFMPEG_ENCODE_ARGS, FFMPEG_THUMBNAIL_ARGS, FFMPEG_CONCAT_ARGS, FFPROBE_ARGS, YT_DLP_ARGS (optional extra CLI flags injected at runtime)
+- ALLOW_EXTERNAL_URLS (default: false): when false, only Twitch and Discord clip URLs are accepted by the download API and the wizard; non-supported URLs are filtered and if none remain the request returns 400. Set to true to allow other sources (e.g., YouTube).
 - TMPDIR (optional): set to `/app/instance/tmp` on workers bound to a network share to avoid EXDEV cross-device moves when saving final outputs.
 - Instance storage mount (required in multi-host setups):
 	- Host path `/mnt/clippy` must exist and contain `uploads/`, `downloads/`, `compilations/`, `tmp/`, and `assets/`
@@ -185,6 +186,8 @@ The server also auto-rebases any path containing `/instance/` under its own `ins
 - Timeline: Drag cards to reorder clips; the new order is saved to the server. Remove items with the X on each card.
 - Compile: Starts a background job that builds the sequence, interleaves transitions, and inserts a short static bumper between segments for a channel-switching effect.
 - Logs: The log window now shows which segment is processed next, e.g., “Concatenating: <name> (2 of 6)”.
+
+- Clip sources policy: By default, only Twitch and Discord URLs are accepted for clip downloads. You can allow other sources by setting `ALLOW_EXTERNAL_URLS=true`. When disabled, the server filters out non-supported URLs and responds with HTTP 400 if a request contains only disallowed URLs.
 
 Avatars: When downloading clips (e.g., from Twitch), the app auto-fetches creator avatars and caches them under `instance/assets/avatars/` (with reuse and pruning to avoid buildup). You can also place a PNG/JPG manually named after the sanitized creator (e.g., `pokimane.png`). A fallback avatar is used if present (e.g., `avatar.png`).
 
