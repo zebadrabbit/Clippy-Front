@@ -43,6 +43,19 @@ from app.quotas import (
 )
 from app.tasks.celery_app import celery_app
 
+# Reuse a single Flask app per worker process to avoid repeatedly opening
+# DB connections and re-applying runtime settings on every helper call.
+_WORKER_APP = None
+
+
+def _get_app():
+    global _WORKER_APP
+    if _WORKER_APP is None:
+        from app import create_app as _create_app
+
+        _WORKER_APP = _create_app()
+    return _WORKER_APP
+
 
 # ----- Tier limit helpers -----
 def _normalize_res_label(val: str | None) -> str | None:
@@ -121,9 +134,7 @@ def get_db_session():
     Returns:
         Session: Database session
     """
-    from app import create_app
-
-    app = create_app()
+    app = _get_app()
 
     with app.app_context():
         # Create a new session for this task
@@ -171,9 +182,7 @@ def _resolve_media_input_path(orig_path: str) -> str:
         marker = "/instance/"
         if marker in ap:
             try:
-                from app import create_app
-
-                app = create_app()
+                app = _get_app()
                 suffix = ap.split(marker, 1)[1]
                 cand = os.path.join(app.instance_path, suffix)
                 if debug:
@@ -212,9 +221,7 @@ def _resolve_media_input_path(orig_path: str) -> str:
         # 2b) Automatic data-root remap: if path contains '/<DATA_FOLDER>/' under a different root,
         # rebuild under this process's app.instance_path/<DATA_FOLDER>/...
         try:
-            from app import create_app as _create_app
-
-            app2 = _create_app()
+            app2 = _get_app()
             with app2.app_context():
                 data_folder = (app2.config.get("DATA_FOLDER") or "data").strip("/")
                 marker2 = f"/{data_folder}/"
@@ -266,6 +273,7 @@ def compile_video_task(
     outro_id: int | None = None,
     transition_ids: list[int] | None = None,
     randomize_transitions: bool = False,
+    clip_ids: list[int] | None = None,
 ) -> dict[str, Any]:
     """
     Compile video clips into a final compilation.
@@ -322,13 +330,23 @@ def compile_video_task(
             except Exception:
                 session.rollback()
 
-        # Get clips in order
-        clips = (
-            session.query(Clip)
-            .filter_by(project_id=project_id)
-            .order_by(Clip.order_index.asc(), Clip.created_at.asc())
-            .all()
-        )
+        # Get clips in order (honor explicit timeline subset if provided)
+        if clip_ids:
+            # Fetch only the requested clips that belong to this project, then preserve requested order
+            rows = (
+                session.query(Clip)
+                .filter(Clip.project_id == project_id, Clip.id.in_(clip_ids))
+                .all()
+            )
+            by_id = {c.id: c for c in rows}
+            clips = [by_id[cid] for cid in clip_ids if cid in by_id]
+        else:
+            clips = (
+                session.query(Clip)
+                .filter_by(project_id=project_id)
+                .order_by(Clip.order_index.asc(), Clip.created_at.asc())
+                .all()
+            )
 
         # Apply tier-based limits (clip count)
         limits = _get_user_tier_limits(session, project.user_id)
@@ -338,7 +356,7 @@ def compile_video_task(
                 clips = clips[:maxc]
                 log(
                     "info",
-                    f"Tier limit: using first {maxc} clip(s) out of {len(project.clips.all())}",
+                    f"Tier limit: using first {maxc} clip(s) out of {len(rows) if clip_ids else session.query(Clip).filter_by(project_id=project_id).count()}",
                     status="limits",
                 )
 
@@ -482,9 +500,7 @@ def compile_video_task(
                     media.framerate = meta.get("framerate")
                 # Generate thumbnail for final render
                 try:
-                    from app import create_app
-
-                    app = create_app()
+                    app = _get_app()
                     # Resolve thumbnails directory via project-based storage
                     with app.app_context():
                         try:
@@ -493,7 +509,7 @@ def compile_video_task(
                         except Exception:
                             user_obj = None
                         thumbs_dir = storage_lib.thumbnails_dir(
-                            user_obj or project.user
+                            user_obj or project.owner
                         )
                         os.makedirs(thumbs_dir, exist_ok=True)
                     # Deterministic name based on final output filename
@@ -610,6 +626,12 @@ def compile_video_task(
         session.close()
 
         raise
+    finally:
+        # Always release DB connections on worker to avoid exhausting the pool
+        try:
+            session.close()
+        except Exception:
+            pass
 
 
 @celery_app.task(bind=True, queue="celery")
@@ -629,9 +651,7 @@ def download_clip_task(self, clip_id: int, source_url: str) -> dict[str, Any]:
     try:
         # Proactively clean any legacy leftovers for this clip under instance/downloads
         try:
-            from app import create_app as _create
-
-            _app0 = _create()
+            _app0 = _get_app()
             with _app0.app_context():
                 _legacy_dir0 = os.path.join(_app0.instance_path, "downloads")
             if os.path.isdir(_legacy_dir0):
@@ -807,13 +827,11 @@ def download_clip_task(self, clip_id: int, source_url: str) -> dict[str, Any]:
         # Choose a project-aware download directory when using project layout
         dl_dir = None
         try:
-            from app import create_app as _create_app
-
-            app = _create_app()
+            app = _get_app()
             with app.app_context():
                 try:
                     dl_dir = storage_lib.clips_dir(
-                        user_obj or clip.project.user, clip.project.name
+                        user_obj or clip.project.owner, clip.project.name
                     )
                 except Exception:
                     dl_dir = None
@@ -862,12 +880,10 @@ def download_clip_task(self, clip_id: int, source_url: str) -> dict[str, Any]:
 
         # Generate thumbnail for the downloaded video
         try:
-            from app import create_app
-
-            app = create_app()
+            app = _get_app()
             with app.app_context():
                 owner = session.get(User, clip.project.user_id)
-                thumbs_dir = storage_lib.thumbnails_dir(owner or clip.project.user)
+                thumbs_dir = storage_lib.thumbnails_dir(owner or clip.project.owner)
                 os.makedirs(thumbs_dir, exist_ok=True)
             # Deterministic thumbnail name to avoid duplicates across restarts
             stem = os.path.splitext(os.path.basename(output_path))[0]
@@ -1027,8 +1043,13 @@ def download_clip_task(self, clip_id: int, source_url: str) -> dict[str, Any]:
             job.result_data = rd
             session.commit()
 
-        session.close()
         raise
+    finally:
+        # Ensure connections are not leaked on success or failure
+        try:
+            session.close()
+        except Exception:
+            pass
 
 
 def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
@@ -1069,9 +1090,7 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
     output_path = os.path.join(temp_dir, f"clip_{clip.id}_processed.mp4")
 
     # Build ffmpeg command for clip processing with quality + overlay
-    from app import create_app
-
-    app = create_app()
+    app = _get_app()
     ffmpeg_bin = resolve_binary(app, "ffmpeg")
     # Debug NVENC availability and chosen ffmpeg
     try:
@@ -1164,9 +1183,7 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
         # Try to add an author avatar to the left area of the overlay
         def _resolve_avatar_path() -> str | None:
             try:
-                from app import create_app  # local import to avoid top-level coupling
-
-                app = create_app()
+                app = _get_app()
                 # First preference: a cached path stored on the clip
                 try:
                     if getattr(clip, "creator_avatar_path", None):
@@ -1656,9 +1673,7 @@ def build_timeline_with_transitions(
     # Insert a static bumper between every video, including transitions
     static_processed: str | None = None
     try:
-        from app import create_app
-
-        app = create_app()
+        app = _get_app()
         # Allow override via env STATIC_BUMPER_PATH
         static_src = os.getenv(
             "STATIC_BUMPER_PATH",
@@ -1709,9 +1724,7 @@ def process_media_file(input_path: str, output_path: str, project: Project) -> N
         output_path: Output file path
         project: Project with settings
     """
-    from app import create_app
-
-    app = create_app()
+    app = _get_app()
     # Normalize input path if coming from a different host
     input_path = _resolve_media_input_path(input_path)
     ffmpeg_bin = resolve_binary(app, "ffmpeg")
@@ -1927,9 +1940,7 @@ def compile_final_video(clips: list[str], temp_dir: str, project: Project) -> st
     )
 
     # Build ffmpeg concat command
-    from app import create_app
-
-    app = create_app()
+    app = _get_app()
     ffmpeg_bin = resolve_binary(app, "ffmpeg")
     from app.ffmpeg_config import config_args as _cfg_args
 
@@ -1966,9 +1977,7 @@ def save_final_video(temp_path: str, project: Project) -> str:
     Returns:
         str: Final file path
     """
-    from app import create_app
-
-    app = create_app()
+    app = _get_app()
 
     # Create output directory (project-based)
     with app.app_context():
@@ -1978,7 +1987,7 @@ def save_final_video(temp_path: str, project: Project) -> str:
         except Exception:
             user_obj = None
         output_dir = storage_lib.compilations_dir(
-            user_obj or project.user, project.name
+            user_obj or project.owner, project.name
         )
         os.makedirs(output_dir, exist_ok=True)
 
@@ -2018,9 +2027,7 @@ def download_with_yt_dlp(
     Returns:
         str: Path to downloaded file
     """
-    from app import create_app
-
-    app = create_app()
+    app = _get_app()
 
     # Resolve target download directory (project-aware)
     if not download_dir:
@@ -2030,7 +2037,7 @@ def download_with_yt_dlp(
             except Exception:
                 user = None
             download_dir = storage_lib.clips_dir(
-                user or clip.project.user, clip.project.name
+                user or clip.project.owner, clip.project.name
             )
     os.makedirs(download_dir, exist_ok=True)
 
@@ -2120,7 +2127,7 @@ def download_with_yt_dlp(
 
     # Cleanup: remove any legacy clip_<id>_* files from instance/downloads to keep it empty
     try:
-        _app3 = create_app()
+        _app3 = _get_app()
         with _app3.app_context():
             legacy_dir2 = os.path.join(_app3.instance_path, "downloads")
         if os.path.isdir(legacy_dir2):
@@ -2153,9 +2160,7 @@ def extract_video_metadata(file_path: str) -> dict[str, Any]:
     Returns:
         Dict: Video metadata
     """
-    from app import create_app
-
-    app = create_app()
+    app = _get_app()
     ffprobe_bin = resolve_binary(app, "ffprobe")
     from app.ffmpeg_config import config_args as _cfg_args
 

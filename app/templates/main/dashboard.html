@@ -64,17 +64,44 @@
         </div>
         <div class="card-body">
           {% if projects %}
-            <div class="list-group list-group-flush">
-              {% for p in projects %}
-                <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
-                   href="{{ url_for('main.project_details', project_id=p.id) }}">
-                  <span>{{ p.name }}
-                    <small class="text-muted ms-2">(
-                      {{ p.clips|safe_count }} clips · {{ p.media_files|safe_count }} media
-                    )</small>
-                  </span>
-                  <small class="text-muted">{{ p.updated_at.strftime('%Y-%m-%d') if p.updated_at else '' }}</small>
-                </a>
+            <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-3">
+              {% for item in projects %}
+                {% set p = item.project %}
+                <div class="col">
+                  <a class="card h-100 text-decoration-none project-card" href="{{ url_for('main.project_details', project_id=p.id) }}"
+                     data-preview-url="{{ item.preview_url or '' }}">
+                    <div class="project-media position-relative">
+                      {% if item.thumb_url %}
+                        <img class="w-100 h-100 project-thumb" src="{{ item.thumb_url }}" alt="{{ p.name }}">
+                      {% else %}
+                        <div class="d-flex align-items-center justify-content-center w-100 h-100" style="min-height:160px; background: var(--bs-card-bg);">
+                          <i class="bi bi-film" style="font-size:2rem; opacity:0.75;"></i>
+                        </div>
+                      {% endif %}
+                      {% if item.preview_url %}
+                      <video class="position-absolute top-0 start-0 w-100 h-100 project-preview d-none" muted loop playsinline preload="metadata"></video>
+                      {% endif %}
+                      {% if item.duration_formatted %}
+                        <span class="badge bg-dark position-absolute bottom-0 end-0 m-2" style="opacity:0.9;"><i class="bi bi-clock me-1"></i>{{ item.duration_formatted }}</span>
+                      {% endif %}
+                    </div>
+                    <div class="card-body">
+                      <div class="d-flex justify-content-between align-items-start">
+                        <div class="fw-semibold text-truncate" title="{{ p.name }}">{{ p.name }}</div>
+                        <small class="text-muted ms-2">{{ p.updated_at.strftime('%Y-%m-%d') if p.updated_at else '' }}</small>
+                      </div>
+                      <div class="small text-muted mt-1">{{ p.clips|safe_count }} clips · {{ p.media_files|safe_count }} media</div>
+                      {% if item.tags %}
+                        <div class="mt-2">
+                          {% for tag in item.tags.split(',') %}
+                            {% set t = tag.strip() %}
+                            {% if t %}<span class="badge bg-secondary me-1">{{ t }}</span>{% endif %}
+                          {% endfor %}
+                        </div>
+                      {% endif %}
+                    </div>
+                  </a>
+                </div>
               {% endfor %}
             </div>
           {% else %}
@@ -132,4 +159,44 @@
     </a>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script>
+    (function(){
+      const cards = document.querySelectorAll('.project-card');
+      cards.forEach(function(card){
+        const previewUrl = card.getAttribute('data-preview-url');
+        if (!previewUrl) return;
+        const video = card.querySelector('video.project-preview');
+        const img = card.querySelector('img.project-thumb');
+        if (!video) return;
+        let loaded = false;
+        function showPreview(){
+          try {
+            if (!loaded) {
+              video.src = previewUrl;
+              loaded = true;
+            }
+            if (img) img.classList.add('d-none');
+            video.classList.remove('d-none');
+            video.play().catch(function(_){});
+          } catch (_) {}
+        }
+        function hidePreview(){
+          try {
+            video.pause();
+            video.currentTime = 0;
+            video.classList.add('d-none');
+            if (img) img.classList.remove('d-none');
+          } catch (_) {}
+        }
+        card.addEventListener('mouseenter', showPreview);
+        card.addEventListener('focus', showPreview);
+        card.addEventListener('mouseleave', hidePreview);
+        card.addEventListener('blur', hidePreview);
+      });
+    })();
+  </script>
 {% endblock %}

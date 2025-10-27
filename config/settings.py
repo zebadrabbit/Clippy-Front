@@ -149,6 +149,28 @@ class Config:
     WATERMARK_OPACITY = float(os.environ.get("WATERMARK_OPACITY", 0.3))
     WATERMARK_POSITION = os.environ.get("WATERMARK_POSITION", "bottom-right")
 
+    # Email / SMTP configuration (verification emails, notifications)
+    EMAIL_VERIFICATION_ENABLED = os.environ.get(
+        "EMAIL_VERIFICATION_ENABLED", "false"
+    ).lower() in {"1", "true", "yes", "on"}
+    EMAIL_FROM_ADDRESS = os.environ.get("EMAIL_FROM_ADDRESS", "no-reply@example.com")
+    SMTP_HOST = os.environ.get("SMTP_HOST")
+    SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
+    SMTP_USE_TLS = os.environ.get("SMTP_USE_TLS", "true").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    SMTP_USE_SSL = os.environ.get("SMTP_USE_SSL", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    SMTP_USERNAME = os.environ.get("SMTP_USERNAME")
+    SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD")  # Only from environment/.env
+
 
 class DevelopmentConfig(Config):
     """

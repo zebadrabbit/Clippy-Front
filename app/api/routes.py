@@ -707,7 +707,44 @@ def compile_project_api(project_id: int):
 
     if project.status == ProjectStatus.PROCESSING:
         return jsonify({"error": "Project is already being processed"}), 400
-    if project.clips.count() == 0:
+    # Load request body now to evaluate selected timeline subset
+    data = request.get_json(silent=True) or {}
+
+    # Optional subset selection from client timeline: clip_ids determines the exact
+    # ordered list of clips to render. When omitted, all project clips will be used
+    # (ordered by order_index then created_at).
+    raw_clip_ids = data.get("clip_ids")
+    clip_ids: list[int] | None = None
+    if isinstance(raw_clip_ids, list):
+        # Coerce to ints, drop invalid, and preserve order with de-dup
+        tmp: list[int] = []
+        seen: set[int] = set()
+        for v in raw_clip_ids:
+            try:
+                iv = int(v)
+            except Exception:
+                continue
+            if iv not in seen:
+                tmp.append(iv)
+                seen.add(iv)
+        if tmp:
+            # Filter to clips owned by this project/user
+            from app.models import Clip as _Clip
+
+            rows = (
+                db.session.query(_Clip.id)
+                .filter(_Clip.project_id == project.id, _Clip.id.in_(tmp))
+                .all()
+            )
+            valid = {rid for (rid,) in rows}
+            clip_ids = [rid for rid in tmp if rid in valid]
+        else:
+            clip_ids = []
+
+    # Effective existence check: require some clips either in project or in selected subset
+    if (clip_ids is not None and len(clip_ids) == 0) or (
+        clip_ids is None and project.clips.count() == 0
+    ):
         return jsonify({"error": "Project has no clips to compile"}), 400
 
     try:
@@ -715,8 +752,7 @@ def compile_project_api(project_id: int):
         from app.quotas import check_render_quota
         from sqlalchemy import func
 
-        # Optional selections from client
-        data = request.get_json(silent=True) or {}
+        # Optional selections from client (data parsed above)
         intro_id = data.get("intro_id")
         outro_id = data.get("outro_id")
         transition_ids = data.get("transition_ids") or []
@@ -772,9 +808,20 @@ def compile_project_api(project_id: int):
             # Compute effective durations per clip to account for trims and per-project caps
             total_clip_seconds = 0.0
             try:
-                clips = project.clips.order_by(
-                    Clip.order_index.asc(), Clip.created_at.asc()
-                ).all()
+                # Honor selected timeline subset if provided; else use all clips in project order
+                if clip_ids is not None:
+                    # Build map for quick lookup and then preserve requested order
+                    rows = (
+                        db.session.query(Clip)
+                        .filter(Clip.project_id == project.id, Clip.id.in_(clip_ids))
+                        .all()
+                    )
+                    by_id = {c.id: c for c in rows}
+                    clips = [by_id[cid] for cid in clip_ids if cid in by_id]
+                else:
+                    clips = project.clips.order_by(
+                        Clip.order_index.asc(), Clip.created_at.asc()
+                    ).all()
                 max_dur = float(project.max_clip_duration or 0)
                 for c in clips:
                     eff = 0.0
@@ -914,6 +961,46 @@ def compile_project_api(project_id: int):
             # On any error, keep default behavior
             if bool(current_app.config.get("USE_GPU_QUEUE")):
                 queue_name = "gpu"
+        # Optionally attach selected reusable media to this project for UI visibility
+        try:
+            from app.models import MediaFile, MediaType
+
+            changed = 0
+            if intro_id is not None:
+                m = MediaFile.query.filter_by(
+                    id=intro_id, user_id=current_user.id
+                ).first()
+                if m and m.media_type == MediaType.INTRO:
+                    if m.project_id != project.id:
+                        m.project_id = project.id
+                        changed += 1
+            if outro_id is not None:
+                m = MediaFile.query.filter_by(
+                    id=outro_id, user_id=current_user.id
+                ).first()
+                if m and m.media_type == MediaType.OUTRO:
+                    if m.project_id != project.id:
+                        m.project_id = project.id
+                        changed += 1
+            if valid_transition_ids:
+                rows = MediaFile.query.filter(
+                    MediaFile.id.in_(valid_transition_ids),
+                    MediaFile.user_id == current_user.id,
+                    MediaFile.media_type == MediaType.TRANSITION,
+                ).all()
+                for m in rows:
+                    if m.project_id != project.id:
+                        m.project_id = project.id
+                        changed += 1
+            if changed:
+                db.session.commit()
+        except Exception:
+            # Non-fatal: attachment is purely for UI presentation
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+
         task = compile_video_task.apply_async(
             args=(project_id,),
             kwargs={
@@ -921,6 +1008,7 @@ def compile_project_api(project_id: int):
                 "outro_id": outro_id,
                 "transition_ids": valid_transition_ids,
                 "randomize_transitions": randomize_transitions,
+                "clip_ids": clip_ids,
             },
             queue=queue_name,
         )

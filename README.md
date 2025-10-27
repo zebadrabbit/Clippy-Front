@@ -177,7 +177,7 @@ Cross-host paths: Paths stored in the database are canonicalized to `/instance/<
 
 - Arrange: Pick an Intro and Outro from your Media Library; choose Transitions (multi-select) and optionally toggle Randomize. Use Select All or Clear All to quickly manage transitions.
 - Timeline: Drag cards to reorder clips; the new order is saved to the server. Remove items with the X on each card.
-- Compile: Starts a background job that builds the sequence, interleaves transitions, and inserts a short static bumper between segments for a channel-switching effect.
+- Compile: Starts a background job that builds the sequence, interleaves transitions, and inserts a short static bumper between segments for a channel-switching effect. Only the clips you placed on the timeline are compiled, in that exact order. If nothing is placed on the timeline, the server rejects the request.
 - Logs: The log window now shows which segment is processed next, e.g., “Concatenating: <name> (2 of 6)”.
 
 - Clip sources policy: By default, only Twitch and Discord URLs are accepted for clip downloads. You can allow other sources by setting `ALLOW_EXTERNAL_URLS=true`. When disabled, the server filters out non-supported URLs and responds with HTTP 400 if a request contains only disallowed URLs.
@@ -261,6 +261,10 @@ ClippyFront/
 - Invalid login for admin/admin123: run `python init_db.py --reset-admin --password admin123`.
 - Missing ffmpeg/yt-dlp: run `scripts/install_local_binaries.sh` and set `FFMPEG_BINARY`/`YT_DLP_BINARY` in your environment.
 
+### Celery error: unexpected keyword argument 'clip_ids'
+
+This means the web app and worker are running different code versions (the compile task signature changed). Rebuild/restart your worker(s) so they pick up the new code, and ensure the web app is also updated. After upgrades that change task signatures, restart both web and workers to keep them in sync.
+
 ### Admin password seems to change daily
 
 If your admin password appears to “change,” it was typically due to multiple SQLite files being created with relative paths. We now standardize on PostgreSQL to avoid this class of issue. If you still hit issues:
@@ -295,7 +299,7 @@ We recommend PostgreSQL exclusively outside tests. At startup, the app logs the 
 
 ### Static bumper
 
-To customize the inter-segment “static” bumper, replace `instance/assets/static.mp4` with your own short clip. It will be inserted between every segment including transitions, intro, and outro.
+To customize the inter-segment “static” bumper, replace `instance/assets/static.mp4` with your own short clip, or set `STATIC_BUMPER_PATH=/path/to/your/static.mp4`. It will be inserted between every segment including transitions, intro, and outro.
 
 ### Remote workers (GPU/CPU)
 

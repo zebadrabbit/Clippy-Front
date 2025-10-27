@@ -165,6 +165,10 @@ Redundancies to avoid:
   - On WSL2 host shells (native worker, not container), if you see `Cannot load libcuda.so.1`, export `LD_LIBRARY_PATH=/usr/lib/wsl/lib:${LD_LIBRARY_PATH}` before invoking ffmpeg or the checker.
   - If both a bundled `./bin/ffmpeg` and a system ffmpeg exist, set `PREFER_SYSTEM_FFMPEG=1` to prefer the system build (often NVENC-enabled).
 
+### Upgrades and task signatures
+
+If you update the repo and see Celery errors like `unexpected keyword argument 'clip_ids'`, your worker container/process is running an older version of the code than the web app. Rebuild and restart the worker(s) so they pick up the latest tasks, and restart the web app to keep both sides in sync. After any change that modifies a task signature, always restart both web and workers.
+
 ---
 
 For end-to-end networking and storage patterns (WireGuard + Samba), see `docs/wireguard.md` and `docs/samba-and-mounts.md`.

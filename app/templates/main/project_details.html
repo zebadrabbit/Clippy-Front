@@ -14,7 +14,7 @@
     <!-- Clips Card -->
     <div class="col-lg-7">
       <div class="card h-100">
-        <div class="card-header d-flex justify-content-between align-items-center">
+        <div class="card-header card-header--primary d-flex justify-content-between align-items-center">
           <strong>Clips</strong>
           <small class="text-muted">{{ clips|length }} total</small>
         </div>
@@ -55,17 +55,23 @@
     <!-- Compilation Card -->
     <div class="col-lg-5">
       <div class="card h-100">
-        <div class="card-header"><strong>Compilation</strong></div>
+        <div class="card-header card-header--primary"><strong>Compilation</strong></div>
         <div class="card-body d-flex flex-column">
           {% if project.output_filename %}
             <div class="mb-2">
-              <div class="fw-semibold">{{ project.output_filename }}</div>
-              {% if project.output_file_size %}
-                <small class="text-muted">Size: {{ '%.1f'|format(project.output_file_size / (1024*1024)) }} MB</small>
-              {% endif %}
+              <div class="fw-semibold">{{ project.name }}</div>
+              <div class="small text-muted">
+                {% if compiled_media %}
+                  <span class="me-2"><i class="bi bi-clock"></i> {{ compiled_media.duration_formatted }}</span>
+                {% endif %}
+                {% if project.output_file_size %}
+                  <span>Size: {{ '%.1f'|format(project.output_file_size / (1024*1024)) }} MB</span>
+                {% endif %}
+              </div>
+              <div class="small text-muted mt-1">File: {{ project.output_filename }}</div>
             </div>
             <div class="ratio ratio-16x9 mb-3">
-              <video controls preload="metadata">
+              <video controls preload="metadata" {% if compiled_media %}poster="{{ url_for('main.media_thumbnail', media_id=compiled_media.id) }}"{% endif %}>
                 <source src="{{ url_for('main.preview_compiled_output_by_public', public_id=project.public_id) if project.public_id else url_for('main.preview_compiled_output', project_id=project.id) }}" type="video/mp4">
                 Your browser does not support the video tag.
               </video>
@@ -82,15 +88,64 @@
         </div>
         <div class="card-footer">
           <div class="small text-muted">
-            <div><strong>Intro:</strong> {% if intros and intros|length > 0 %} {{ intros[0].original_filename }} {% else %} — {% endif %}</div>
-            <div><strong>Outro:</strong> {% if outros and outros|length > 0 %} {{ outros[0].original_filename }} {% else %} — {% endif %}</div>
-            <div><strong>Transitions:</strong>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <strong>Intro:</strong>
+              {% if intros and intros|length > 0 %}
+                {% set m = intros[0] %}
+                <a href="#" tabindex="0"
+                   data-bs-toggle="popover"
+                   data-bs-trigger="hover focus"
+                   data-bs-placement="top"
+                   data-bs-container="body"
+                   data-bs-custom-class="media-popover"
+                   data-bs-html="true"
+                   data-bs-content="<img src='{{ url_for('main.media_thumbnail', media_id=m.id) }}' alt='preview'>"
+                   title="{{ m.original_filename|e }}">
+                  <img src="{{ url_for('main.media_thumbnail', media_id=m.id) }}" alt="intro" class="rounded" style="width:40px;height:24px;object-fit:cover;">
+                </a>
+                <span class="text-truncate" style="max-width: 160px;" title="{{ m.original_filename }}">{{ m.original_filename }}</span>
+              {% else %}
+                <span>—</span>
+              {% endif %}
+            </div>
+            <div class="d-flex align-items-center gap-2 flex-wrap mt-2">
+              <strong>Outro:</strong>
+              {% if outros and outros|length > 0 %}
+                {% set m = outros[0] %}
+                <a href="#" tabindex="0"
+                   data-bs-toggle="popover"
+                   data-bs-trigger="hover focus"
+                   data-bs-placement="top"
+                   data-bs-container="body"
+                   data-bs-custom-class="media-popover"
+                   data-bs-html="true"
+                   data-bs-content="<img src='{{ url_for('main.media_thumbnail', media_id=m.id) }}' alt='preview'>"
+                   title="{{ m.original_filename|e }}">
+                  <img src="{{ url_for('main.media_thumbnail', media_id=m.id) }}" alt="outro" class="rounded" style="width:40px;height:24px;object-fit:cover;">
+                </a>
+                <span class="text-truncate" style="max-width: 160px;" title="{{ m.original_filename }}">{{ m.original_filename }}</span>
+              {% else %}
+                <span>—</span>
+              {% endif %}
+            </div>
+            <div class="d-flex align-items-center gap-2 flex-wrap mt-2">
+              <strong>Transitions:</strong>
               {% if transitions and transitions|length > 0 %}
                 {% for t in transitions %}
-                  <span class="badge bg-secondary me-1">{{ t.original_filename }}</span>
+                  <a href="#" tabindex="0"
+                     data-bs-toggle="popover"
+                     data-bs-trigger="hover focus"
+                     data-bs-placement="top"
+                     data-bs-container="body"
+                     data-bs-custom-class="media-popover"
+                     data-bs-html="true"
+                     data-bs-content="<img src='{{ url_for('main.media_thumbnail', media_id=t.id) }}' alt='preview'>"
+                     title="{{ t.original_filename|e }}">
+                    <img src="{{ url_for('main.media_thumbnail', media_id=t.id) }}" alt="transition" class="rounded me-1" style="width:40px;height:24px;object-fit:cover;">
+                  </a>
                 {% endfor %}
               {% else %}
-                <span class="text-muted">—</span>
+                <span>—</span>
               {% endif %}
             </div>
           </div>

@@ -4,9 +4,9 @@
 <div class="container py-4">
   <div class="d-flex align-items-center justify-content-between mb-3">
     <h3 class="mb-0"><i class="bi bi-gear-wide-connected me-2"></i>Automation</h3>
-    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newTaskModal">
-      <i class="bi bi-plus-lg"></i> New Task
-    </button>
+    <a class="btn btn-primary" href="{{ url_for('main.project_wizard') }}">
+      <i class="bi bi-magic"></i> New Project Wizard
+    </a>
   </div>
 
   <div class="alert alert-secondary small" role="alert">
@@ -120,81 +120,6 @@
       </td>
     </tr>
   </template>
-</div>
-
-<!-- New Task Modal -->
-<div class="modal fade" id="newTaskModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
-    <div class="modal-content">
-      <form id="newTaskForm">
-        <div class="modal-header">
-          <h5 class="modal-title">Create Task</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body">
-          <div class="row g-3 mb-2">
-            <div class="col-md-4">
-              <label class="form-label">Intro (optional)</label>
-              <select class="form-select" name="intro_id"><option value="">— None —</option></select>
-            </div>
-            <div class="col-md-4">
-              <label class="form-label">Outro (optional)</label>
-              <select class="form-select" name="outro_id"><option value="">— None —</option></select>
-            </div>
-            <div class="col-md-4">
-              <label class="form-label">Transitions</label>
-              <select multiple class="form-select" name="transition_ids"></select>
-              <div class="form-check mt-2">
-                <input class="form-check-input" type="checkbox" id="newRandomizeTransitions">
-                <label class="form-check-label" for="newRandomizeTransitions">Randomize transitions</label>
-              </div>
-            </div>
-          </div>
-          <div class="row g-3">
-            <div class="col-md-6">
-              <label class="form-label">Name</label>
-              <input class="form-control" name="name" placeholder="Auto-named if left blank">
-            </div>
-            <div class="col-md-6">
-              <label class="form-label">Clip Limit</label>
-              <input type="number" min="1" class="form-control" name="clip_limit" value="10">
-            </div>
-            <div class="col-12">
-              <label class="form-label">Description</label>
-              <input class="form-control" name="description" placeholder="Optional note about this task">
-            </div>
-            <div class="col-12">
-              <hr class="my-2">
-              <div class="fw-semibold mb-1">Filters</div>
-              <div class="text-muted small mb-2">Applied when pulling from your library (e.g., when Twitch provides no URLs).</div>
-              <div class="row g-3">
-                <div class="col-md-4">
-                  <label class="form-label">Min Duration (seconds)</label>
-                  <input type="number" min="0" step="1" class="form-control" name="min_duration_seconds" placeholder="e.g., 10">
-                </div>
-                <div class="col-md-4">
-                  <label class="form-label">Max Duration (seconds)</label>
-                  <input type="number" min="0" step="1" class="form-control" name="max_duration_seconds" placeholder="e.g., 120">
-                </div>
-                <div class="col-md-4">
-                  <label class="form-label">Include Tags</label>
-                  <input class="form-control" name="include_tags" placeholder="Comma-separated, e.g., valorant, ace">
-                </div>
-                <div class="col-md-4">
-                  <label class="form-label">Exclude Tags</label>
-                  <input class="form-control" name="exclude_tags" placeholder="Comma-separated, e.g., boring, muted">
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-primary">Create</button>
-        </div>
-      </form>
-    </div>
-  </div>
 </div>
 {% endblock %}
 
@@ -467,104 +392,6 @@
   document.addEventListener('click', (e) => {
     if (e.target === refreshBtn) loadTasks();
   });
-
-  // New Task
-  const newTaskForm = document.getElementById('newTaskForm');
-  newTaskForm?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const f = e.currentTarget;
-    const form = new FormData(f);
-    let name = (form.get('name')||'').toString().trim();
-    const description = (form.get('description')||'').toString();
-    const clip_limit = parseInt((form.get('clip_limit')||'10').toString(), 10) || 10;
-
-    // Gather media selections
-    const intro_id_raw = (form.get('intro_id')||'').toString();
-    const outro_id_raw = (form.get('outro_id')||'').toString();
-    const transSel = document.querySelector('#newTaskModal select[name="transition_ids"]');
-    const transition_ids = Array.from(transSel?.selectedOptions || []).map(o=>parseInt(o.value,10)).filter(n=>!isNaN(n));
-    const randomize_transitions = !!document.getElementById('newRandomizeTransitions')?.checked;
-
-    const intro_id = intro_id_raw ? parseInt(intro_id_raw, 10) : null;
-    const outro_id = outro_id_raw ? parseInt(outro_id_raw, 10) : null;
-
-    // Default name if empty
-    if (!name) {
-      const now = new Date();
-      const pad = (n)=>String(n).padStart(2,'0');
-      const stamp = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
-      name = `Compilation ${stamp}`;
-    }
-
-    // Streamlined create: default to twitch source
-  const params = { source: 'twitch', clip_limit };
-    if (intro_id) params.intro_id = intro_id;
-    if (outro_id) params.outro_id = outro_id;
-    if (transition_ids.length) params.transition_ids = transition_ids;
-    if (randomize_transitions) params.randomize_transitions = true;
-  // Filters
-  const minDurRaw = (form.get('min_duration_seconds')||'').toString().trim();
-  const maxDurRaw = (form.get('max_duration_seconds')||'').toString().trim();
-  const includeTagsRaw = (form.get('include_tags')||'').toString().trim();
-  const excludeTagsRaw = (form.get('exclude_tags')||'').toString().trim();
-  const toList = (s) => s.split(',').map(x=>x.trim()).filter(Boolean);
-  if (minDurRaw !== '' && !isNaN(parseInt(minDurRaw,10))) params.min_duration_seconds = parseInt(minDurRaw,10);
-  if (maxDurRaw !== '' && !isNaN(parseInt(maxDurRaw,10))) params.max_duration_seconds = parseInt(maxDurRaw,10);
-  if (includeTagsRaw) params.include_tags = toList(includeTagsRaw);
-  if (excludeTagsRaw) params.exclude_tags = toList(excludeTagsRaw);
-    try{
-  const resp = await fetch("{{ url_for('api.create_compilation_task_api') }}", {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json', 'X-CSRFToken': csrf },
-        body: JSON.stringify({ name, description, params })
-      });
-      const j = await resp.json().catch(()=>({}));
-      if (resp.ok){
-        // close modal
-        const modalEl = document.getElementById('newTaskModal');
-        const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
-        modal.hide();
-        f.reset();
-        await loadTasks();
-      } else {
-        alert(j.error || 'Failed to create task');
-      }
-    } catch { alert('Failed to create task'); }
-  });
-
-  // Load media options when the new task modal opens
-  const newModalEl = document.getElementById('newTaskModal');
-  newModalEl?.addEventListener('show.bs.modal', async () => {
-    const nameInput = newModalEl.querySelector('input[name="name"]');
-    if (nameInput && !nameInput.value) nameInput.placeholder = 'e.g., Weekly Twitch Clips';
-
-    async function loadMedia(type, select) {
-      try {
-        const url = "{{ url_for('api.list_user_media_api') }}" + '?type=' + encodeURIComponent(type);
-        const data = await fetchJSON(url);
-        const items = data.items || [];
-        // Keep leading None option for intro/outro
-        const keepFirst = ['intro_id','outro_id'].includes(select.getAttribute('name'));
-        select.innerHTML = keepFirst ? '<option value="">— None —</option>' : '';
-        for (const m of items) {
-          const opt = document.createElement('option');
-          opt.value = String(m.id);
-          opt.textContent = m.filename || `Media #${m.id}`;
-          select.appendChild(opt);
-        }
-      } catch (e) {
-        // ignore
-      }
-    }
-
-    const introSel = newModalEl.querySelector('select[name="intro_id"]');
-    const outroSel = newModalEl.querySelector('select[name="outro_id"]');
-    const transSelNew = newModalEl.querySelector('select[name="transition_ids"]');
-    if (introSel) loadMedia('intro', introSel);
-    if (outroSel) loadMedia('outro', outroSel);
-    if (transSelNew) loadMedia('transition', transSelNew);
-  });
-
   // Initial load
   loadTasks();
 

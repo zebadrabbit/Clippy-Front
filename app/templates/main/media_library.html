@@ -12,12 +12,11 @@
        class="d-none"></div>
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h2 class="mb-0"><i class="bi bi-collection-play"></i> Media Library</h2>
-    <a class="btn btn-outline-primary" href="{{ url_for('main.projects') }}">Go to Projects</a>
   </div>
 
   <!-- Upload Zone (Dropzone) -->
   <div class="card mb-4">
-    <div class="card-header">
+    <div class="card-header card-header--primary">
       <strong>Upload Media</strong>
     </div>
     <div class="card-body">
@@ -34,7 +33,7 @@
           <div class="form-text">Choose how this upload will be categorized.</div>
         </div>
         <div class="col-lg-9">
-          <form action="{{ url_for('main.media_upload') }}" class="dropzone" id="media-dropzone">
+          <form action="{{ url_for('main.media_upload') }}" class="dropzone dropzone-accent" id="media-dropzone">
             <div class="dz-message">Drop files here or click to upload</div>
             <div class="dz-previews mt-3"></div>
           </form>
@@ -72,7 +71,9 @@
         <select class="form-select" name="type">
           <option value="">All</option>
           {% for t in media_types %}
-            <option value="{{ t.value }}" {% if type_filter==t.value %}selected{% endif %}>{{ t.name.title() }}</option>
+            {% if t.name in ('INTRO','OUTRO','TRANSITION') %}
+              <option value="{{ t.value }}" {% if type_filter==t.value %}selected{% endif %}>{{ t.name.title() }}</option>
+            {% endif %}
           {% endfor %}
         </select>
       </div>

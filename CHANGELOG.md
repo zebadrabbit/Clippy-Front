@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2025-10-27
+
+### Added
+- Timeline-aware compilation: the compile endpoint, worker, and wizard now honor only the clips placed on the Arrange timeline via `clip_ids`, preserving the exact order.
+- Tests to validate selection behavior: rejects empty selections and accepts subsets in order.
+
+### Changed
+- Worker optimization: Celery worker now caches a single Flask app instance per process to reduce repeated DB/app initialization and lower database connection pressure.
+- Documentation: README and workers guide updated with upgrade guidance for task signature changes, `STATIC_BUMPER_PATH` override for the static inter-segment clip, and path-alias tips (`MEDIA_PATH_ALIAS_FROM/TO`).
+
+### Fixed
+- Resolved a syntax error in `app/tasks/video_processing.py` introduced during worker refactor.
+
+
 ## [0.8.5] - 2025-10-27
 
 ### Changed

@@ -38,6 +38,9 @@
       <a class="list-group-item list-group-item-action py-2 {{ 'active' if (config_section or '') == 'pagination' else '' }}" href="{{ url_for('admin.system_config', section='pagination') }}">
         Display
       </a>
+      <a class="list-group-item list-group-item-action py-2 {{ 'active' if (config_section or '') == 'email' else '' }}" href="{{ url_for('admin.system_config', section='email') }}">
+        Email
+      </a>
     </div>
     {% endif %}
     <!-- Maintenance link removed per request -->

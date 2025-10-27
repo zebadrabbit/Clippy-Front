@@ -1069,6 +1069,20 @@ def system_config():
             },
             {"key": "WATERMARK_POSITION", "type": "str", "label": "Watermark Position"},
         ],
+        "Email": [
+            {
+                "key": "EMAIL_VERIFICATION_ENABLED",
+                "type": "bool",
+                "label": "Enable Email Verification",
+            },
+            {"key": "EMAIL_FROM_ADDRESS", "type": "str", "label": "From Address"},
+            {"key": "SMTP_HOST", "type": "str", "label": "SMTP Host"},
+            {"key": "SMTP_PORT", "type": "int", "label": "SMTP Port"},
+            {"key": "SMTP_USE_TLS", "type": "bool", "label": "Use STARTTLS"},
+            {"key": "SMTP_USE_SSL", "type": "bool", "label": "Use SSL (465)"},
+            {"key": "SMTP_USERNAME", "type": "str", "label": "SMTP Username"},
+            # NOTE: Password should be provided via environment (.env) as SMTP_PASSWORD
+        ],
     }
 
     section_map = {
@@ -1077,6 +1091,7 @@ def system_config():
         "binaries": ["Binaries", "CLI Arguments"],
         # Display bucket includes pagination, thumbnails, and watermark
         "pagination": ["Watermark", "Pagination", "Thumbnails"],
+        "email": ["Email"],
     }
     if section in section_map:
         keys = section_map[section]
@@ -1192,6 +1207,10 @@ def system_config():
             "debug": bool(current_app.config.get("DEBUG")),
             "testing": bool(current_app.config.get("TESTING")),
         },
+        "email": {
+            "smtp_password_set": bool(os.environ.get("SMTP_PASSWORD")),
+            "from": str(current_app.config.get("EMAIL_FROM_ADDRESS") or ""),
+        },
     }
 
     # Persist updates
@@ -1280,6 +1299,38 @@ def system_config():
                 current_app.logger.error(f"Watermark upload failed: {e}")
                 flash("Failed to upload watermark", "danger")
             return redirect(url_for("admin.system_config", section="pagination"))
+        elif action == "send_test_email":
+            # Send a test email using configured SMTP settings
+            to_addr = (request.form.get("test_to") or "").strip()
+            if not to_addr:
+                flash("Please provide a destination email address.", "warning")
+                return redirect(url_for("admin.system_config", section="email"))
+            try:
+                from app import mailer as _mailer
+
+                if not _mailer.is_configured():
+                    flash(
+                        "SMTP is not fully configured. Set host/port/username and SMTP_PASSWORD in .env.",
+                        "warning",
+                    )
+                    return redirect(url_for("admin.system_config", section="email"))
+                sent = _mailer.send_email(
+                    to_addr,
+                    subject="ClippyFront SMTP test",
+                    html="<p>This is a <strong>test email</strong> from ClippyFront Admin.</p>",
+                    text="This is a test email from ClippyFront Admin.",
+                )
+                if sent:
+                    flash(f"Test email sent to {to_addr}.", "success")
+                else:
+                    flash(
+                        "Failed to send test email. Check SMTP settings and logs.",
+                        "danger",
+                    )
+            except Exception as e:
+                current_app.logger.error(f"Test email send failed: {e}")
+                flash("An error occurred while sending the test email.", "danger")
+            return redirect(url_for("admin.system_config", section="email"))
         elif action in {"restart_web", "restart_workers"}:
             # Trigger restart endpoints
             return redirect(url_for("admin.restart", target=action.split("_")[1]))

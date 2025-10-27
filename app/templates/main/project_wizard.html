@@ -12,23 +12,22 @@
   <a class="btn btn-outline-secondary" href="{{ url_for('main.projects') }}">Back to Projects</a>
   </div>
 
-  <!-- Wizard chevron progress: 1) Setup 2) Get Clips 3) Arrange 4) Compile 5) Export -->
-  <div class="chevron-steps mb-3">
-    <ul class="progress" id="wizard-chevrons">
-  <li data-step="1" class="active"><a href="#">Setup</a></li>
-  <li data-step="2"><a href="#">Get Clips</a></li>
-  <li data-step="3"><a href="#">Arrange</a></li>
-  <li data-step="4"><a href="#">Compile</a></li>
-  <li data-step="5"><a href="#">Export</a></li>
-    </ul>
-  </div>
-
   <div class="card">
+    <div class="card-header card-header--primary mb-3">Project Wizard</div>
     <div class="card-body">
+      <!-- Wizard chevron progress: 1) Setup 2) Get Clips 3) Arrange 4) Compile 5) Export -->
+      <div class="chevron-steps mb-3">
+        <ul class="progress" id="wizard-chevrons">
+          <li data-step="1" class="active"><a href="#">Setup</a></li>
+          <li data-step="2"><a href="#">Get Clips</a></li>
+          <li data-step="3"><a href="#">Arrange</a></li>
+          <li data-step="4"><a href="#">Compile</a></li>
+          <li data-step="5"><a href="#">Export</a></li>
+        </ul>
+      </div>
   <div id="wizard-data" data-user-has-twitch="{{ '1' if current_user.is_authenticated and current_user.twitch_username else '0' }}" data-date-format="{{ current_user.date_format if current_user.is_authenticated else 'auto' }}" class="d-none"></div>
       <!-- Step 1: Setup -->
       <div class="wizard-step" data-step="1">
-        <h5 class="mb-3">Step 1: Project Setup</h5>
         <form id="setup-form" class="row g-3">
           <div class="col-md-4">
             <label class="form-label">Route</label>
@@ -54,14 +53,14 @@
               </div>
               <div class="col-md-5 offset-md-1">
                 <div class="card audio-norm-card">
-                  <div class="card-body">
-                    <div class="d-flex align-items-center justify-content-between mb-2">
-                      <div class="d-flex align-items-center gap-2 audio-norm-head">
-                        <input class="form-check-input" type="checkbox" id="audio-norm-enabled" checked>
-                        <label class="form-label mb-0" for="audio-norm-enabled">Audio Normalization</label>
-                      </div>
-                      <span class="text-muted small">optional</span>
+                  <div class="card-header card-header--accent d-flex align-items-center justify-content-between">
+                    <div class="d-flex align-items-center gap-2 audio-norm-head">
+                      <input class="form-check-input" type="checkbox" id="audio-norm-enabled">
+                      <label class="form-label mb-0" for="audio-norm-enabled">Audio Normalization</label>
                     </div>
+                    <span class="small" style="opacity: .85;">optional</span>
+                  </div>
+                  <div class="card-body">
                     <div class="opt-slider" id="audio-norm-slider" data-count="4">
                       <input type="radio" name="audio_norm_profile" id="an-music" value="music" data-db="-1">
                       <label for="an-music" data-label="Music (-1 dB)"></label>
@@ -142,13 +141,15 @@
           </div>
         </form>
         <div class="d-flex justify-content-end wizard-nav mt-4">
-          <button class="btn btn-primary btn-glow" id="next-1">Next: Get Clips</button>
+          <div class="d-flex gap-2">
+            <button class="btn btn-accent btn-glow btn-shadow-dark" id="save-as-task" type="button"><i class="bi bi-save"></i> Save as task</button>
+            <button class="btn btn-primary btn-glow btn-shadow-dark" id="next-1" type="button">Next: Get Clips</button>
+          </div>
         </div>
       </div>
 
   <!-- Step 2: Get Clips (consolidates Fetch + Parse + Download) -->
       <div class="wizard-step d-none" data-step="2">
-  <h5 class="mb-3">Step 2: Get Clips</h5>
         <div class="chevron-progress">
           <div class="chevron-label" id="gc-status">Warming up the clippers…</div>
           <div class="chevron-steps">
@@ -164,14 +165,13 @@
           <button class="btn btn-outline-secondary" data-prev="1">Back: Setup</button>
           <div class="d-flex gap-2">
             <button class="btn btn-outline-danger d-none" id="gc-cancel">Cancel</button>
-            <button class="btn btn-primary btn-glow" id="next-2" disabled>Next: Arrange Timeline</button>
+            <button class="btn btn-primary btn-glow btn-shadow-dark" id="next-2" disabled>Next: Arrange Timeline</button>
           </div>
         </div>
       </div>
 
       <!-- Step 3: Arrange -->
       <div class="wizard-step d-none" data-step="3">
-        <h5 class="mb-3">Step 3: Arrange Timeline</h5>
         <!-- Timeline on top -->
         <div class="mb-3">
           <div class="card">
@@ -256,39 +256,49 @@
         </div>
         <div class="d-flex justify-content-between wizard-nav mt-4">
           <button class="btn btn-outline-secondary" data-prev="2">Back: Get Clips</button>
-          <button class="btn btn-primary btn-glow" id="next-3" disabled>Next: Compile</button>
+          <button class="btn btn-primary btn-glow btn-shadow-dark" id="next-3" disabled>Next: Compile</button>
         </div>
       </div>
 
       <!-- Step 4: Compile -->
       <div class="wizard-step d-none" data-step="4">
-        <h5 class="mb-3">Step 4: Compile Video</h5>
         <!-- Auto-start compile option removed -->
         <div class="mt-3">
-          <button class="btn btn-primary" id="start-compile"><i class="bi bi-play-circle"></i> Start Compile</button>
+          <button class="btn btn-primary btn-shadow-dark" id="start-compile"><i class="bi bi-play-circle"></i> Start Compile</button>
           <button class="btn btn-outline-danger" id="cancel-compile" disabled>Cancel</button>
         </div>
   <!-- Render summary/details -->
   <div id="compile-details" class="mt-3"></div>
   <div class="progress mt-3 compile-progress" role="progressbar" aria-label="Compile" aria-valuemin="0" aria-valuemax="100" style="height: 25px"><div class="progress-bar" id="compile-progress" style="width: 0%">0%</div></div>
         <div class="mt-3"><pre class="bg-dark p-3 rounded" id="compile-log" style="min-height: 140px; max-height: 240px; overflow:auto;">Ready to roll.</pre></div>
-  <div class="d-flex justify-content-between wizard-nav mt-4"><button class="btn btn-outline-secondary" data-prev="3">Back: Arrange</button><button class="btn btn-primary btn-glow" id="next-4" disabled>Next: Export</button></div>
+  <div class="d-flex justify-content-between wizard-nav mt-4"><button class="btn btn-outline-secondary" data-prev="3">Back: Arrange</button><button class="btn btn-primary btn-glow btn-shadow-dark" id="next-4" disabled>Next: Export</button></div>
       </div>
 
       <!-- Step 5: Export -->
       <div class="wizard-step d-none" data-step="5">
-        <h5 class="mb-3">Step 5: Export</h5>
         <div class="alert alert-success d-none" id="export-ready">
           <strong>🎬 Showtime!</strong> Your compilation’s ready. What’s next?
         </div>
-        <div class="d-flex flex-wrap gap-2">
-          <a class="btn btn-success disabled" aria-disabled="true" id="download-output"><i class="bi bi-download"></i> Download Video</a>
-          <button class="btn btn-outline-danger disabled" id="upload-youtube" aria-disabled="true"><i class="bi bi-youtube"></i> Upload to YouTube</button>
-          <button class="btn btn-outline-primary disabled" id="upload-discord" aria-disabled="true"><i class="bi bi-discord"></i> Upload to Discord</button>
-        </div>
-        <div class="d-flex justify-content-between mt-3">
+          <!-- Export layout: video preview + details + actions -->
+          <div class="export-pane mt-2">
+            <div class="export-left">
+              <video id="export-video" class="export-video" controls></video>
+            </div>
+            <div class="export-right d-flex flex-column">
+              <div>
+                <h6 class="mb-2">Details</h6>
+                <ul class="list-unstyled export-details" id="export-details"></ul>
+              </div>
+              <div class="mt-auto d-flex flex-wrap gap-2 pt-2">
+                <a class="btn btn-success btn-shadow-dark disabled" aria-disabled="true" id="download-output"><i class="bi bi-download"></i> Download Video</a>
+                <button class="btn btn-outline-danger btn-shadow-dark disabled" id="upload-youtube" aria-disabled="true"><i class="bi bi-youtube"></i> Upload to YouTube</button>
+                <button class="btn btn-outline-primary btn-shadow-dark disabled" id="upload-discord" aria-disabled="true"><i class="bi bi-discord"></i> Upload to Discord</button>
+              </div>
+            </div>
+          </div>
+          <div class="d-flex justify-content-between mt-3">
           <button class="btn btn-outline-secondary" data-prev="4">Back: Compile</button>
-          <a class="btn btn-primary" href="{{ url_for('main.projects') }}">Finish</a>
+          <a class="btn btn-primary btn-shadow-dark" href="{{ url_for('main.projects') }}">Finish</a>
         </div>
       </div>
     </div>

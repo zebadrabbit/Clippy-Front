@@ -90,6 +90,7 @@
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   }
+  const CSRF = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
   // Twitch warning toggle
   const routeSelect = document.getElementById('route-select');
@@ -224,6 +225,65 @@
       } catch (_) {}
     } catch (e) {
       alert('Couldn’t create the project: ' + e.message);
+    }
+  });
+  // Save as task: capture current setup form and create an Automation task with a timestamped name
+  document.getElementById('save-as-task')?.addEventListener('click', async () => {
+    const form = document.getElementById('setup-form');
+    const fd = new FormData(form);
+    const route = (document.getElementById('route-select')?.value || 'twitch');
+    const nameRaw = (fd.get('name') || '').toString().trim();
+    const description = (fd.get('description') || '').toString();
+    const clip_limit = Math.max(1, Math.min(500, parseInt(fd.get('max_clips') || '10', 10) || 10));
+    const output_resolution = (fd.get('resolution') || '1080p').toString();
+    const output_format = (fd.get('format') || 'mp4').toString();
+    const max_clip_duration = parseInt(fd.get('max_len') || '300', 10) || 300;
+    const fps = parseInt(fd.get('fps') || '60', 10) || 60; // used for summary only, not sent to task for now
+    const audioNormEnabled = !!document.getElementById('audio-norm-enabled')?.checked;
+    const audio_norm_db_raw = (fd.get('audio_norm_db') || '').toString().trim();
+    // Build timestamped name
+    const now = new Date();
+    const pad = (n)=>String(n).padStart(2,'0');
+    const stamp = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const baseName = nameRaw || 'Compilation';
+    const name = `${baseName} – ${stamp}`;
+    // Optional date range → RFC3339 for Twitch API
+    function toStartOfDayZ(d){ try{ return `${d}T00:00:00Z`; }catch{ return null; } }
+    function toEndOfDayZ(d){ try{ return `${d}T23:59:59Z`; }catch{ return null; } }
+    const start_date = (fd.get('start_date') || '').toString().trim();
+    const end_date = (fd.get('end_date') || '').toString().trim();
+    const started_at = start_date ? toStartOfDayZ(start_date) : undefined;
+    const ended_at = end_date ? toEndOfDayZ(end_date) : undefined;
+    // Task params
+    const params = {
+      source: 'twitch', // tasks currently support twitch only
+      clip_limit,
+      output: {
+        output_resolution,
+        output_format,
+        max_clip_duration,
+      },
+    };
+    if (audioNormEnabled && audio_norm_db_raw !== '' && !isNaN(parseFloat(audio_norm_db_raw))) {
+      params.output.audio_norm_db = parseFloat(audio_norm_db_raw);
+    }
+    if (started_at) params.started_at = started_at;
+    if (ended_at) params.ended_at = ended_at;
+    // Submit to Automation API
+    try {
+      const resp = await fetch('/api/automation/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(CSRF ? { 'X-CSRFToken': CSRF } : {}) },
+        body: JSON.stringify({ name, description, params })
+      });
+      const j = await resp.json().catch(()=>({}));
+      if (resp.ok) {
+        alert('Saved as task. You can run or schedule it from Automation.');
+      } else {
+        alert((j && j.error) ? j.error : 'Failed to save task');
+      }
+    } catch (e) {
+      alert('Failed to save task');
     }
   });
   document.querySelector('[data-prev="1"]')?.addEventListener('click', () => gotoStep(1));
@@ -729,6 +789,18 @@
         body.transition_ids = wizard.selectedTransitionIds;
         body.randomize_transitions = !!document.getElementById('transitions-randomize')?.checked;
       }
+      // Extract the current timeline subset (ordered) so the backend renders exactly these clips
+      const list = document.getElementById('timeline-list');
+      const ids = Array.from(list.querySelectorAll('.timeline-card[data-clip-id]'))
+        .map(el => parseInt(el.dataset.clipId, 10))
+        .filter(v => Number.isFinite(v));
+      if (!ids.length) {
+        alert('Add at least one clip to the timeline.');
+        document.getElementById('cancel-compile').disabled = true;
+        if (startBtn) startBtn.disabled = false;
+        return;
+      }
+      body.clip_ids = ids;
       const r = await api(`/api/projects/${wizard.projectId}/compile`, { method: 'POST', body: JSON.stringify(body) });
       wizard.compileTaskId = r.task_id;
       if (!wizard.compileTaskId) {
@@ -801,15 +873,45 @@
 
   async function refreshExportInfo(){
     if (!wizard.projectId) return;
+    function fmtBytes(n){
+      const num = Number(n);
+      if (!isFinite(num) || num <= 0) return '—';
+      const u = ['B','KB','MB','GB','TB'];
+      let i = 0; let val = num;
+      while (val >= 1024 && i < u.length-1){ val /= 1024; i++; }
+      return `${val.toFixed(val >= 100 ? 0 : val >= 10 ? 1 : 2)} ${u[i]}`;
+    }
+    function fmtSec(sec){ const s = Math.max(0, Math.floor(Number(sec)||0)); const m = Math.floor(s/60); const r = (s%60).toString().padStart(2,'0'); return `${m}:${r}`; }
     try {
       const details = await api(`/api/projects/${wizard.projectId}`);
       const dl = document.getElementById('download-output');
       const ready = document.getElementById('export-ready');
+      const video = document.getElementById('export-video');
+      const list = document.getElementById('export-details');
       if (details && details.download_url) {
         dl.classList.remove('disabled');
         dl.href = details.download_url;
         ready.classList.remove('d-none');
         dl.textContent = `Download Video${details.output_filename ? ` (${details.output_filename})` : ''}`;
+        if (video) {
+          try { video.src = details.download_url; } catch (_) {}
+        }
+        if (list) {
+          list.innerHTML = '';
+          const rows = [
+            { label: 'Project', value: details.name || '—' },
+            { label: 'File', value: details.output_filename || '—' },
+            { label: 'Size', value: fmtBytes(details.output_file_size) },
+            { label: 'Duration', value: (typeof details.compiled_duration === 'number' ? fmtSec(details.compiled_duration) : '—') },
+            { label: 'Status', value: details.status || '—' },
+            { label: 'Audio Norm', value: (details.audio_norm_profile ? `${details.audio_norm_profile}${(typeof details.audio_norm_db==='number')?` (${details.audio_norm_db} dB)`:''}` : '—') },
+          ];
+          rows.forEach(r => {
+            const li = document.createElement('li');
+            li.innerHTML = `<span class="label">${escapeHtml(r.label)}:</span> <span class="value">${escapeHtml(String(r.value||'—'))}</span>`;
+            list.appendChild(li);
+          });
+        }
       }
     } catch (_) {}
   }

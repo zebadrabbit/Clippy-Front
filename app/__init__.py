@@ -853,6 +853,18 @@ def init_extensions(app):
                                 "WATERMARK_POSITION": "str",
                             }
                         )
+                        # Extend allowlist with Email/SMTP settings (no secrets)
+                        allowed.update(
+                            {
+                                "EMAIL_VERIFICATION_ENABLED": "bool",
+                                "EMAIL_FROM_ADDRESS": "str",
+                                "SMTP_HOST": "str",
+                                "SMTP_PORT": "int",
+                                "SMTP_USE_TLS": "bool",
+                                "SMTP_USE_SSL": "bool",
+                                "SMTP_USERNAME": "str",
+                            }
+                        )
                         rows = SystemSetting.query.filter(
                             SystemSetting.key.in_(allowed.keys())
                         ).all()

@@ -63,8 +63,50 @@ def dashboard():
     Returns:
         Response: Rendered dashboard template
     """
-    # Get user's projects with counts
+    # Get user's recent projects (limit N)
     projects = current_user.projects.order_by(Project.updated_at.desc()).limit(10).all()
+
+    # Ensure projects have a public_id for preview URLs and enrich with media info
+    enriched_projects: list[dict] = []
+    for p in projects:
+        # Assign a public_id if missing (best-effort)
+        if not getattr(p, "public_id", None):
+            try:
+                p.public_id = Project.generate_public_id()
+                db.session.add(p)
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
+        # Newest compiled output for this project, if any
+        compiled = (
+            p.media_files.filter_by(media_type=MediaType.COMPILATION)
+            .order_by(MediaFile.uploaded_at.desc())
+            .first()
+        )
+        # URLs for thumbnail and hover preview
+        thumb_url = (
+            url_for("main.media_thumbnail", media_id=compiled.id) if compiled else None
+        )
+        preview_url = None
+        try:
+            if p.output_filename and p.public_id:
+                preview_url = url_for(
+                    "main.preview_compiled_output_by_public", public_id=p.public_id
+                )
+        except Exception:
+            preview_url = None
+
+        enriched_projects.append(
+            {
+                "project": p,
+                "compiled": compiled,
+                "thumb_url": thumb_url,
+                "preview_url": preview_url,
+                "duration_formatted": getattr(compiled, "duration_formatted", None),
+                "tags": getattr(compiled, "tags", None) or "",
+            }
+        )
 
     # Get recent clips across all projects
     recent_clips = (
@@ -95,7 +137,7 @@ def dashboard():
     return render_template(
         "main/dashboard.html",
         title="Dashboard",
-        projects=projects,
+        projects=enriched_projects,
         recent_clips=recent_clips,
         stats=stats,
     )
@@ -182,6 +224,13 @@ def project_details_by_public(public_id):
         .all()
     )
 
+    # Latest compiled media (for duration/thumbnail/title details)
+    compiled_media = (
+        project.media_files.filter_by(media_type=MediaType.COMPILATION)
+        .order_by(MediaFile.uploaded_at.desc())
+        .first()
+    )
+
     # Download URL for final compilation if present
     download_url = None
     if project.output_filename:
@@ -208,6 +257,7 @@ def project_details_by_public(public_id):
         outros=outros,
         transitions=transitions,
         download_url=download_url,
+        compiled_media=compiled_media,
     )
 
 
@@ -251,6 +301,11 @@ def project_details(project_id):
         .order_by(MediaFile.uploaded_at.desc())
         .all()
     )
+    compiled_media = (
+        project.media_files.filter_by(media_type=MediaType.COMPILATION)
+        .order_by(MediaFile.uploaded_at.desc())
+        .first()
+    )
     download_url = None
     if project.output_filename:
         try:
@@ -269,6 +324,7 @@ def project_details(project_id):
         outros=outros,
         transitions=transitions,
         download_url=download_url,
+        compiled_media=compiled_media,
     )
 
 
@@ -688,12 +744,16 @@ def media_library():
     page = request.args.get("page", 1, type=int)
     per_page = current_app.config.get("MEDIA_PER_PAGE", 20)
 
-    # Filter by media type if provided
+    # Filter by media type if provided, but default listing excludes clips/compilations
     type_filter = request.args.get("type")
     query = current_user.media_files
 
-    if type_filter and type_filter in [t.value for t in MediaType]:
+    # Always exclude CLIP and COMPILATION from the default library view (user uploads only)
+    allowed_types = {MediaType.INTRO, MediaType.OUTRO, MediaType.TRANSITION}
+    if type_filter and type_filter in [t.value for t in allowed_types]:
         query = query.filter_by(media_type=MediaType(type_filter))
+    else:
+        query = query.filter(MediaFile.media_type.in_(list(allowed_types)))
 
     media_pagination = query.order_by(MediaFile.uploaded_at.desc()).paginate(
         page=page, per_page=per_page, error_out=False

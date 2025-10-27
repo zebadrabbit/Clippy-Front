@@ -2,8 +2,8 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "0.8.5"
-__version_info__ = (0, 8, 5)
+__version__ = "0.9.0"
+__version_info__ = (0, 9, 0)
 
 # Version history tracking
 VERSION_HISTORY = {
@@ -87,6 +87,11 @@ VERSION_HISTORY = {
     "0.8.5": (
         "Polish after canonicalization rollout: compile task path canonicalization verified end-to-end; final docs sweep (README, Samba/mounts, workers, GPU), "
         "GPU run script defaults clarified with mount sanity warning and aliasing off by default; Compose GPU flag noted alongside reservations. Tests and lint pass."
+    ),
+    "0.9.0": (
+        "Timeline-aware compile and worker hardening: the compile API, worker, and wizard now honor only the clips placed on the timeline (clip_ids) in the exact order; "
+        "added tests to enforce empty selection rejection and subset ordering. Celery worker reuses a single Flask app instance per process to reduce DB connection churn; "
+        "resolved a syntax error introduced during refactor. Docs updated: README and workers guide cover task-signature upgrades, STATIC_BUMPER_PATH override, and path-alias tips."
     ),
 }
 

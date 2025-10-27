@@ -97,6 +97,34 @@
       {% endif %}
 
       {% if section %}
+      {% if section == 'email' %}
+      <div class="alert alert-info small">
+        For security, SMTP password must be set via environment (.env) as <code>SMTP_PASSWORD</code>.
+        {% if config_info.email.smtp_password_set %}
+          <span class="ms-2 badge bg-success-subtle text-success">Password present</span>
+        {% else %}
+          <span class="ms-2 badge bg-warning-subtle text-warning">Password missing</span>
+        {% endif %}
+      </div>
+      <div class="card mb-3">
+        <div class="card-header d-flex align-items-center gap-2">
+          <i class="bi bi-envelope-paper"></i> <strong>Send Test Email</strong>
+        </div>
+        <div class="card-body">
+          <form method="post" class="row g-3 align-items-end">
+            <input type="hidden" name="action" value="send_test_email">
+            <div class="col-md-8">
+              <label class="form-label">To address</label>
+              <input class="form-control" type="email" name="test_to" placeholder="name@example.com" required>
+            </div>
+            <div class="col-md-4">
+              <button class="btn btn-outline-primary w-100" type="submit"><i class="bi bi-send"></i> Send Test</button>
+            </div>
+          </form>
+          <div class="form-text mt-2">From: {{ values.get('EMAIL_FROM_ADDRESS') or config_info.email.from or 'no-reply@example.com' }}</div>
+        </div>
+      </div>
+      {% endif %}
       {% if section == 'pagination' %}
       <!-- Watermark upload (Display section) -->
       <div class="card mb-3">
