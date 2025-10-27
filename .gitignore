@@ -106,11 +106,18 @@ instance/
 !instance/assets/
 !instance/assets/static.mp4
 
+# Allow committing storage layout documentation under instance/
+!instance/data-structure.md
+
 # Local binaries (installed via scripts/install_local_binaries.sh)
 bin/
 
 # Vendor frontend assets fetched locally (use fetch_vendor_assets.sh)
 app/static/vendor/
+
+# Media/artifacts accidentally created at repo root (instance is the canonical root)
+data/
+compilations/
 
 # Backup files
 *.bak

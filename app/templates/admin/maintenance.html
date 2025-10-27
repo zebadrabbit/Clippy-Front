@@ -12,7 +12,7 @@
   <div class="card mb-3">
     <div class="card-body">
       <h5 class="card-title">Reindex Media Library</h5>
-      <p class="card-text">Scan <code>instance/uploads/</code> and backfill missing database rows for media files. This will never modify or rename files on disk.</p>
+  <p class="card-text">Scan the per-user data root (e.g., <code>instance/data/</code>) and backfill missing database rows for media files. This will never modify or rename source media on disk.</p>
       <form method="post">
         <input type="hidden" name="action" value="reindex" />
         <button type="submit" class="btn btn-primary">Start Reindex</button>

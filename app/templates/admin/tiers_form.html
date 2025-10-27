@@ -25,6 +25,30 @@
                   <label class="form-label">Description</label>
                   <textarea class="form-control" rows="2" name="description">{{ tier.description if tier else '' }}</textarea>
                 </div>
+                <div class="row">
+                  <div class="col-md-4 mb-3">
+                    <label class="form-label">Max Output Resolution</label>
+                    <select class="form-select" name="max_output_resolution">
+                      <option value="" {% if not tier or not tier.max_output_resolution %}selected{% endif %}>Unlimited</option>
+                      {% set res = (tier.max_output_resolution.lower() if tier and tier.max_output_resolution else '') %}
+                      <option value="720p" {% if res == '720p' %}selected{% endif %}>720p</option>
+                      <option value="1080p" {% if res == '1080p' %}selected{% endif %}>1080p</option>
+                      <option value="1440p" {% if res == '1440p' %}selected{% endif %}>1440p (2K)</option>
+                      <option value="2160p" {% if res == '2160p' %}selected{% endif %}>2160p (4K)</option>
+                    </select>
+                    <div class="form-text">Upper bound for project output resolution.</div>
+                  </div>
+                  <div class="col-md-4 mb-3">
+                    <label class="form-label">Max FPS</label>
+                    <input class="form-control" name="max_fps" type="number" min="1" step="1" placeholder="e.g. 30" value="{% if tier and tier.max_fps is not none %}{{ tier.max_fps }}{% endif %}">
+                    <div class="form-text">Leave blank for unlimited.</div>
+                  </div>
+                  <div class="col-md-4 mb-3">
+                    <label class="form-label">Max Clips per Project</label>
+                    <input class="form-control" name="max_clips_per_project" type="number" min="1" step="1" placeholder="e.g. 20" value="{% if tier and tier.max_clips_per_project is not none %}{{ tier.max_clips_per_project }}{% endif %}">
+                    <div class="form-text">Leave blank for unlimited.</div>
+                  </div>
+                </div>
                 <div class="mb-3">
                   <label class="form-label">Storage Limit (MB)</label>
                   <input class="form-control" name="storage_limit_mb" type="number" min="0" step="1" placeholder="e.g. 1024 for 1 GB" value="{% if tier and tier.storage_limit_bytes is not none %}{{ (tier.storage_limit_bytes/1024/1024)|round(0, 'floor')|int }}{% endif %}">

@@ -25,6 +25,7 @@ from flask import (
 from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
 
+from app import storage as storage_lib
 from app.models import Clip, MediaFile, MediaType, Project, ProjectStatus, db
 from app.version import get_version
 
@@ -394,12 +395,30 @@ def upload_media(project_id):
                 mime_type = file.content_type or "application/octet-stream"
                 subfolder = _media_type_folder(mtype, mime_type)
 
-                # Build per-user destination path
-                base_upload = os.path.join(
-                    current_app.instance_path, current_app.config["UPLOAD_FOLDER"]
-                )
-                user_dir = os.path.join(base_upload, str(current_user.id), subfolder)
-                os.makedirs(user_dir, exist_ok=True)
+                # Resolve destination directory using project-based storage helpers
+                if subfolder == "intros":
+                    user_dir = storage_lib.intros_dir(
+                        current_user, project.name, library=True
+                    )
+                elif subfolder == "outros":
+                    user_dir = storage_lib.outros_dir(
+                        current_user, project.name, library=True
+                    )
+                elif subfolder == "transitions":
+                    user_dir = storage_lib.transitions_dir(
+                        current_user, project.name, library=True
+                    )
+                elif subfolder == "compilations":
+                    user_dir = storage_lib.compilations_dir(current_user, project.name)
+                elif subfolder == "clips":
+                    user_dir = storage_lib.clips_dir(current_user, project.name)
+                else:
+                    # Images and any other types: group under project root
+                    user_dir = os.path.join(
+                        storage_lib.project_root(current_user, project.name),
+                        subfolder,
+                    )
+                storage_lib.ensure_dirs(user_dir)
 
                 unique_name = f"{uuid4().hex}{file_ext}"
                 dest_path = os.path.join(user_dir, unique_name)
@@ -461,10 +480,8 @@ def upload_media(project_id):
                 thumb_path = None
                 if mime_type and mime_type.startswith("video"):
                     try:
-                        thumbs_dir = os.path.join(
-                            base_upload, str(current_user.id), "thumbnails"
-                        )
-                        os.makedirs(thumbs_dir, exist_ok=True)
+                        thumbs_dir = storage_lib.thumbnails_dir(current_user)
+                        storage_lib.ensure_dirs(thumbs_dir)
                         thumb_name = f"{uuid4().hex}.jpg"
                         thumb_path = os.path.join(thumbs_dir, thumb_name)
                         # Extract a frame at configured timestamp; scale width per config keeping aspect ratio
@@ -682,6 +699,73 @@ def media_library():
         page=page, per_page=per_page, error_out=False
     )
 
+    # Opportunistically backfill missing video metadata (duration/size) for visible items
+    try:
+        dirty = False
+        for m in media_pagination.items:
+            try:
+                if not m:
+                    continue
+                if not m.mime_type or not m.mime_type.startswith("video"):
+                    continue
+                if m.duration and m.duration > 0:
+                    continue
+                # Only probe if file exists
+                if not m.file_path or not os.path.exists(m.file_path):
+                    continue
+                # Use ffprobe to extract duration and basic video props
+                probe_cmd = [
+                    _resolve_binary(current_app, "ffprobe"),
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=width,height,r_frame_rate",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "json",
+                    m.file_path,
+                ]
+                out = subprocess.check_output(probe_cmd, text=True, encoding="utf-8")
+                import json as _json
+
+                data = _json.loads(out)
+                st = (data.get("streams") or [{}])[0]
+                fr = st.get("r_frame_rate") or "0/1"
+                try:
+                    num, den = fr.split("/")
+                    m.framerate = (float(num) / float(den)) if float(den) != 0 else None
+                except Exception:
+                    m.framerate = None
+                try:
+                    m.width = (
+                        int(st.get("width")) if st.get("width") is not None else m.width
+                    )
+                    m.height = (
+                        int(st.get("height"))
+                        if st.get("height") is not None
+                        else m.height
+                    )
+                except Exception:
+                    pass
+                try:
+                    m.duration = float((data.get("format") or {}).get("duration") or 0)
+                except Exception:
+                    m.duration = None
+                dirty = True
+            except Exception:
+                continue
+        if dirty:
+            try:
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+    except Exception:
+        # Non-fatal; continue rendering
+        pass
+
     return render_template(
         "main/media_library.html",
         title="Media Library",
@@ -848,11 +932,18 @@ def media_upload():
         mime_type = file.content_type or "application/octet-stream"
         subfolder = _media_type_folder(mtype, mime_type)
 
-        base_upload = os.path.join(
-            current_app.instance_path, current_app.config["UPLOAD_FOLDER"]
-        )
-        user_dir = os.path.join(base_upload, str(current_user.id), subfolder)
-        os.makedirs(user_dir, exist_ok=True)
+        # Choose library destination directory (intros/outros/transitions under library; others under library/<subfolder>)
+        if subfolder == "intros":
+            user_dir = storage_lib.intros_dir(current_user, None, library=True)
+        elif subfolder == "outros":
+            user_dir = storage_lib.outros_dir(current_user, None, library=True)
+        elif subfolder == "transitions":
+            user_dir = storage_lib.transitions_dir(current_user, None, library=True)
+        else:
+            # clips/images/other buckets inside library root
+            base_lib = storage_lib.library_root(current_user)
+            user_dir = os.path.join(base_lib, subfolder)
+        storage_lib.ensure_dirs(user_dir)
 
         dest_path = os.path.join(user_dir, unique_name)
         file.save(dest_path)
@@ -945,6 +1036,12 @@ def media_upload():
                                 "mime": existing.mime_type,
                                 "original_filename": existing.original_filename,
                                 "tags": existing.tags or "",
+                                # Extras for client-rendered cards
+                                "file_size_mb": round(
+                                    (existing.file_size or 0) / (1024 * 1024), 1
+                                ),
+                                "duration": existing.duration,
+                                "duration_formatted": existing.duration_formatted,
                             }
                         ),
                         200,
@@ -956,10 +1053,8 @@ def media_upload():
         thumb_path = None
         if mime_type and mime_type.startswith("video"):
             try:
-                thumbs_dir = os.path.join(
-                    base_upload, str(current_user.id), "thumbnails"
-                )
-                os.makedirs(thumbs_dir, exist_ok=True)
+                thumbs_dir = storage_lib.thumbnails_dir(current_user)
+                storage_lib.ensure_dirs(thumbs_dir)
                 stem = os.path.splitext(unique_name)[0]
                 thumb_path = os.path.join(thumbs_dir, f"{stem}.jpg")
                 if not os.path.exists(thumb_path):
@@ -1070,6 +1165,12 @@ def media_upload():
                     "mime": media_file.mime_type,
                     "original_filename": media_file.original_filename,
                     "tags": media_file.tags or "",
+                    # Extras for client-rendered cards
+                    "file_size_mb": round(
+                        (media_file.file_size or 0) / (1024 * 1024), 1
+                    ),
+                    "duration": media_file.duration,
+                    "duration_formatted": media_file.duration_formatted,
                 }
             ),
             201,
@@ -1092,59 +1193,7 @@ def media_preview(media_id: int):
         return jsonify({"error": "Not authorized"}), 403
 
     # Resolve path that may have been created on a different host/container
-    def _resolve_media_server_path(orig_path: str) -> str:
-        try:
-            debug = os.getenv("MEDIA_PATH_DEBUG", "").strip().lower() in {
-                "1",
-                "true",
-                "yes",
-                "on",
-            }
-            if orig_path and os.path.exists(orig_path):
-                if debug:
-                    current_app.logger.debug(
-                        "[media-path] using original path (exists): %s", orig_path
-                    )
-                return orig_path
-            ap = (orig_path or "").strip()
-            if not ap:
-                return orig_path
-            alias_from = os.getenv("MEDIA_PATH_ALIAS_FROM")
-            alias_to = os.getenv("MEDIA_PATH_ALIAS_TO")
-            if alias_from and alias_to and ap.startswith(alias_from):
-                cand = alias_to + ap[len(alias_from) :]
-                if debug:
-                    current_app.logger.debug(
-                        "[media-path] alias candidate: FROM='%s' TO='%s' -> '%s' (exists=%s)",
-                        alias_from,
-                        alias_to,
-                        cand,
-                        os.path.exists(cand),
-                    )
-                if os.path.exists(cand):
-                    return cand
-            marker = "/instance/"
-            if marker in ap:
-                try:
-                    suffix = ap.split(marker, 1)[1]
-                    cand = os.path.join(current_app.instance_path, suffix)
-                    if debug:
-                        current_app.logger.debug(
-                            "[media-path] instance remap candidate: base='%s' suffix='/%s' -> '%s' (exists=%s)",
-                            current_app.instance_path,
-                            suffix,
-                            cand,
-                            os.path.exists(cand),
-                        )
-                    if os.path.exists(cand):
-                        return cand
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        return orig_path
-
-    resolved_path = _resolve_media_server_path(media.file_path)
+    resolved_path = media.file_path
     try:
         return send_file(resolved_path, mimetype=media.mime_type, conditional=True)
     except FileNotFoundError:
@@ -1162,60 +1211,8 @@ def media_thumbnail(media_id: int):
         return jsonify({"error": "Not authorized"}), 403
 
     # Local resolver for media paths
-    def _resolve_media_server_path(orig_path: str) -> str:
-        try:
-            debug = os.getenv("MEDIA_PATH_DEBUG", "").strip().lower() in {
-                "1",
-                "true",
-                "yes",
-                "on",
-            }
-            if orig_path and os.path.exists(orig_path):
-                if debug:
-                    current_app.logger.debug(
-                        "[media-path] using original path (exists): %s", orig_path
-                    )
-                return orig_path
-            ap = (orig_path or "").strip()
-            if not ap:
-                return orig_path
-            alias_from = os.getenv("MEDIA_PATH_ALIAS_FROM")
-            alias_to = os.getenv("MEDIA_PATH_ALIAS_TO")
-            if alias_from and alias_to and ap.startswith(alias_from):
-                cand = alias_to + ap[len(alias_from) :]
-                if debug:
-                    current_app.logger.debug(
-                        "[media-path] alias candidate: FROM='%s' TO='%s' -> '%s' (exists=%s)",
-                        alias_from,
-                        alias_to,
-                        cand,
-                        os.path.exists(cand),
-                    )
-                if os.path.exists(cand):
-                    return cand
-            marker = "/instance/"
-            if marker in ap:
-                try:
-                    suffix = ap.split(marker, 1)[1]
-                    cand = os.path.join(current_app.instance_path, suffix)
-                    if debug:
-                        current_app.logger.debug(
-                            "[media-path] instance remap candidate: base='%s' suffix='/%s' -> '%s' (exists=%s)",
-                            current_app.instance_path,
-                            suffix,
-                            cand,
-                            os.path.exists(cand),
-                        )
-                    if os.path.exists(cand):
-                        return cand
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        return orig_path
-
     # If we have a thumbnail, serve it
-    thumb_path = _resolve_media_server_path(media.thumbnail_path or "")
+    thumb_path = media.thumbnail_path or ""
     if thumb_path and os.path.exists(thumb_path):
         try:
             return send_file(thumb_path, mimetype="image/jpeg", conditional=True)
@@ -1226,13 +1223,16 @@ def media_thumbnail(media_id: int):
         if (
             media.mime_type
             and media.mime_type.startswith("video")
-            and os.path.exists(_resolve_media_server_path(media.file_path))
+            and os.path.exists(media.file_path)
         ):
-            base_upload = os.path.join(
-                current_app.instance_path, current_app.config["UPLOAD_FOLDER"]
-            )
-            thumbs_dir = os.path.join(base_upload, str(media.user_id), "thumbnails")
-            os.makedirs(thumbs_dir, exist_ok=True)
+            # Prefer new storage thumbnails location
+            owner = getattr(media, "user", None)
+            if owner is None:
+                from app.models import User as _User
+
+                owner = db.session.get(_User, media.user_id)
+            thumbs_dir = storage_lib.thumbnails_dir(owner or current_user)
+            storage_lib.ensure_dirs(thumbs_dir)
             stem = os.path.splitext(os.path.basename(media.file_path))[0]
             thumb_path = os.path.join(thumbs_dir, f"{stem}.jpg")
             if not os.path.exists(thumb_path):
@@ -1243,7 +1243,7 @@ def media_thumbnail(media_id: int):
                         "-ss",
                         "1",
                         "-i",
-                        _resolve_media_server_path(media.file_path),
+                        media.file_path,
                         "-frames:v",
                         "1",
                         "-vf",
@@ -1632,9 +1632,22 @@ def download_compiled_output_by_public(public_id: str):
     if not project.output_filename:
         return jsonify({"error": "No compiled output available"}), 404
 
-    # The compiled file is stored under instance/compilations/<filename>
-    final_path = os.path.join(
+    # Resolve compiled file path (prefer new per-project layout, fallback to legacy)
+    try:
+        from app.storage import compilations_dir as _comp_dir
+
+        new_candidate = os.path.join(
+            _comp_dir(project.owner, project.name), project.output_filename
+        )
+    except Exception:
+        new_candidate = None
+    legacy_candidate = os.path.join(
         current_app.instance_path, "compilations", project.output_filename
+    )
+    final_path = (
+        new_candidate
+        if (new_candidate and os.path.exists(new_candidate))
+        else legacy_candidate
     )
     if not os.path.exists(final_path):
         return jsonify({"error": "Compiled file not found"}), 404
@@ -1664,8 +1677,21 @@ def preview_compiled_output_by_public(public_id: str):
     if not project.output_filename:
         return jsonify({"error": "No compiled output available"}), 404
 
-    final_path = os.path.join(
+    try:
+        from app.storage import compilations_dir as _comp_dir
+
+        new_candidate = os.path.join(
+            _comp_dir(project.owner, project.name), project.output_filename
+        )
+    except Exception:
+        new_candidate = None
+    legacy_candidate = os.path.join(
         current_app.instance_path, "compilations", project.output_filename
+    )
+    final_path = (
+        new_candidate
+        if (new_candidate and os.path.exists(new_candidate))
+        else legacy_candidate
     )
     if not os.path.exists(final_path):
         return jsonify({"error": "Compiled file not found"}), 404

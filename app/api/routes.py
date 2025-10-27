@@ -352,10 +352,19 @@ def create_and_download_clips_api(project_id: int):
                 if not s:
                     return ""
                 low = s.lower()
-                # Twitch clip URL pattern: /clip/<slug>
-                if "twitch.tv" in low and "/clip/" in low:
+                # Twitch clip URL patterns:
+                #  - https://www.twitch.tv/<channel>/clip/<slug>
+                #  - https://www.twitch.tv/clip/<slug>
+                #  - https://clips.twitch.tv/<slug>
+                if ("twitch.tv" in low and "/clip/" in low) or (
+                    "clips.twitch.tv" in low
+                ):
                     try:
-                        slug = low.split("/clip/", 1)[1]
+                        if "clips.twitch.tv" in low:
+                            # clips.twitch.tv/<slug>
+                            slug = low.split("clips.twitch.tv", 1)[1].lstrip("/")
+                        else:
+                            slug = low.split("/clip/", 1)[1]
                         # strip anything after next '/'
                         slug = slug.split("/")[0]
                         return slug
@@ -444,6 +453,11 @@ def create_and_download_clips_api(project_id: int):
                         description=None,
                         source_platform=src_platform or platform,
                         source_url=url_s,
+                        source_id=(
+                            extract_key(url_s)
+                            if (src_platform or platform) == "twitch"
+                            else None
+                        ),
                         project_id=project.id,
                         order_index=order_base + idx,
                         creator_name=creator_name,
@@ -480,6 +494,9 @@ def create_and_download_clips_api(project_id: int):
                         description=None,
                         source_platform=platform,
                         source_url=url_s,
+                        source_id=(
+                            extract_key(url_s) if platform == "twitch" else None
+                        ),
                         project_id=project.id,
                         order_index=order_base + idx,
                         creator_name=creator_name,
@@ -628,6 +645,11 @@ def create_and_download_clips_api(project_id: int):
                     description=None,
                     source_platform=src_platform or platform,
                     source_url=url_s,
+                    source_id=(
+                        extract_key(url_s)
+                        if (src_platform or platform) == "twitch"
+                        else None
+                    ),
                     project_id=project.id,
                     order_index=order_base + idx,
                     media_file_id=media_file.id,
@@ -651,6 +673,7 @@ def create_and_download_clips_api(project_id: int):
                     description=None,
                     source_platform=platform,
                     source_url=url_s,
+                    source_id=(extract_key(url_s) if platform == "twitch" else None),
                     project_id=project.id,
                     order_index=order_base + idx,
                 )
@@ -746,39 +769,32 @@ def compile_project_api(project_id: int):
 
         # Estimate planned output duration (seconds) for quota enforcement
         try:
-            # Sum clip durations with max per-clip limit applied
-            # Use DB-side aggregate for performance when possible
+            # Compute effective durations per clip to account for trims and per-project caps
             total_clip_seconds = 0.0
             try:
-                # Sum known durations
-                clip_durs = (
-                    db.session.query(func.coalesce(func.sum(Clip.duration), 0.0))
-                    .filter(Clip.project_id == project.id)
-                    .scalar()
-                    or 0.0
-                )
-                # Apply max_clip_duration where duration is missing or exceeds
-                # Approximate by capping average to max when necessary
+                clips = project.clips.order_by(
+                    Clip.order_index.asc(), Clip.created_at.asc()
+                ).all()
                 max_dur = float(project.max_clip_duration or 0)
-                if max_dur > 0:
-                    # Count clips with null or overly large durations
-                    clip_count = project.clips.count()
-                    # Conservative: assume missing durations use max
-                    known_count = (
-                        db.session.query(func.count(Clip.id))
-                        .filter(
-                            Clip.project_id == project.id, Clip.duration.isnot(None)
-                        )
-                        .scalar()
-                        or 0
-                    )
-                    unknown = max(0, int(clip_count) - int(known_count))
-                    # Cap known sum at max per clip when clearly over
-                    # We can't easily cap per-row in a DB-agnostic way here, so treat as-is
-                    total_clip_seconds = float(clip_durs) + (unknown * max_dur)
-                else:
-                    total_clip_seconds = float(clip_durs)
+                for c in clips:
+                    eff = 0.0
+                    try:
+                        if c.start_time is not None and c.end_time is not None:
+                            # Respect explicit trim window
+                            eff = max(0.0, float(c.end_time) - float(c.start_time))
+                        elif c.duration is not None:
+                            eff = float(c.duration)
+                        elif getattr(c, "media_file", None) and c.media_file.duration:
+                            eff = float(c.media_file.duration)
+                        # Apply per-clip cap when configured
+                        if max_dur > 0 and eff > 0:
+                            eff = min(eff, max_dur)
+                    except Exception:
+                        # If we can't determine this clip's duration, assume max if set
+                        eff = max_dur if max_dur > 0 else 0.0
+                    total_clip_seconds += float(eff or 0.0)
             except Exception:
+                # Fallback to legacy aggregate when detailed calc fails
                 total_clip_seconds = float(project.get_total_duration() or 0)
 
             # Add intro/outro durations if provided/available
@@ -820,6 +836,7 @@ def compile_project_api(project_id: int):
                 if valid_transition_ids:
                     from app.models import MediaFile
 
+                    # Average known durations across selected transitions
                     rows = (
                         db.session.query(
                             func.coalesce(func.avg(MediaFile.duration), 0.0)
@@ -828,7 +845,17 @@ def compile_project_api(project_id: int):
                         .scalar()
                         or 0.0
                     )
-                    avg_trans = float(rows)
+                    avg_trans = float(rows or 0.0)
+                    # Fallback to a conservative default when unknown
+                    if avg_trans <= 0.0:
+                        try:
+                            avg_trans = float(
+                                current_app.config.get(
+                                    "DEFAULT_TRANSITION_DURATION_SECONDS", 3
+                                )
+                            )
+                        except Exception:
+                            avg_trans = 3.0
                 trans_seconds = gaps * avg_trans
             except Exception:
                 trans_seconds = 0.0
@@ -940,6 +967,7 @@ def list_project_clips_api(project_id: int):
                         "id": media.id,
                         "mime": media.mime_type,
                         "filename": media.filename,
+                        "duration": media.duration,
                         "thumbnail_url": url_for(
                             "main.media_thumbnail", media_id=media.id
                         )
@@ -1160,6 +1188,7 @@ def get_project_details_api(project_id: int):
         return jsonify({"error": "Project not found"}), 404
 
     download_url = None
+    compiled_duration = None
     if project.output_filename:
         try:
             if project.public_id:
@@ -1167,6 +1196,40 @@ def get_project_details_api(project_id: int):
                     "main.download_compiled_output_by_public",
                     public_id=project.public_id,
                 )
+            # Try to resolve the duration from the associated compilation MediaFile
+            try:
+                from app.models import MediaFile, MediaType
+
+                mf = (
+                    MediaFile.query.filter_by(
+                        project_id=project.id, media_type=MediaType.COMPILATION
+                    )
+                    .order_by(MediaFile.uploaded_at.desc())
+                    .first()
+                )
+                if mf and mf.filename and project.output_filename:
+                    # Prefer exact filename match when multiple exist
+                    if mf.filename == project.output_filename:
+                        compiled_duration = mf.duration
+                    else:
+                        # Try to find exact match among all compilations for this project
+                        rows = (
+                            MediaFile.query.filter_by(
+                                project_id=project.id,
+                                media_type=MediaType.COMPILATION,
+                            )
+                            .order_by(MediaFile.uploaded_at.desc())
+                            .all()
+                        )
+                        for r in rows:
+                            if r.filename == project.output_filename:
+                                compiled_duration = r.duration
+                                break
+                        if compiled_duration is None and rows:
+                            # Fallback: latest compilation's duration
+                            compiled_duration = rows[0].duration
+            except Exception:
+                compiled_duration = None
         except Exception:
             download_url = None
 
@@ -1180,6 +1243,7 @@ def get_project_details_api(project_id: int):
             "output_filename": project.output_filename,
             "output_file_size": project.output_file_size,
             "download_url": download_url,
+            "compiled_duration": compiled_duration,
             "audio_norm_profile": getattr(project, "audio_norm_profile", None),
             "audio_norm_db": getattr(project, "audio_norm_db", None),
         }

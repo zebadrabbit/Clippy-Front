@@ -478,9 +478,10 @@ def upload_profile_image():
         flash("Unsupported image type.", "danger")
         return redirect(url_for("auth.profile"))
 
-    # Prepare user dir under instance/uploads/<user_id>/avatars
-    base_upload = os.path.join(_app.instance_path, _app.config["UPLOAD_FOLDER"])
-    user_dir = os.path.join(base_upload, str(current_user.id), "avatars")
+    # Prepare user dir under instance/assets/avatars
+    base_assets = os.path.join(_app.instance_path, "assets", "avatars")
+    os.makedirs(base_assets, exist_ok=True)
+    user_dir = base_assets
     os.makedirs(user_dir, exist_ok=True)
 
     # Save with a deterministic name per user to avoid buildup

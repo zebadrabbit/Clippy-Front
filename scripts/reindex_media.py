@@ -3,7 +3,7 @@
 """
 Reindex media library from the filesystem into the database.
 
-This script scans instance/uploads/<user_id>/** (excluding thumbnails) and creates
+This script scans the new project-based data layout under DATA_FOLDER and creates
 MediaFile rows for files that exist on disk but are missing in the DB.
 
 It detects MIME (python-magic fallback to mimetypes) and generates thumbnails for
@@ -27,7 +27,8 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from dotenv import load_dotenv
-from app.models import Clip, MediaFile, MediaType, Project, db
+from app.models import MediaFile, MediaType, Project, User, db
+from app import storage as storage_lib
 import hashlib
 
 
@@ -82,8 +83,12 @@ def _ensure_thumbnail(app, media: MediaFile):
             return
         if media.thumbnail_path and os.path.exists(media.thumbnail_path):
             return
-        base_upload = os.path.join(app.instance_path, app.config["UPLOAD_FOLDER"])
-        thumbs_dir = os.path.join(base_upload, str(media.user_id), "thumbnails")
+        # Use project-based thumbnails directory
+        try:
+            owner = db.session.get(User, media.user_id)
+        except Exception:
+            owner = None
+        thumbs_dir = storage_lib.thumbnails_dir(owner)
         os.makedirs(thumbs_dir, exist_ok=True)
         # Deterministic thumbnail name based on media filename stem
         stem = os.path.splitext(os.path.basename(media.file_path))[0]
@@ -132,9 +137,7 @@ def reindex(regen_thumbs: bool = False, app=None) -> int:
 
         app = create_app()
     with app.app_context():
-        base_upload = os.path.join(app.instance_path, app.config["UPLOAD_FOLDER"])
-        downloads_dir = os.path.join(app.instance_path, "downloads")
-        compilations_dir = os.path.join(app.instance_path, "compilations")
+        data_root = storage_lib.data_root()
         created = 0
 
         # Cleanup: remove any previously indexed sidecar .meta.json entries (DB rows only)
@@ -162,32 +165,45 @@ def reindex(regen_thumbs: bool = False, app=None) -> int:
             if m.checksum:
                 user_checksums.setdefault(int(m.user_id), set()).add(m.checksum)
 
-        # 1) Reindex per-user uploads library
-        if not os.path.isdir(base_upload):
-            print(f"No upload directory: {base_upload}")
+        # Optionally regenerate thumbnails for existing media missing them
+        if regen_thumbs:
+            for m in mf_all:
+                _ensure_thumbnail(app, m)
+
+        # Reindex user library and projects under data_root
+        if not os.path.isdir(data_root):
+            print(f"No data directory: {data_root}")
         else:
-            for uid in os.listdir(base_upload):
-                user_dir = os.path.join(base_upload, uid)
-                if not os.path.isdir(user_dir) or not uid.isdigit():
+            # Build user lookup (username -> User)
+            users = {str(u.id): u for u in User.query.all()}
+            # Layout: <data_root>/<username>/...
+            for uname in os.listdir(data_root):
+                user_path = os.path.join(data_root, uname)
+                if not os.path.isdir(user_path):
                     continue
-                for sub in os.listdir(user_dir):
-                    if sub.lower() == "thumbnails":
-                        continue
-                    sub_dir = os.path.join(user_dir, sub)
+                # Find matching user by username (fallback to any user if mismatch)
+                user_obj = None
+                for u in users.values():
+                    if storage_lib.username_of(u) == uname:
+                        user_obj = u
+                        break
+                if not user_obj:
+                    continue
+                uid = int(user_obj.id)
+                # 1) Library
+                lib_root = storage_lib.library_root(user_obj)
+                for sub in ("intros", "outros", "transitions", "images", "clips"):
+                    sub_dir = os.path.join(lib_root, sub)
                     if not os.path.isdir(sub_dir):
                         continue
                     mtype = _infer_type_from_subfolder(sub)
                     for fname in os.listdir(sub_dir):
-                        # Skip hidden files and sidecar metadata
                         if fname.startswith(".") or fname.endswith(".meta.json"):
                             continue
                         fpath = os.path.join(sub_dir, fname)
-                        if not os.path.isfile(fpath):
+                        if not os.path.isfile(fpath) or fpath in known_paths:
                             continue
-                        if fpath in known_paths:
-                            continue  # Already indexed
                         mime = _detect_mime(fpath)
-                        # Compute checksum to prevent duplicate content rows
                         checksum = None
                         try:
                             h = hashlib.sha256()
@@ -197,15 +213,13 @@ def reindex(regen_thumbs: bool = False, app=None) -> int:
                             checksum = h.hexdigest()
                         except Exception:
                             checksum = None
-                        # If we cannot obtain a checksum, skip indexing to avoid accumulating unknown files
                         if not checksum:
                             continue
-                        # Skip if same content already indexed for this user
                         try:
                             if (
                                 checksum
-                                and int(uid) in user_checksums
-                                and checksum in user_checksums[int(uid)]
+                                and uid in user_checksums
+                                and checksum in user_checksums[uid]
                             ):
                                 continue
                         except Exception:
@@ -214,161 +228,85 @@ def reindex(regen_thumbs: bool = False, app=None) -> int:
                             size = os.path.getsize(fpath)
                         except Exception:
                             size = 0
-                        # Do not read or create any sidecar metadata; database is the source of truth
-                        original_name = fname
-
                         media = MediaFile(
                             filename=fname,
-                            original_filename=original_name,
+                            original_filename=fname,
                             file_path=fpath,
                             file_size=size,
                             mime_type=mime,
                             media_type=mtype,
-                            user_id=int(uid),
+                            user_id=uid,
                             project_id=None,
                             checksum=checksum,
                         )
                         db.session.add(media)
+                        # Ensure thumbnail for newly indexed media (no-op for non-video)
+                        _ensure_thumbnail(app, media)
                         if checksum:
-                            user_checksums.setdefault(int(uid), set()).add(checksum)
-                        # Never regenerate or modify files on disk during reindex
+                            user_checksums.setdefault(uid, set()).add(checksum)
                         created += 1
-
-        # 2) Reindex global downloads directory (assign to user 0 if unknown)
-        if os.path.isdir(downloads_dir):
-            # Build a map from clip id -> (user_id, project_id)
-            clip_map = {
-                c.id: (
-                    c.project.owner.id if c.project and c.project.owner else None,
-                    c.project_id,
-                )
-                for c in Clip.query.all()
-            }
-            import re as _re
-
-            for fname in os.listdir(downloads_dir):
-                if fname.startswith(".") or fname.endswith(".meta.json"):
-                    continue
-                fpath = os.path.join(downloads_dir, fname)
-                if not os.path.isfile(fpath) or fpath in known_paths:
-                    continue
-                m = _re.match(r"clip_(\d+)_", fname)
-                if not m:
-                    continue  # can't infer owner; skip
-                cid = int(m.group(1))
-                owner_proj = clip_map.get(cid)
-                if not owner_proj or not owner_proj[0]:
-                    continue
-                user_id, project_id = owner_proj
-                mime = _detect_mime(fpath)
-                # Compute checksum to prevent duplicate content rows
-                checksum = None
-                try:
-                    h = hashlib.sha256()
-                    with open(fpath, "rb") as fh:
-                        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
-                            h.update(chunk)
-                    checksum = h.hexdigest()
-                except Exception:
-                    checksum = None
-                if not checksum:
-                    continue
-                # Skip if same content already indexed for this user
-                try:
-                    if (
-                        checksum
-                        and user_id in user_checksums
-                        and checksum in user_checksums[user_id]
+                # 2) Projects: scan per-project clips and compilations
+                # Map of user projects by slug for quick path lookup
+                projects = Project.query.filter_by(user_id=uid).all()
+                for proj in projects:
+                    root = storage_lib.project_root(user_obj, proj.name)
+                    for sub, mtype in (
+                        ("clips", MediaType.CLIP),
+                        ("compilations", MediaType.COMPILATION),
                     ):
-                        continue
-                except Exception:
-                    pass
-                try:
-                    size = os.path.getsize(fpath)
-                except Exception:
-                    size = 0
-                original_name = fname
-
-                media = MediaFile(
-                    filename=fname,
-                    original_filename=original_name,
-                    file_path=fpath,
-                    file_size=size,
-                    mime_type=mime,
-                    media_type=MediaType.CLIP,
-                    user_id=user_id,
-                    project_id=project_id,
-                    checksum=checksum,
-                )
-                db.session.add(media)
-                if checksum:
-                    user_checksums.setdefault(int(user_id), set()).add(checksum)
-                # Never regenerate or modify files on disk during reindex
-                created += 1
-
-        # 3) Reindex compiled outputs
-        if os.path.isdir(compilations_dir):
-            # Map output_filename -> (user_id, project_id)
-            proj_map = {
-                (p.output_filename or ""): (p.user_id, p.id)
-                for p in Project.query.all()
-                if p.output_filename
-            }
-            for fname in os.listdir(compilations_dir):
-                if fname.startswith(".") or fname.endswith(".meta.json"):
-                    continue
-                fpath = os.path.join(compilations_dir, fname)
-                if not os.path.isfile(fpath) or fpath in known_paths:
-                    continue
-                owner = proj_map.get(fname)
-                if not owner:
-                    continue  # unknown compilation; skip to avoid FK issues
-                user_id, project_id = owner
-                mime = _detect_mime(fpath)
-                # Compute checksum to prevent duplicate content rows
-                checksum = None
-                try:
-                    h = hashlib.sha256()
-                    with open(fpath, "rb") as fh:
-                        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
-                            h.update(chunk)
-                    checksum = h.hexdigest()
-                except Exception:
-                    checksum = None
-                if not checksum:
-                    continue
-                # Skip if same content already indexed for this user
-                try:
-                    if (
-                        checksum
-                        and user_id in user_checksums
-                        and checksum in user_checksums[user_id]
-                    ):
-                        continue
-                except Exception:
-                    pass
-                try:
-                    size = os.path.getsize(fpath)
-                except Exception:
-                    size = 0
-                original_name = fname
-
-                media = MediaFile(
-                    filename=fname,
-                    original_filename=original_name,
-                    file_path=fpath,
-                    file_size=size,
-                    mime_type=mime,
-                    media_type=MediaType.COMPILATION,
-                    user_id=user_id,
-                    project_id=project_id,
-                    checksum=checksum,
-                )
-                db.session.add(media)
-                if checksum:
-                    user_checksums.setdefault(int(user_id), set()).add(checksum)
-                # Never regenerate or modify files on disk during reindex
-                created += 1
+                        sub_dir = os.path.join(root, sub)
+                        if not os.path.isdir(sub_dir):
+                            continue
+                        for fname in os.listdir(sub_dir):
+                            if fname.startswith(".") or fname.endswith(".meta.json"):
+                                continue
+                            fpath = os.path.join(sub_dir, fname)
+                            if not os.path.isfile(fpath) or fpath in known_paths:
+                                continue
+                            mime = _detect_mime(fpath)
+                            checksum = None
+                            try:
+                                h = hashlib.sha256()
+                                with open(fpath, "rb") as fh:
+                                    for chunk in iter(
+                                        lambda: fh.read(1024 * 1024), b""
+                                    ):
+                                        h.update(chunk)
+                                checksum = h.hexdigest()
+                            except Exception:
+                                checksum = None
+                            if not checksum:
+                                continue
+                            try:
+                                if (
+                                    checksum
+                                    and uid in user_checksums
+                                    and checksum in user_checksums[uid]
+                                ):
+                                    continue
+                            except Exception:
+                                pass
+                            try:
+                                size = os.path.getsize(fpath)
+                            except Exception:
+                                size = 0
+                            media = MediaFile(
+                                filename=fname,
+                                original_filename=fname,
+                                file_path=fpath,
+                                file_size=size,
+                                mime_type=mime,
+                                media_type=mtype,
+                                user_id=uid,
+                                project_id=proj.id,
+                                checksum=checksum,
+                            )
+                            db.session.add(media)
+                            # Ensure thumbnail for newly indexed media (no-op for non-video)
+                            _ensure_thumbnail(app, media)
+                            if checksum:
+                                user_checksums.setdefault(uid, set()).add(checksum)
+                            created += 1
         if created:
             try:
                 db.session.commit()

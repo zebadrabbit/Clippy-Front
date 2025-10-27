@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.5] - 2025-10-27
+
+### Changed
+- Final documentation sweep to reflect canonical `/instance/...` paths and standardized host mount at `/mnt/clippyfront` across README and worker guides.
+- Clarified GPU worker run script defaults; aliasing disabled by default and a mount sanity warning added when the path doesn't look like an instance root.
+- Compose file notes GPU passthrough via `gpus: all` alongside device reservations (kept for Swarm).
+
+### Fixed
+- Ensured compile task stores canonicalized output and thumbnail paths consistently; verified end-to-end.
+- Eliminated `set -u` unbound variable errors by defaulting optional `MEDIA_PATH_ALIAS_*` vars in the run script.
+
+## [0.8.4] - 2025-10-27
+
+### Changed
+- Canonical path storage across the pipeline: media file paths are now stored as neutral `/instance/...` in the database and task results. At runtime, the app and workers transparently rebase these to the active instance directory, avoiding host path leaks in logs/DB.
+- Docker/Compose alignment: standardized instance mount to `/mnt/clippyfront` on hosts; Compose binds `${HOST_INSTANCE_PATH:-/mnt/clippyfront}:/app/instance` and sets `CLIPPY_INSTANCE_PATH=/app/instance` inside the container. Added `gpus: all` and fixed volumes indentation.
+- GPU worker launch script (`scripts/run_gpu_worker.sh`): safer defaults (no hard exports), aliasing disabled by default, optional flags documented, and a sanity warning when the mount doesn’t look like an instance root.
+- Documentation refresh (README, Samba/mounts): updated mount paths to `/mnt/clippyfront`, described canonical `/instance/...` storage and when aliasing is still useful for legacy migrations.
+
+### Fixed
+- Prevented `set -u` from erroring on unset `MEDIA_PATH_ALIAS_*` in the GPU worker script by providing empty-string defaults.
+- Compilation task now stores canonicalized output and thumbnail paths to keep records consistent with download tasks.
+
 ## [0.8.3] - 2025-10-26
 
 ### Added

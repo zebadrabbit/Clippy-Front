@@ -97,8 +97,8 @@ echo "[4/4] Example commands for the GPU worker (Windows/WSL2/Linux)"
 cat <<EOC
 
 # WSL2/Linux CIFS mount example (after Samba and WireGuard are up)
-sudo mkdir -p /mnt/clippy
-sudo mount -t cifs //${WG_HOST_IP}/${SAMBA_SHARE} /mnt/clippy \\
+sudo mkdir -p /mnt/clippyfront
+sudo mount -t cifs //${WG_HOST_IP}/${SAMBA_SHARE} /mnt/clippyfront \
   -o vers=3.0,username=${SAMBA_USER},password='<YOUR_SAMBA_PASSWORD>',file_mode=0644,dir_mode=0755
 
 # Docker run example (GPU worker)
@@ -108,7 +108,7 @@ docker run --rm --gpus all \\
   -e REDIS_URL=redis://${WG_HOST_IP}:6379/0 \\
   -e DATABASE_URL=postgresql://<user>:<pass>@${WG_HOST_IP}/clippy_front \\
   -e TMPDIR=/app/instance/tmp \\
-  -v /mnt/clippy:/app/instance \\
+  -v /mnt/clippyfront:/app/instance \\
   --name clippy-gpu-worker clippyfront-gpu-worker:latest
 
 # Compose example file exists in docker/docker-compose.gpu-worker.example.yml

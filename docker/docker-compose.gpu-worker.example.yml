@@ -9,6 +9,6 @@ services:
       - DATABASE_URL=postgresql://USER:PASSWORD@VPN_HOST_IP/clippy_front
       - TMPDIR=/app/instance/tmp
     volumes:
-      - /mnt/clippy:/app/instance
+      - /mnt/clippyfront:/app/instance
     deploy: {}
     command: ["celery", "-A", "app.tasks.celery_app", "worker", "-Q", "gpu", "--loglevel=info"]

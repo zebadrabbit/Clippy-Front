@@ -109,6 +109,8 @@
     const radios = Array.from(slider.querySelectorAll('input[type="radio"][name="audio_norm_profile"]'));
     const pos = slider.querySelector('.pos');
     const hiddenDb = document.getElementById('audio_norm_db');
+    const enableCb = document.getElementById('audio-norm-enabled');
+    const card = slider.closest('.audio-norm-card');
     function update(){
       const idx = radios.findIndex(r => r.checked);
       const count = Math.max(1, parseInt(slider.dataset.count || String(radios.length || 4), 10));
@@ -119,7 +121,20 @@
       const db = (radios[idx]?.dataset.db || '-1');
       if (hiddenDb) hiddenDb.value = db;
     }
+    function setEnabled(on){
+      if (card) card.classList.toggle('off', !on);
+      radios.forEach(r => { r.disabled = !on; });
+      if (pos) pos.style.opacity = on ? '1' : '0.2';
+      if (!on && hiddenDb) { hiddenDb.value = ''; }
+      if (on) update();
+    }
     radios.forEach(r => r.addEventListener('change', update));
+    if (enableCb) {
+      enableCb.addEventListener('change', () => setEnabled(!!enableCb.checked));
+      setEnabled(!!enableCb.checked);
+    } else {
+      setEnabled(true);
+    }
     update();
   })();
 
@@ -128,15 +143,22 @@
     const form = document.getElementById('setup-form');
     const fd = new FormData(form);
     const maxClips = parseInt(fd.get('max_clips') || '20', 10);
+    const audioNormEnabled = !!document.getElementById('audio-norm-enabled')?.checked;
     const payload = {
       name: (fd.get('name') || '').toString(),
       description: (fd.get('description') || '').toString(),
       output_resolution: (fd.get('resolution') || '1080p').toString(),
       output_format: (fd.get('format') || 'mp4').toString(),
       max_clip_duration: parseInt(fd.get('max_len') || '300', 10),
-      audio_norm_profile: (fd.get('audio_norm_profile') || 'music').toString(),
-      audio_norm_db: parseFloat(fd.get('audio_norm_db') || '-1')
+      // audio normalization will be conditionally appended below
     };
+    if (audioNormEnabled) {
+      payload.audio_norm_profile = (fd.get('audio_norm_profile') || 'gaming').toString();
+      const dbVal = (fd.get('audio_norm_db') || '').toString().trim();
+      if (dbVal !== '') {
+        payload.audio_norm_db = parseFloat(dbVal);
+      }
+    }
     // Persist settings for Compile summary
     wizard.settings = {
       route: route,
@@ -151,8 +173,8 @@
       start_date: fd.get('start_date') || '',
       end_date: fd.get('end_date') || '',
       min_views: fd.get('min_views') || '',
-      audio_norm_profile: payload.audio_norm_profile,
-      audio_norm_db: payload.audio_norm_db
+      audio_norm_profile: audioNormEnabled ? payload.audio_norm_profile : undefined,
+      audio_norm_db: audioNormEnabled ? payload.audio_norm_db : undefined
     };
     try {
       const r = await api('/api/projects', { method: 'POST', body: JSON.stringify(payload) });
@@ -335,6 +357,21 @@
     const clipTitles = clips.map(el => (el.querySelector('.title')?.textContent || el.querySelector('.fw-semibold')?.textContent || 'Clip'));
     const transCount = (wizard.selectedTransitionIds || []).length;
     const transMode = document.getElementById('transitions-randomize')?.checked ? 'Randomized' : 'Cycled';
+    // Estimate total duration from timeline
+    function num(val){ const n = Number(val); return isFinite(n) ? n : 0; }
+    const introSec = intro ? num(intro.dataset.durationSec) : 0;
+    const outroSec = outro ? num(outro.dataset.durationSec) : 0;
+    const clipSecs = clips.reduce((acc, el) => acc + num(el.dataset.durationSec), 0);
+    const segments = (intro ? 1 : 0) + clipCount + (outro ? 1 : 0);
+    const gaps = Math.max(0, segments - 1);
+    let avgTrans = 0;
+    if (transCount) {
+      const map = wizard.transitionDurationMap || {};
+      const vals = (wizard.selectedTransitionIds || []).map(id => num(map[id])).filter(v => v > 0);
+      avgTrans = vals.length ? (vals.reduce((a,b)=>a+b,0) / vals.length) : 3;
+    }
+    const estimatedSeconds = Math.floor(clipSecs + introSec + outroSec + (transCount ? gaps * avgTrans : 0));
+    function fmtSec(sec){ const s = Math.max(0, Math.floor(sec)); const m = Math.floor(s/60); const r = (s%60).toString().padStart(2,'0'); return `${m}:${r}`; }
     // Build combined meta line: "1080p, 60fps, mp4, (-1db)"
     const norm = (typeof s.audio_norm_db === 'number' && !isNaN(s.audio_norm_db)) ? `, (${s.audio_norm_db.toString()}db)` : '';
     const combined = `${s.resolution || ''}, ${s.fps || 60}fps, ${s.format || 'mp4'}${norm}`;
@@ -347,9 +384,12 @@
       const bg = el.querySelector('.thumb')?.style?.backgroundImage || '';
       const m = /url\(["']?([^"')]+)["']?\)/.exec(bg);
       const src = m ? m[1] : '';
+      const prev = el.dataset.previewUrl || '';
       return `
-        <div class="compile-clip-item">
-          <img class="compile-clip-thumb" src="${escapeHtml(src)}" alt="">
+        <div class="compile-clip-item" data-preview-url="${escapeHtml(prev)}">
+          <div class="compile-clip-thumb-wrap">
+            <img class="compile-clip-thumb" src="${escapeHtml(src)}" alt="">
+          </div>
           <div class="compile-clip-meta">
             <div class="compile-clip-title">${escapeHtml(title)}</div>
             <div class="compile-clip-len text-muted">${escapeHtml(dur)}</div>
@@ -363,6 +403,7 @@
           <h6 class="mb-2">Render Summary</h6>
           <div class="mb-1"><strong>Project:</strong> ${escapeHtml(s.name || 'My Compilation')}</div>
           <div class="mb-1"><strong>Output:</strong> ${escapeHtml(combined)}</div>
+          <div class="mb-1"><strong>Estimated length:</strong> ${fmtSec(estimatedSeconds)}</div>
           <div class="mb-1"><strong>Intro/Outro:</strong> ${intro ? yes : no}, ${outro ? yes : no}</div>
           <div class="mb-1"><strong>Transitions:</strong> ${transCount ? `${transCount} (${transMode})` : 'None'}</div>
           <div class="text-muted">Clip limits: min ${s.min_len || 0}s • max ${s.max_len || 0}s • max clips ${s.max_clips || 0}${s.start_date || s.end_date ? ` • Dates: ${escapeHtml(s.start_date || '—')} → ${escapeHtml(s.end_date || '—')}` : ''}${s.min_views ? ` • Min views: ${escapeHtml(String(s.min_views))}` : ''}</div>
@@ -374,6 +415,31 @@
           <div class="compile-clip-list">${itemsHtml || '<div class="text-muted small">No clips selected.</div>'}</div>
         </div>
       </div>`;
+    try { attachHoverPreviews(details); } catch(_) {}
+  }
+
+  function attachHoverPreviews(root){
+    const items = Array.from(root.querySelectorAll('.compile-clip-item'));
+    items.forEach(it => {
+      const wrap = it.querySelector('.compile-clip-thumb-wrap');
+      if (!wrap) return;
+      let vid = null;
+      function show(){
+        const url = it.getAttribute('data-preview-url');
+        if (!url) return;
+        if (vid && vid.isConnected) return;
+        vid = document.createElement('video');
+        vid.className = 'compile-clip-video';
+        vid.src = url;
+        vid.muted = true; vid.autoplay = true; vid.loop = true; vid.playsInline = true;
+        wrap.appendChild(vid);
+      }
+      function hide(){ if (vid && vid.parentElement) { vid.pause(); vid.parentElement.removeChild(vid); } vid = null; }
+      wrap.addEventListener('mouseenter', show);
+      wrap.addEventListener('mouseleave', hide);
+      wrap.addEventListener('focus', show, true);
+      wrap.addEventListener('blur', hide, true);
+    });
   }
   function escapeHtml(str){
     return String(str || '').replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[ch]));
@@ -407,8 +473,9 @@
           subtitle: [item.creator_name ? `By ${item.creator_name}` : '', item.game_name ? `• ${item.game_name}` : ''].filter(Boolean).join(' '),
           thumbUrl: (item.media && item.media.thumbnail_url) || '',
           clipId: item.id,
-          durationSec: (item.media && (typeof item.media.duration === 'number') ? item.media.duration : undefined),
-          kind: 'clip'
+          durationSec: (typeof item.duration === 'number' ? item.duration : (item.media && (typeof item.media.duration === 'number') ? item.media.duration : undefined)),
+          kind: 'clip',
+          previewUrl: (item.media && item.media.preview_url) || ''
         });
         // Insert new clips before Outro so Outro stays last
         const outro = list.querySelector('.timeline-card.timeline-outro');
@@ -436,13 +503,15 @@
   });
 
   // Timeline helpers
-  function makeTimelineCard({title, subtitle, thumbUrl, clipId, kind, durationSec}){
+  function makeTimelineCard({title, subtitle, thumbUrl, clipId, kind, durationSec, previewUrl}){
     const card = document.createElement('div');
     card.className = 'timeline-card';
     // Lock intro/outro from dragging
     card.draggable = !(kind === 'intro' || kind === 'outro');
     if (clipId) card.dataset.clipId = String(clipId);
     if (kind) card.dataset.kind = kind;
+    if (typeof durationSec === 'number' && !isNaN(durationSec)) card.dataset.durationSec = String(durationSec);
+    if (previewUrl) card.dataset.previewUrl = String(previewUrl);
     // Add semantic class for styling by type
     if (kind) {
       card.classList.add(`timeline-${kind}`);
@@ -512,7 +581,7 @@
     const list = document.getElementById('timeline-list');
     const existing = list.querySelector('.timeline-card.timeline-intro');
     if (existing) existing.remove();
-    const card = makeTimelineCard({ title: `Intro`, subtitle: item.original_filename || item.filename, thumbUrl: item.thumbnail_url || '', kind: 'intro', durationSec: item.duration });
+  const card = makeTimelineCard({ title: `Intro`, subtitle: item.original_filename || item.filename, thumbUrl: item.thumbnail_url || '', kind: 'intro', durationSec: item.duration, previewUrl: item.preview_url || '' });
     card.classList.add('timeline-intro');
     list.prepend(card);
     rebuildSeparators();
@@ -521,7 +590,7 @@
     const list = document.getElementById('timeline-list');
     const existing = list.querySelector('.timeline-card.timeline-outro');
     if (existing) existing.remove();
-    const card = makeTimelineCard({ title: `Outro`, subtitle: item.original_filename || item.filename, thumbUrl: item.thumbnail_url || '', kind: 'outro', durationSec: item.duration });
+  const card = makeTimelineCard({ title: `Outro`, subtitle: item.original_filename || item.filename, thumbUrl: item.thumbnail_url || '', kind: 'outro', durationSec: item.duration, previewUrl: item.preview_url || '' });
     card.classList.add('timeline-outro');
     list.appendChild(card);
     rebuildSeparators();
@@ -814,6 +883,7 @@
     container.innerHTML = '';
     wizard.selectedTransitionIds = wizard.selectedTransitionIds || [];
     wizard.availableTransitionIds = (items || []).map(it => it.id);
+    wizard.transitionDurationMap = Object.fromEntries((items || []).map(it => [it.id, it.duration || 0]));
     if (!items.length){ container.innerHTML = '<div class="text-muted">No transitions found.</div>'; return; }
     items.forEach(it => {
       const card = document.createElement('div');

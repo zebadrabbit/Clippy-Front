@@ -143,10 +143,10 @@ Adjust via environment variables (see `.env.example`):
 - ALLOW_EXTERNAL_URLS (default: false): when false, only Twitch and Discord clip URLs are accepted by the download API and the wizard; non-supported URLs are filtered and if none remain the request returns 400. Set to true to allow other sources (e.g., YouTube).
 - TMPDIR (optional): set to `/app/instance/tmp` on workers bound to a network share to avoid EXDEV cross-device moves when saving final outputs.
 - Instance storage mount (required in multi-host setups):
-	- Host path `/mnt/clippy` must exist and contain `uploads/`, `downloads/`, `compilations/`, `tmp/`, and `assets/`
-	- The app prefers `/mnt/clippy` automatically as its instance directory when present (outside tests)
-	- Set `CLIPPY_INSTANCE_PATH=/mnt/clippy` on native hosts to force it explicitly; set `REQUIRE_INSTANCE_MOUNT=1` to fail fast if missing
-	- In containers, bind-mount `/mnt/clippy` to `/app/instance` and set `CLIPPY_INSTANCE_PATH=/app/instance` inside the container
+	- Host path `/mnt/clippyfront` should contain `data/`, `tmp/`, and `assets/`
+	- The app prefers `/mnt/clippyfront` automatically as its instance directory when present (outside tests)
+	- Set `CLIPPY_INSTANCE_PATH=/mnt/clippyfront` on native hosts to force it explicitly; set `REQUIRE_INSTANCE_MOUNT=1` to fail fast if missing
+	- In containers, bind-mount your instance dir to `/app/instance` and set `CLIPPY_INSTANCE_PATH=/app/instance` inside the container (e.g., `-v /mnt/clippyfront:/app/instance`)
 - RATELIMIT_DEFAULT/RATELIMIT_STORAGE_URL
 - UPLOAD_FOLDER, MAX_CONTENT_LENGTH
 - FLASK_HOST, FLASK_PORT, FLASK_DEBUG
@@ -171,14 +171,7 @@ Notes:
 
 If a format isn't supported by the browser, the UI gracefully offers a direct file open. Consider transcoding inputs with ffmpeg for maximum compatibility.
 
-Cross-host paths: If a remote worker writes media paths that differ from the web server, set:
-
-```
-MEDIA_PATH_ALIAS_FROM=/app/instance/
-MEDIA_PATH_ALIAS_TO=/mnt/clippy/
-```
-
-The server also auto-rebases any path containing `/instance/` under its own `instance_path` if that location exists on disk.
+Cross-host paths: Paths stored in the database are canonicalized to `/instance/<...>`. At runtime, the app transparently rebases `/instance/` to the active instance directory (native host or container). `MEDIA_PATH_ALIAS_FROM/TO` remains available as a fallback for translating legacy absolute paths during migrations.
 
 ## Arrange and Compile
 
@@ -279,16 +272,16 @@ If your admin password appears to “change,” it was typically due to multiple
 
 ### Media files exist on disk but don't show up
 
-If you see files under `instance/uploads/<user_id>/...` but they aren't listed in the UI (Arrange, Media Library), the DB may be missing their rows. Reindex the media library:
+If you see files under `instance/data/<username>/...` but they aren't listed in the UI (Arrange, Media Library), the DB may be missing their rows. Reindex the media library:
 
 Optional command (run inside the venv):
 
 ```bash
-python scripts/reindex_media.py            # backfill DB rows from disk (read-only)
+python scripts/reindex_media.py            # backfill DB rows from disk (read-only by default)
 ```
 
 The script infers media type from subfolders (intros/, outros/, transitions/, compilations/, images/, clips/).
-It never modifies files on disk and does not regenerate thumbnails.
+It never modifies source media on disk. To restore video thumbnails for files missing thumbnails, pass `--regen-thumbnails`.
 
 ### Data persistence and sidecars
 

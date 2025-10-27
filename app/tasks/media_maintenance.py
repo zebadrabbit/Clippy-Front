@@ -28,10 +28,11 @@ def _resolve_binary(app, name: str) -> str:
 
 @celery_app.task(bind=True)
 def reindex_media_task(self, regen_thumbnails: bool = False) -> dict:
-    """Scan instance/uploads and backfill MediaFile rows (read-only).
+    """Scan the per-user data root (instance/data) and backfill MediaFile rows (read-only).
 
-    Note: Thumbnail regeneration is disabled by policy; on-disk media will not be modified.
-    The regen_thumbnails flag is ignored and retained only for backward compatibility.
+    Note: Thumbnail regeneration is disabled by policy in this task to avoid modifying on-disk assets;
+    the regen_thumbnails flag is ignored and retained only for backward compatibility. Use the script
+    `python scripts/reindex_media.py --regen-thumbnails` if you need to restore missing thumbnails.
     """
     # Run the existing reindex implementation from scripts
     try:

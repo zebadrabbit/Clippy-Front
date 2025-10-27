@@ -56,21 +56,24 @@
                 <div class="card audio-norm-card">
                   <div class="card-body">
                     <div class="d-flex align-items-center justify-content-between mb-2">
-                      <label class="form-label mb-0">Audio Normalization</label>
+                      <div class="d-flex align-items-center gap-2 audio-norm-head">
+                        <input class="form-check-input" type="checkbox" id="audio-norm-enabled" checked>
+                        <label class="form-label mb-0" for="audio-norm-enabled">Audio Normalization</label>
+                      </div>
                       <span class="text-muted small">optional</span>
                     </div>
                     <div class="opt-slider" id="audio-norm-slider" data-count="4">
-                      <input type="radio" name="audio_norm_profile" id="an-music" value="music" data-db="-1" checked>
+                      <input type="radio" name="audio_norm_profile" id="an-music" value="music" data-db="-1">
                       <label for="an-music" data-label="Music (-1 dB)"></label>
                       <input type="radio" name="audio_norm_profile" id="an-podcast" value="podcast" data-db="-3">
                       <label for="an-podcast" data-label="Podcasts (-3 dB)"></label>
                       <input type="radio" name="audio_norm_profile" id="an-broadcast" value="broadcast" data-db="-2">
                       <label for="an-broadcast" data-label="Broadcast (-2 dB)"></label>
-                      <input type="radio" name="audio_norm_profile" id="an-gaming" value="gaming" data-db="-4">
+                      <input type="radio" name="audio_norm_profile" id="an-gaming" value="gaming" data-db="-4" checked>
                       <label for="an-gaming" data-label="Gaming (-4 dB)"></label>
                       <div class="pos" aria-hidden="true"></div>
                     </div>
-                    <input type="hidden" name="audio_norm_db" id="audio_norm_db" value="-1">
+                    <input type="hidden" name="audio_norm_db" id="audio_norm_db" value="-4">
                   </div>
                 </div>
               </div>

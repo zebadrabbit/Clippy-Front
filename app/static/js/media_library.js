@@ -43,7 +43,7 @@
             .find(p => /No media files yet\./i.test(p.textContent || ''));
           const newGrid = document.createElement('div');
           newGrid.id = 'media-grid';
-          newGrid.className = 'row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 g-3';
+          newGrid.className = 'row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-5 g-3';
           if (placeholder && placeholder.parentElement) {
             placeholder.replaceWith(newGrid);
           } else {
@@ -70,11 +70,20 @@
   else mediaHtml = '<div class="card-img-top d-flex align-items-center justify-content-center" style="height:160px; background: var(--bs-card-bg);"><i class="bi bi-file-earmark-text" style="font-size:2rem;"></i></div>';
     card.insertAdjacentHTML('beforeend', mediaHtml);
     const body = document.createElement('div'); body.className = 'card-body';
-    body.innerHTML = '<div class="fw-semibold text-truncate" title="' + escapeHtml(card.dataset.name) + '">' + escapeHtml(card.dataset.name) + '</div><small class="text-muted">' + (item.type || '') + '</small>';
-    if ((item.tags||'').trim()) {
-      const tagsHtml = (item.tags||'').split(',').map(function(s){ s=s.trim(); return s? '<span class="badge bg-secondary me-1">'+s+'</span>':''; }).join('');
-      const div = document.createElement('div'); div.className = 'mt-1 small'; div.innerHTML = tagsHtml; body.appendChild(div);
-    }
+    const typeVal = (item.type || '').toLowerCase();
+    const typeName = typeVal ? (typeVal.charAt(0).toUpperCase() + typeVal.slice(1)) : '';
+    const sizeHtml = (typeof item.file_size_mb === 'number') ? `${item.file_size_mb.toFixed(1)} MB` : '';
+    const durHtml = (item.duration_formatted) ? `<i class="bi bi-clock"></i> ${item.duration_formatted}` : '';
+    const tagsHtml = (item.tags||'').split(',').map(function(s){ s=s.trim(); return s? '<span class="badge bg-secondary me-1">'+s+'</span>':''; }).join('');
+    const linkHtml = item.source_url ? `<li><a class="text-decoration-none" href="${item.source_url}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i> Original</a></li>` : '';
+    body.innerHTML = '<div class="fw-semibold text-truncate" title="' + escapeHtml(card.dataset.name) + '">' + escapeHtml(card.dataset.name) + '</div>'+
+      '<ul class="list-unstyled small mb-0 mt-2">' +
+      (typeVal ? `<li><span class="badge text-bg-${typeVal}" data-role="type-badge">${typeName}</span></li>` : '') +
+      (sizeHtml ? `<li><span class="text-muted" data-role="size">${sizeHtml}</span></li>` : '') +
+      (durHtml ? `<li><span class="text-muted" data-role="duration">${durHtml}</span></li>` : '') +
+      linkHtml +
+      (tagsHtml ? `<li>${tagsHtml}</li>` : '') +
+      '</ul>';
     card.appendChild(body);
     const footer = document.createElement('div'); footer.className = 'card-footer d-flex justify-content-between align-items-center';
     footer.innerHTML = '<button type="button" class="btn btn-sm btn-outline-secondary media-edit" data-id="' + item.id + '">Edit</button><button type="button" class="btn btn-sm btn-outline-danger media-delete" data-id="' + item.id + '">Delete</button>';
@@ -120,7 +129,19 @@
     const ids = selectedIds(); const typeSel = document.getElementById('bulk-type'); const newType = typeSel && typeSel.value; if (!ids.length || !newType) return;
     const fd = new FormData(); fd.append('action','change_type'); fd.append('media_type', newType); ids.forEach(function(id){ fd.append('ids[]', id); });
     const resp = await apiPost(BULK_URL, fd);
-    if (resp && resp.success){ ids.forEach(function(id){ const card = document.querySelector('.media-card[data-id="' + id + '"]'); if (card){ card.dataset.type = newType; const small = card.querySelector('.card-body small'); if (small) small.textContent = newType; } }); showToast('Type updated for ' + ids.length + ' item(s).'); }
+    if (resp && resp.success){ ids.forEach(function(id){ const card = document.querySelector('.media-card[data-id="' + id + '"]'); if (card){
+        const oldType = (card.dataset.type || '').toLowerCase();
+        card.dataset.type = newType;
+        const badge = card.querySelector('.card-body [data-role="type-badge"], .card-body .badge[class*="text-bg-"]');
+        if (badge){
+          // Update text
+          const tVal = newType.toLowerCase();
+          badge.textContent = tVal ? (tVal.charAt(0).toUpperCase() + tVal.slice(1)) : '';
+          // Update class
+          if (oldType) badge.classList.remove('text-bg-' + oldType);
+          if (tVal) badge.classList.add('text-bg-' + tVal);
+        }
+      } }); showToast('Type updated for ' + ids.length + ' item(s).'); }
     else alert((resp && resp.error) || 'Bulk update failed');
   }
 
@@ -185,7 +206,7 @@
   document.body.appendChild(editModalEl);
   let bsModal; function ensureBsModal(){ if (!bsModal) bsModal = new bootstrap.Modal(editModalEl); return bsModal; }
   function openEditModal(opts){ const form = editModalEl.querySelector('#media-edit-form'); form.media_id.value = opts.id; form.original_filename.value = opts.name || ''; form.media_type.value = opts.type || ''; form.tags.value = opts.tags || ''; ensureBsModal().show(); }
-  document.getElementById('media-edit-save').addEventListener('click', async function(){ const form = editModalEl.querySelector('#media-edit-form'); const id = form.media_id.value; form.tags.value = normalizeTags(form.tags.value); const fd = new FormData(form); const resp = await apiPost(UPDATE_URL_TPL.replace('0', id), fd); if (resp && resp.success){ const card = document.querySelector('.media-card[data-id="' + id + '"]'); if (card){ card.dataset.name = form.original_filename.value; card.dataset.type = form.media_type.value; card.dataset.tags = form.tags.value; const titleEl = card.querySelector('.card-body .fw-semibold'); const small = card.querySelector('.card-body small'); if (titleEl) titleEl.textContent = form.original_filename.value; if (small) small.textContent = form.media_type.value; const body = card.querySelector('.card-body'); if (body){ let tagsWrap = body.querySelector('.mt-1.small'); const html = (form.tags.value||'').split(',').map(function(s){ s=s.trim(); return s? '<span class=\"badge bg-secondary me-1\">'+s+'</span>':''; }).join(''); if (tagsWrap) tagsWrap.innerHTML = html; else if (html){ const div = document.createElement('div'); div.className = 'mt-1 small'; div.innerHTML = html; body.appendChild(div);} } } ensureBsModal().hide(); if (typeof showToast === 'function') { showToast('Media updated.'); } } else alert((resp && resp.error) || 'Update failed'); });
+  document.getElementById('media-edit-save').addEventListener('click', async function(){ const form = editModalEl.querySelector('#media-edit-form'); const id = form.media_id.value; form.tags.value = normalizeTags(form.tags.value); const fd = new FormData(form); const resp = await apiPost(UPDATE_URL_TPL.replace('0', id), fd); if (resp && resp.success){ const card = document.querySelector('.media-card[data-id="' + id + '"]'); if (card){ card.dataset.name = form.original_filename.value; const newType = form.media_type.value; const oldType = (card.dataset.type || '').toLowerCase(); card.dataset.type = newType; card.dataset.tags = form.tags.value; const titleEl = card.querySelector('.card-body .fw-semibold'); if (titleEl) titleEl.textContent = form.original_filename.value; const badge = card.querySelector('.card-body [data-role="type-badge"], .card-body .badge[class*="text-bg-"]'); if (badge){ const tVal = (newType||'').toLowerCase(); badge.textContent = tVal ? (tVal.charAt(0).toUpperCase() + tVal.slice(1)) : ''; if (oldType) badge.classList.remove('text-bg-' + oldType); if (tVal) badge.classList.add('text-bg-' + tVal); } const body = card.querySelector('.card-body'); if (body){ let tagsWrap = body.querySelector('.mt-1.small'); const html = (form.tags.value||'').split(',').map(function(s){ s=s.trim(); return s? '<span class=\"badge bg-secondary me-1\">'+s+'</span>':''; }).join(''); if (tagsWrap) tagsWrap.innerHTML = html; else if (html){ const div = document.createElement('div'); div.className = 'mt-1 small'; div.innerHTML = html; body.appendChild(div);} } } ensureBsModal().hide(); if (typeof showToast === 'function') { showToast('Media updated.'); } } else alert((resp && resp.error) || 'Update failed'); });
   document.getElementById('media-edit-delete').addEventListener('click', async function(){ const form = editModalEl.querySelector('#media-edit-form'); const id = form.media_id.value; if (!confirm('Delete this media item?')) return; const resp = await apiPost(DELETE_URL_TPL.replace('0', id), {}); if (resp && resp.success){ const el = document.querySelector('.media-card[data-id="' + id + '"]'); el && el.closest('.col').remove(); ensureBsModal().hide(); updateBulkBar(); } else alert((resp && resp.error) || 'Delete failed'); });
 
   // Toast helper

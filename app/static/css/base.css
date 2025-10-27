@@ -181,6 +181,46 @@ fieldset:disabled .btn-primary {
     transform: translateY(-2px);
 }
 
+/* Vibrant variants for stats cards using theme colors */
+.stats-card--primary {
+    background: linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--bs-primary), #000 45%) 0%,
+        color-mix(in srgb, var(--bs-primary), #000 15%) 100%
+    );
+    border-color: color-mix(in srgb, var(--bs-primary), #000 40%);
+    color: #fff;
+}
+.stats-card--accent {
+    background: linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--color-accent, var(--bs-primary)), #000 45%) 0%,
+        color-mix(in srgb, var(--color-accent, var(--bs-primary)), #000 15%) 100%
+    );
+    border-color: color-mix(in srgb, var(--color-accent, var(--bs-primary)), #000 40%);
+    color: #fff;
+}
+.stats-card .stat-label {
+    color: color-mix(in srgb, #ffffff, #000 20%);
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    font-size: 1.05rem;
+}
+.stats-card .stat-value {
+    font-size: 1.9rem;
+    font-weight: 800;
+}
+.stats-card .stat-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background-color: color-mix(in srgb, #ffffff, #000 85%);
+    color: color-mix(in srgb, #ffffff, #000 10%);
+}
+
 .upload-zone {
     border: 2px dashed var(--bs-border-color);
     border-radius: 0.5rem;
@@ -233,9 +273,71 @@ fieldset:disabled .btn-primary {
     border-bottom: 1px solid var(--bs-border-color);
 }
 
+/* Colored headers for cards/panes */
+.card-header--primary {
+    background: linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--bs-primary), #000 35%) 0%,
+        color-mix(in srgb, var(--bs-primary), #000 10%) 100%
+    );
+    color: #fff;
+    border-bottom-color: color-mix(in srgb, var(--bs-primary), #000 40%);
+}
+.card-header--accent {
+    background: linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--color-accent, var(--bs-primary)), #000 35%) 0%,
+        color-mix(in srgb, var(--color-accent, var(--bs-primary)), #000 10%) 100%
+    );
+    color: #fff;
+    border-bottom-color: color-mix(in srgb, var(--color-accent, var(--bs-primary)), #000 40%);
+}
+
+/* Popover styling for media previews (dark theme friendly) */
+.popover.media-popover {
+    /* Ensure the popover can fully frame the thumbnail */
+    --bs-popover-max-width: 360px;
+    --bs-popover-bg: var(--bs-card-bg);
+    --bs-popover-border-color: var(--bs-border-color);
+    --bs-popover-header-bg: color-mix(in srgb, var(--bs-card-bg), #ffffff 6%);
+    --bs-popover-header-color: var(--bs-body-color);
+    --bs-popover-body-color: var(--bs-body-color);
+    --bs-popover-border-radius: 0.5rem;
+    --bs-popover-body-padding-x: 0.4rem;
+    --bs-popover-body-padding-y: 0.4rem;
+    box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.35);
+}
+.media-popover .popover-header {
+    border-bottom-color: var(--bs-border-color);
+}
+.media-popover .popover-body img,
+.media-popover .popover-body video {
+    display: block;
+    max-width: 320px;
+    width: 100%;
+    height: auto;
+    border-radius: 0.35rem;
+}
+
+/* Recent Clips readability tweaks */
+.recent-clips .card-body { color: var(--bs-body-color); }
+.recent-clips .clip-title {
+    color: #ffffff;
+    font-weight: 600;
+}
+.recent-clips a.clip-title,
+.recent-clips a .clip-title { text-decoration: none; }
+.recent-clips a:hover .clip-title { color: var(--bs-primary); }
+.recent-clips .clip-time { color: color-mix(in srgb, #ffffff, #000 35%); }
+
 /* Media Library: type-colored accents */
 .media-card {
     border-width: 2px;
+}
+.media-card .media-thumb {
+    max-height: 140px;
+    width: 100%;
+    object-fit: cover;
 }
 .media-card[data-type="intro"] { border-color: var(--media-color-intro, #0ea5e9); }
 .media-card[data-type="clip"] { border-color: var(--media-color-clip, var(--color-accent)); }
@@ -299,3 +401,52 @@ fieldset:disabled .btn-primary {
 .progress-bar { background-color: var(--color-accent, var(--bs-primary)); }
 
 /* (removed) semantic accent helpers for CTAs; reverted per request */
+
+/* Glowing Next buttons while keeping theme face color (btn-primary background) */
+.btn-glow {
+    position: relative;
+    z-index: 0;
+    border-radius: 12px;
+    overflow: visible;
+}
+.btn-glow::before {
+    content: "";
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    width: calc(100% + 4px);
+    height: calc(100% + 4px);
+    border-radius: 12px;
+    background: linear-gradient(
+        45deg,
+        var(--color-accent, #6610f2),
+        #0d6efd,
+        #22c55e,
+        #9b59b6,
+        var(--color-accent, #6610f2)
+    );
+    background-size: 400%;
+    filter: blur(10px);
+    animation: wizardGlow 20s linear infinite;
+    transition: opacity 0.25s ease-in-out;
+    opacity: 0;
+    z-index: -1;
+}
+.btn-glow:hover::before,
+.btn-glow:focus-visible::before {
+    opacity: 1;
+}
+.btn-glow:disabled::before {
+    opacity: 0;
+}
+@keyframes wizardGlow {
+    0% {
+        background-position: 0 0;
+    }
+    50% {
+        background-position: 400% 0;
+    }
+    100% {
+        background-position: 0 0;
+    }
+}

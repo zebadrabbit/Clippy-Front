@@ -15,6 +15,7 @@ from typing import Any
 
 from sqlalchemy.orm import scoped_session, sessionmaker
 
+from app import storage as storage_lib
 from app.ffmpeg_config import (
     audio_args,
     build_overlay_filter,
@@ -41,6 +42,76 @@ from app.quotas import (
     storage_remaining_bytes,
 )
 from app.tasks.celery_app import celery_app
+
+
+# ----- Tier limit helpers -----
+def _normalize_res_label(val: str | None) -> str | None:
+    """Normalize a resolution label from various inputs.
+
+    Accepts labels like '720p', '1080p', '1440p' ('2k'), '2160p' ('4k'), or WxH strings.
+    Returns one of: '720p' | '1080p' | '1440p' | '2160p' or None if unknown.
+    """
+    if not val:
+        return None
+    s = str(val).strip().lower()
+    if s in {"720p", "1080p", "1440p", "2160p"}:
+        return s
+    if s in {"2k"}:
+        return "1440p"
+    if s in {"4k"}:
+        return "2160p"
+    if "x" in s:
+        try:
+            parts = s.split("x")
+            h = int(parts[1]) if len(parts) > 1 else None
+            if h:
+                if h <= 720:
+                    return "720p"
+                if h <= 1080:
+                    return "1080p"
+                if h <= 1440:
+                    return "1440p"
+                return "2160p"
+        except Exception:
+            return None
+    return None
+
+
+def _res_rank(label: str | None) -> int:
+    order = {None: -1, "720p": 0, "1080p": 1, "1440p": 2, "2160p": 3}
+    return order.get(label, -1)
+
+
+def _cap_resolution_label(
+    project_val: str | None, tier_max_label: str | None
+) -> str | None:
+    p = _normalize_res_label(project_val)
+    t = _normalize_res_label(tier_max_label)
+    if not t:
+        return p  # no cap
+    if not p:
+        return t  # default to tier when project undefined
+    return p if _res_rank(p) <= _res_rank(t) else t
+
+
+def _get_user_tier_limits(session, user_id: int) -> dict[str, Any]:
+    """Fetch effective tier limits for the user.
+
+    Returns dict with keys: max_res_label, max_fps, max_clips. None means unlimited.
+    """
+    try:
+        u = session.get(User, user_id)
+        if not u or not getattr(u, "tier", None) or u.tier.is_unlimited:
+            return {"max_res_label": None, "max_fps": None, "max_clips": None}
+        return {
+            "max_res_label": _normalize_res_label(
+                getattr(u.tier, "max_output_resolution", None)
+            ),
+            "max_fps": getattr(u.tier, "max_fps", None),
+            "max_clips": getattr(u.tier, "max_clips_per_project", None),
+        }
+    except Exception:
+        return {"max_res_label": None, "max_fps": None, "max_clips": None}
 
 
 def get_db_session():
@@ -138,59 +209,48 @@ def _resolve_media_input_path(orig_path: str) -> str:
                     return cand
             except Exception:
                 pass
-        # 3) Filename-suffix fallback: if file is missing but looks like 'clip_<id>_<name>.<ext>',
-        #    try to find any sibling file with the same '<name>.<ext>' under known roots (handles reuse across clip IDs).
+        # 2b) Automatic data-root remap: if path contains '/<DATA_FOLDER>/' under a different root,
+        # rebuild under this process's app.instance_path/<DATA_FOLDER>/...
         try:
-            fname = os.path.basename(ap)
-            name_part = fname
-            # Strip 'clip_<digits>_' prefix if present
-            import re as _re
+            from app import create_app as _create_app
 
-            m = _re.match(r"^clip_\d+_(.+)$", fname)
-            if m:
-                name_part = m.group(1)
-            # Assemble candidate roots
-            roots: list[str] = []
-            try:
-                from app import create_app
-
-                app = create_app()
-                roots.append(os.path.join(app.instance_path, "downloads"))
-            except Exception:
-                pass
-            # Add alias-to root if configured
-            if alias_to:
-                roots.append(alias_to.rstrip("/"))
-                roots.append(os.path.join(alias_to.rstrip("/"), "downloads"))
-            # Add explicit search roots via env (colon-separated)
-            extra = os.getenv("MEDIA_PATH_SEARCH_ROOTS")
-            if extra:
-                for part in extra.split(":"):
-                    p = part.strip()
-                    if p:
-                        roots.append(p)
-            # Deduplicate while preserving order
-            seen_roots = set()
-            roots = [r for r in roots if not (r in seen_roots or seen_roots.add(r))]
-            # Search shallowly for a file ending with the name_part
-            for r in roots:
-                try:
-                    if not os.path.isdir(r):
-                        continue
-                    for entry in os.listdir(r):
+            app2 = _create_app()
+            with app2.app_context():
+                data_folder = (app2.config.get("DATA_FOLDER") or "data").strip("/")
+                marker2 = f"/{data_folder}/"
+                if marker2 in ap and not ap.startswith(str(app2.instance_path)):
+                    suffix = ap.split(marker2, 1)[1]
+                    cand2 = os.path.join(app2.instance_path, data_folder, suffix)
+                    if debug:
                         try:
-                            if entry.endswith(name_part):
-                                cand = os.path.join(r, entry)
-                                if os.path.exists(cand):
-                                    if debug:
-                                        print(
-                                            f"[media-path] suffix fallback matched '{entry}' under '{r}' for missing '{fname}': '{cand}'"
-                                        )
-                                    return cand
+                            print(
+                                f"[media-path] data-root remap candidate: base='{app2.instance_path}' folder='{data_folder}' suffix='/{suffix}' -> '{cand2}' (exists={os.path.exists(cand2)})"
+                            )
                         except Exception:
-                            continue
-                except Exception:
-                    continue
+                            pass
+                    if os.path.exists(cand2):
+                        return cand2
+                    # Container heuristic as above: if roots differ, allow remap even if exists check fails
+                    base_before_marker2 = ap.split(marker2, 1)[0]
+                    running_in_container = bool(
+                        os.getenv("RUNNING_IN_CONTAINER")
+                        or os.getenv("IN_CONTAINER")
+                        or os.path.exists("/.dockerenv")
+                    )
+                    if (
+                        base_before_marker2.rstrip("/")
+                        != str(app2.instance_path).rstrip("/")
+                        and os.path.isdir(app2.instance_path)
+                        and running_in_container
+                    ):
+                        if debug:
+                            try:
+                                print(
+                                    f"[media-path] using data-root remap (container context) despite exists=False: '{cand2}'"
+                                )
+                            except Exception:
+                                pass
+                        return cand2
         except Exception:
             pass
     except Exception:
@@ -269,6 +329,18 @@ def compile_video_task(
             .order_by(Clip.order_index.asc(), Clip.created_at.asc())
             .all()
         )
+
+        # Apply tier-based limits (clip count)
+        limits = _get_user_tier_limits(session, project.user_id)
+        if limits.get("max_clips"):
+            maxc = int(limits["max_clips"]) or 0
+            if maxc > 0 and len(clips) > maxc:
+                clips = clips[:maxc]
+                log(
+                    "info",
+                    f"Tier limit: using first {maxc} clip(s) out of {len(project.clips.all())}",
+                    status="limits",
+                )
 
         if not clips:
             raise ValueError("No clips found for compilation")
@@ -392,7 +464,8 @@ def compile_video_task(
                 media = MediaFile(
                     filename=os.path.basename(final_output_path),
                     original_filename=os.path.basename(final_output_path),
-                    file_path=final_output_path,
+                    file_path=storage_lib.instance_canonicalize(final_output_path)
+                    or final_output_path,
                     file_size=os.path.getsize(final_output_path),
                     mime_type="video/mp4",
                     media_type=MediaType.COMPILATION,
@@ -412,13 +485,17 @@ def compile_video_task(
                     from app import create_app
 
                     app = create_app()
-                    base_upload = os.path.join(
-                        app.instance_path, app.config.get("UPLOAD_FOLDER", "uploads")
-                    )
-                    thumbs_dir = os.path.join(
-                        base_upload, str(project.user_id), "thumbnails"
-                    )
-                    os.makedirs(thumbs_dir, exist_ok=True)
+                    # Resolve thumbnails directory via project-based storage
+                    with app.app_context():
+                        try:
+                            # Project.user relationship may not be loaded here; fetch if needed
+                            user_obj = session.query(User).get(project.user_id)
+                        except Exception:
+                            user_obj = None
+                        thumbs_dir = storage_lib.thumbnails_dir(
+                            user_obj or project.user
+                        )
+                        os.makedirs(thumbs_dir, exist_ok=True)
                     # Deterministic name based on final output filename
                     stem = os.path.splitext(os.path.basename(final_output_path))[0]
                     thumb_path = os.path.join(thumbs_dir, f"{stem}.jpg")
@@ -447,7 +524,9 @@ def compile_video_task(
                             stderr=subprocess.DEVNULL,
                             check=True,
                         )
-                    media.thumbnail_path = thumb_path
+                    media.thumbnail_path = (
+                        storage_lib.instance_canonicalize(thumb_path) or thumb_path
+                    )
                 except Exception:
                     pass
 
@@ -486,7 +565,8 @@ def compile_video_task(
             job.completed_at = datetime.utcnow()
             job.progress = 100
             job.result_data = {
-                "output_file": final_output_path,
+                "output_file": storage_lib.instance_canonicalize(final_output_path)
+                or final_output_path,
                 "clips_processed": len(processed_clips),
                 "duration": (datetime.utcnow() - job.started_at).total_seconds(),
                 **(job.result_data or {}),
@@ -497,7 +577,8 @@ def compile_video_task(
 
             return {
                 "status": "completed",
-                "output_file": final_output_path,
+                "output_file": storage_lib.instance_canonicalize(final_output_path)
+                or final_output_path,
                 "clips_processed": len(processed_clips),
                 "project_id": project_id,
             }
@@ -546,6 +627,30 @@ def download_clip_task(self, clip_id: int, source_url: str) -> dict[str, Any]:
     session = get_db_session()
 
     try:
+        # Proactively clean any legacy leftovers for this clip under instance/downloads
+        try:
+            from app import create_app as _create
+
+            _app0 = _create()
+            with _app0.app_context():
+                _legacy_dir0 = os.path.join(_app0.instance_path, "downloads")
+            if os.path.isdir(_legacy_dir0):
+                prefix0 = f"clip_{clip_id}_"
+                for _fname in list(os.listdir(_legacy_dir0)):
+                    if _fname.startswith(prefix0):
+                        try:
+                            os.remove(os.path.join(_legacy_dir0, _fname))
+                        except Exception:
+                            pass
+                # Remove dir if empty
+                try:
+                    if not os.listdir(_legacy_dir0):
+                        os.rmdir(_legacy_dir0)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         clip = session.query(Clip).get(clip_id)
         if not clip:
             raise ValueError(f"Clip {clip_id} not found")
@@ -606,11 +711,120 @@ def download_clip_task(self, clip_id: int, source_url: str) -> dict[str, Any]:
                 "Storage quota exceeded: no remaining bytes for download"
             )
 
+        # Attempt reuse BEFORE downloading: find an existing media for this user with the same Twitch clip key or normalized URL
+        def _normalize_url(u: str) -> str:
+            try:
+                s = (u or "").strip()
+                if not s:
+                    return ""
+                base = s.split("?")[0].split("#")[0]
+                return base[:-1] if base.endswith("/") else base
+            except Exception:
+                return (u or "").strip()
+
+        def _extract_clip_key(u: str) -> str:
+            try:
+                s = _normalize_url(u)
+                if not s:
+                    return ""
+                low = s.lower()
+                if ("twitch.tv" in low and "/clip/" in low) or (
+                    "clips.twitch.tv" in low
+                ):
+                    try:
+                        if "clips.twitch.tv" in low:
+                            slug = low.split("clips.twitch.tv", 1)[1].lstrip("/")
+                        else:
+                            slug = low.split("/clip/", 1)[1]
+                        slug = slug.split("/")[0]
+                        return slug
+                    except Exception:
+                        return s
+                return s
+            except Exception:
+                return _normalize_url(u)
+
+        try:
+            key = _extract_clip_key(source_url)
+            norm = _normalize_url(source_url)
+            # Look for any previously downloaded clip by this user with a matching key or normalized URL
+            candidates = (
+                session.query(Clip)
+                .join(Project, Project.id == Clip.project_id)
+                .filter(
+                    Project.user_id == clip.project.user_id,
+                    Clip.media_file_id.isnot(None),
+                )
+                .order_by(Clip.created_at.desc())
+                .limit(500)
+                .all()
+            )
+            for prev in candidates:
+                try:
+                    pv_key = _extract_clip_key(prev.source_url or "")
+                    pv_norm = _normalize_url(prev.source_url or "")
+                except Exception:
+                    pv_key = ""
+                    pv_norm = ""
+                if (pv_key and key and pv_key == key) or (pv_norm and pv_norm == norm):
+                    if prev.media_file_id:
+                        mf = session.get(MediaFile, prev.media_file_id)
+                        # Resolve path for existence check (supports canonical '/instance/...')
+                        cand_path = _resolve_media_input_path(
+                            getattr(mf, "file_path", "") or ""
+                        )
+                        if mf and cand_path and os.path.exists(cand_path):
+                            # Reuse: attach existing media to this clip and finish
+                            clip.media_file = mf
+                            clip.is_downloaded = True
+                            clip.duration = mf.duration
+                            clip.collected_at = datetime.utcnow()
+                            job.status = "success"
+                            job.completed_at = datetime.utcnow()
+                            job.progress = 100
+                            job.result_data = {
+                                "reused_media_file_id": mf.id,
+                                "reused_from_clip_id": prev.id,
+                                **(job.result_data or {}),
+                            }
+                            session.commit()
+                            log(
+                                "success",
+                                "Reused existing media (no download)",
+                                status="reused",
+                            )
+                            return {
+                                "status": "reused",
+                                "media_file_id": mf.id,
+                                "clip_id": clip_id,
+                            }
+
+        except Exception:
+            # If reuse check fails, proceed to download
+            pass
+
         # Download with yt-dlp (apply constraint when available)
+        # Choose a project-aware download directory when using project layout
+        dl_dir = None
+        try:
+            from app import create_app as _create_app
+
+            app = _create_app()
+            with app.app_context():
+                try:
+                    dl_dir = storage_lib.clips_dir(
+                        user_obj or clip.project.user, clip.project.name
+                    )
+                except Exception:
+                    dl_dir = None
+        except Exception:
+            dl_dir = None
+
         output_path = download_with_yt_dlp(
             source_url,
             clip,
             max_bytes=int(rem_bytes) if rem_bytes is not None else None,
+            download_dir=dl_dir,
         )
 
         self.update_state(
@@ -626,10 +840,11 @@ def download_clip_task(self, clip_id: int, source_url: str) -> dict[str, Any]:
             session.rollback()
 
         # Create media file record
+        db_file_path = storage_lib.instance_canonicalize(output_path) or output_path
         media_file = MediaFile(
             filename=os.path.basename(output_path),
             original_filename=f"downloaded_{clip.title}",
-            file_path=output_path,
+            file_path=db_file_path,
             file_size=os.path.getsize(output_path),
             mime_type="video/mp4",
             media_type=MediaType.CLIP,
@@ -650,13 +865,10 @@ def download_clip_task(self, clip_id: int, source_url: str) -> dict[str, Any]:
             from app import create_app
 
             app = create_app()
-            base_upload = os.path.join(
-                app.instance_path, app.config.get("UPLOAD_FOLDER", "uploads")
-            )
-            thumbs_dir = os.path.join(
-                base_upload, str(clip.project.user_id), "thumbnails"
-            )
-            os.makedirs(thumbs_dir, exist_ok=True)
+            with app.app_context():
+                owner = session.get(User, clip.project.user_id)
+                thumbs_dir = storage_lib.thumbnails_dir(owner or clip.project.user)
+                os.makedirs(thumbs_dir, exist_ok=True)
             # Deterministic thumbnail name to avoid duplicates across restarts
             stem = os.path.splitext(os.path.basename(output_path))[0]
             thumb_path = os.path.join(thumbs_dir, f"{stem}.jpg")
@@ -686,7 +898,9 @@ def download_clip_task(self, clip_id: int, source_url: str) -> dict[str, Any]:
                     stderr=subprocess.DEVNULL,
                     check=True,
                 )
-            media_file.thumbnail_path = thumb_path
+            media_file.thumbnail_path = (
+                storage_lib.instance_canonicalize(thumb_path) or thumb_path
+            )
         except Exception as thumb_err:
             # Do not fail the task if thumbnail creation fails
             print(f"Thumbnail generation failed for clip {clip.id}: {thumb_err}")
@@ -705,6 +919,64 @@ def download_clip_task(self, clip_id: int, source_url: str) -> dict[str, Any]:
         except Exception:
             pass
 
+        # Compute checksum for dedupe-once-downloaded
+        try:
+            import hashlib as _hashlib
+
+            h = _hashlib.sha256()
+            with open(output_path, "rb") as fh:
+                for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                    h.update(chunk)
+            media_file.checksum = h.hexdigest()
+        except Exception:
+            media_file.checksum = None
+
+        # If another identical file exists for this user, reuse it and delete the new file
+        try:
+            if media_file.checksum:
+                dup = (
+                    session.query(MediaFile)
+                    .filter_by(
+                        user_id=clip.project.user_id, checksum=media_file.checksum
+                    )
+                    .first()
+                )
+                dup_path = (
+                    _resolve_media_input_path(getattr(dup, "file_path", "") or "")
+                    if dup
+                    else None
+                )
+                if dup_path and os.path.exists(dup_path):
+                    # Remove freshly downloaded duplicate and reuse existing
+                    try:
+                        if os.path.exists(output_path):
+                            os.remove(output_path)
+                    except Exception:
+                        pass
+                    clip.media_file = dup
+                    clip.is_downloaded = True
+                    clip.duration = dup.duration
+                    clip.collected_at = datetime.utcnow()
+                    job.status = "success"
+                    job.completed_at = datetime.utcnow()
+                    job.progress = 100
+                    job.result_data = {
+                        "reused_media_file_id": dup.id,
+                        "deduped_by_checksum": True,
+                        **(job.result_data or {}),
+                    }
+                    session.commit()
+                    log(
+                        "success", "Reused identical media by checksum", status="reused"
+                    )
+                    return {
+                        "status": "reused",
+                        "media_file_id": dup.id,
+                        "clip_id": clip_id,
+                    }
+        except Exception:
+            pass
+
         session.add(media_file)
         session.flush()  # ensure media_file.id is available
 
@@ -719,7 +991,8 @@ def download_clip_task(self, clip_id: int, source_url: str) -> dict[str, Any]:
         job.completed_at = datetime.utcnow()
         job.progress = 100
         job.result_data = {
-            "downloaded_file": output_path,
+            "downloaded_file": storage_lib.instance_canonicalize(output_path)
+            or output_path,
             "media_file_id": media_file.id,
             **(job.result_data or {}),
         }
@@ -729,7 +1002,8 @@ def download_clip_task(self, clip_id: int, source_url: str) -> dict[str, Any]:
 
         return {
             "status": "completed",
-            "downloaded_file": output_path,
+            "downloaded_file": storage_lib.instance_canonicalize(output_path)
+            or output_path,
             "media_file_id": media_file.id,
             "clip_id": clip_id,
         }
@@ -823,7 +1097,12 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
         cmd.extend(["-t", str(project.max_clip_duration)])
 
     # Scaling and overlay
-    target_res = parse_resolution(None, project.output_resolution)
+    # Tier-based resolution cap
+    limits = _get_user_tier_limits(session, project.user_id)
+    eff_label = _cap_resolution_label(
+        project.output_resolution, limits.get("max_res_label")
+    )
+    target_res = parse_resolution(None, eff_label or project.output_resolution)
     scale_filter = (
         f"scale={target_res.split('x')[0]}:{target_res.split('x')[1]}:flags=lanczos"
     )
@@ -1127,6 +1406,13 @@ def process_clip(session, clip: Clip, temp_dir: str, project: Project) -> str:
                 cmd.extend(["-filter:a", f"volume={db_gain}dB"])
     except Exception:
         pass
+    # Enforce max FPS if tier requires
+    try:
+        max_fps = limits.get("max_fps") if isinstance(limits, dict) else None
+        if max_fps and int(max_fps) > 0:
+            cmd.extend(["-r", str(int(max_fps))])
+    except Exception:
+        pass
     cmd.extend(encoder_args(ffmpeg_bin))
     cmd.extend(audio_args())
     # Faststart for mp4; use -shortest when looping a static image
@@ -1358,18 +1644,6 @@ def build_timeline_with_transitions(
         # Label this segment
         base = os.path.basename(seg)
         label = base
-        # Try to map processed clip paths to titles via id
-        try:
-            import re as _re
-
-            m = _re.match(r"clip_(\\d+)_processed\\.mp4$", base)
-            if m:
-                cid = int(m.group(1))
-                cobj = session.query(Clip).get(cid)
-                if cobj and cobj.title:
-                    label = cobj.title
-        except Exception:
-            pass
         labels.append(label)
         if i < len(segments) - 1:
             tpath = _next_transition(i)
@@ -1445,8 +1719,15 @@ def process_media_file(input_path: str, output_path: str, project: Project) -> N
 
     cmd = [ffmpeg_bin, *_cfg_args(app, "ffmpeg", "encode"), "-i", input_path]
 
-    # Set output resolution to match project
-    target_res = parse_resolution(None, project.output_resolution)
+    # Set output resolution to match project capped by tier limits
+    try:
+        limits = _get_user_tier_limits(db.session, project.user_id)
+    except Exception:
+        limits = {"max_res_label": None, "max_fps": None}
+    eff_label = _cap_resolution_label(
+        project.output_resolution, limits.get("max_res_label")
+    )
+    target_res = parse_resolution(None, eff_label or project.output_resolution)
     scale_filter = (
         f"scale={target_res.split('x')[0]}:{target_res.split('x')[1]}:flags=lanczos"
     )
@@ -1523,6 +1804,13 @@ def process_media_file(input_path: str, output_path: str, project: Project) -> N
     except Exception:
         pass
 
+    # Enforce max FPS if tier requires
+    try:
+        max_fps = limits.get("max_fps") if isinstance(limits, dict) else None
+        if max_fps and int(max_fps) > 0:
+            cmd.extend(["-r", str(int(max_fps))])
+    except Exception:
+        pass
     cmd.extend(encoder_args(ffmpeg_bin))
     cmd.extend(audio_args())
     cmd.extend(["-movflags", "+faststart", "-y", output_path])
@@ -1682,9 +1970,17 @@ def save_final_video(temp_path: str, project: Project) -> str:
 
     app = create_app()
 
-    # Create output directory
-    output_dir = os.path.join(app.instance_path, "compilations")
-    os.makedirs(output_dir, exist_ok=True)
+    # Create output directory (project-based)
+    with app.app_context():
+        # Ensure we have a user object for storage helpers
+        try:
+            user_obj = db.session.query(User).get(project.user_id)
+        except Exception:
+            user_obj = None
+        output_dir = storage_lib.compilations_dir(
+            user_obj or project.user, project.name
+        )
+        os.makedirs(output_dir, exist_ok=True)
 
     # Generate final filename
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -1709,13 +2005,15 @@ def save_final_video(temp_path: str, project: Project) -> str:
     return final_path
 
 
-def download_with_yt_dlp(url: str, clip: Clip, max_bytes: int | None = None) -> str:
+def download_with_yt_dlp(
+    url: str,
+    clip: Clip,
+    max_bytes: int | None = None,
+    download_dir: str | None = None,
+) -> str:
     """
-    Download video using yt-dlp.
-
-    Args:
-        url: Video URL to download
-        clip: Clip object
+    Download video using yt-dlp directly into the project clips directory
+    using a slug-based filename '<slug>.<ext>'.
 
     Returns:
         str: Path to downloaded file
@@ -1724,39 +2022,66 @@ def download_with_yt_dlp(url: str, clip: Clip, max_bytes: int | None = None) -> 
 
     app = create_app()
 
-    # Create download directory
-    download_dir = os.path.join(app.instance_path, "downloads")
+    # Resolve target download directory (project-aware)
+    if not download_dir:
+        with app.app_context():
+            try:
+                user = db.session.query(User).get(clip.project.user_id)
+            except Exception:
+                user = None
+            download_dir = storage_lib.clips_dir(
+                user or clip.project.user, clip.project.name
+            )
     os.makedirs(download_dir, exist_ok=True)
 
-    # Generate output filename
-    output_template = os.path.join(download_dir, f"clip_{clip.id}_%(title)s.%(ext)s")
+    # Compute sanitized slug for output filename
+    slug = (getattr(clip, "source_id", None) or "").strip()
+    if not slug:
+        raise RuntimeError("Missing clip slug (clip.source_id) for output filename")
+    import re as _re
 
-    # yt-dlp command
+    safe_slug = _re.sub(r"[^A-Za-z0-9._-]+", "_", slug)
+    safe_slug = _re.sub(r"_+", "_", safe_slug).strip("._-") or "clip"
+
+    # Build yt-dlp command (ignore path-affecting config/options)
     yt_bin = resolve_binary(app, "yt-dlp")
     from app.ffmpeg_config import config_args as _cfg_args
 
-    # Start from configured args but drop any explicit rate limits which can
-    # interfere with quota-based size limits or accidentally consume following
-    # tokens when misconfigured.
-    def _strip_rate_limit(args: list[str]) -> list[str]:
+    def _sanitize_ytdlp_args(args: list[str]) -> list[str]:
         cleaned: list[str] = []
         skip_next = False
         for tok in args:
             if skip_next:
                 skip_next = False
                 continue
-            if tok in {"-r", "--limit-rate"}:
-                # drop this flag and its value if present
+            if tok in {
+                "-r",
+                "--limit-rate",
+                "-o",
+                "--output",
+                "-P",
+                "--paths",
+                "--paths-home",
+                "--paths-temp",
+                "--paths-subdirs",
+            }:
                 skip_next = True
+                continue
+            if (
+                tok.startswith("--output=")
+                or tok.startswith("-P=")
+                or tok.startswith("--paths=")
+            ):
                 continue
             cleaned.append(tok)
         return cleaned
 
-    base_args = _strip_rate_limit(_cfg_args(app, "yt-dlp"))
-
+    base_args = _sanitize_ytdlp_args(_cfg_args(app, "yt-dlp"))
+    output_template = os.path.join(download_dir, f"{safe_slug}.%(ext)s")
     cmd = [
         yt_bin,
         *base_args,
+        "--no-config",
         "--format",
         "best[ext=mp4]/best",
         "--output",
@@ -1764,13 +2089,8 @@ def download_with_yt_dlp(url: str, clip: Clip, max_bytes: int | None = None) -> 
         "--no-playlist",
         url,
     ]
-
     if max_bytes is not None and max_bytes > 0:
-        # Prevent downloading files larger than remaining quota. Pass plain bytes
-        # to avoid unit parsing issues (some yt-dlp builds reject a trailing 'B').
         cmd.extend(["--max-filesize", str(int(max_bytes))])
-
-    # Optional debug of the resolved command (without printing secrets)
     if os.getenv("YT_DLP_DEBUG"):
         try:
             print("[yt-dlp] cmd:", " ".join(cmd[:-1]), "<URL>")
@@ -1781,12 +2101,46 @@ def download_with_yt_dlp(url: str, clip: Clip, max_bytes: int | None = None) -> 
     if result.returncode != 0:
         raise RuntimeError(f"yt-dlp error downloading {url}: {result.stderr}")
 
-    # Find the downloaded file
-    for file in os.listdir(download_dir):
-        if file.startswith(f"clip_{clip.id}_"):
-            return os.path.join(download_dir, file)
+    # Determine path of downloaded file (prefer .mp4)
+    downloaded_path: str | None = None
+    try:
+        mp4 = os.path.join(download_dir, f"{safe_slug}.mp4")
+        if os.path.exists(mp4):
+            downloaded_path = mp4
+        else:
+            for f in os.listdir(download_dir):
+                if f.startswith(f"{safe_slug}."):
+                    downloaded_path = os.path.join(download_dir, f)
+                    break
+    except Exception:
+        downloaded_path = None
 
-    raise RuntimeError("Downloaded file not found")
+    if not downloaded_path:
+        raise RuntimeError("Downloaded file not found")
+
+    # Cleanup: remove any legacy clip_<id>_* files from instance/downloads to keep it empty
+    try:
+        _app3 = create_app()
+        with _app3.app_context():
+            legacy_dir2 = os.path.join(_app3.instance_path, "downloads")
+        if os.path.isdir(legacy_dir2):
+            prefix = f"clip_{clip.id}_"
+            for fname in list(os.listdir(legacy_dir2)):
+                if fname.startswith(prefix):
+                    try:
+                        os.remove(os.path.join(legacy_dir2, fname))
+                    except Exception:
+                        pass
+            # Remove the directory if now empty
+            try:
+                if not os.listdir(legacy_dir2):
+                    os.rmdir(legacy_dir2)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    return downloaded_path
 
 
 def extract_video_metadata(file_path: str) -> dict[str, Any]:

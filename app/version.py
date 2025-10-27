@@ -2,8 +2,8 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "0.8.3"
-__version_info__ = (0, 8, 3)
+__version__ = "0.8.5"
+__version_info__ = (0, 8, 5)
 
 # Version history tracking
 VERSION_HISTORY = {
@@ -78,6 +78,15 @@ VERSION_HISTORY = {
         "Operational console & logging: introduced a two-pane Blessed TUI with runtime file toggles, quick search, verbosity presets, adjustable refresh, and persisted preferences; "
         "centralized rotating logs under instance/logs (app.log, worker.log, beat.log); greatly reduced default startup noise by demoting banners to DEBUG and gating duplicate reloader logs; "
         "[media-path] traces are now DEBUG-only behind MEDIA_PATH_DEBUG. README updated with TUI usage."
+    ),
+    "0.8.4": (
+        "Canonical storage paths & Docker alignment: media paths stored as canonical '/instance/…' across downloads and compilations; "
+        "runtime transparently rebases to the active instance dir. GPU worker Compose and run script standardized on /mnt/clippyfront with HOST_INSTANCE_PATH/INSTANCE_HOST_PATH; "
+        "added 'gpus: all' to Compose, fixed volumes indentation, and hardened the run script (safe defaults, no unbound vars). Docs updated (README, Samba/mounts)."
+    ),
+    "0.8.5": (
+        "Polish after canonicalization rollout: compile task path canonicalization verified end-to-end; final docs sweep (README, Samba/mounts, workers, GPU), "
+        "GPU run script defaults clarified with mount sanity warning and aliasing off by default; Compose GPU flag noted alongside reservations. Tests and lint pass."
     ),
 }
 

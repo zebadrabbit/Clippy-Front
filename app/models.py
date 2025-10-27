@@ -492,6 +492,20 @@ class Tier(db.Model):
     apply_watermark = db.Column(db.Boolean, default=True, nullable=False)
     is_unlimited = db.Column(db.Boolean, default=False, nullable=False)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
+    # Output constraints (optional; None => unlimited)
+    max_output_resolution = db.Column(
+        db.String(10),
+        nullable=True,
+        doc="Maximum output resolution label allowed: 720p|1080p|1440p|2160p",
+    )
+    max_fps = db.Column(
+        db.Integer, nullable=True, doc="Maximum frames per second for outputs"
+    )
+    max_clips_per_project = db.Column(
+        db.Integer,
+        nullable=True,
+        doc="Maximum number of clips included in a single compilation",
+    )
     # Automation/scheduling capability flags
     can_schedule_tasks = db.Column(
         db.Boolean,

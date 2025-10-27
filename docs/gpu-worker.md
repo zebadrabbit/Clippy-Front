@@ -17,7 +17,7 @@ docker build -f docker/worker.Dockerfile -t clippyfront-gpu-worker:latest .
 
 ## Run (simple)
 ```
-# REQUIREMENT: mount your shared storage at /mnt/clippy on the host and bind it
+# REQUIREMENT: mount your shared storage at /mnt/clippyfront on the host and bind it
 # into the container at /app/instance. Inside the container, set
 # CLIPPY_INSTANCE_PATH=/app/instance so the app resolves paths correctly.
 # You can enforce the mount with REQUIRE_INSTANCE_MOUNT=1.
@@ -29,17 +29,28 @@ docker run --rm \
   -e TMPDIR=/app/instance/tmp \
   -e REQUIRE_INSTANCE_MOUNT=1 \
   -e CLIPPY_INSTANCE_PATH=/app/instance \
-  -v /mnt/clippy:/app/instance \
+  -v /mnt/clippyfront:/app/instance \
   --name clippy-gpu-worker \
   clippyfront-gpu-worker:latest
 ```
 
 ## Run with Compose
 ```
-# Build and start with GPU passthrough via CLI flag
+# Point HOST_INSTANCE_PATH to the same storage used by the web app
+# (for example, if your web writes to /mnt/clippyfront on the host)
+export HOST_INSTANCE_PATH=/mnt/clippyfront
+
+# Build the image
 docker compose -f docker/docker-compose.gpu-worker.yml build
+
+# Run with GPU passthrough via CLI flag (Compose may ignore device reservations)
 docker compose -f docker/docker-compose.gpu-worker.yml run --gpus all --name clippy-gpu-worker gpu-worker
 ```
+
+Notes:
+- The compose file now mounts ${HOST_INSTANCE_PATH:-/mnt/clippyfront} to /app/instance and sets CLIPPY_INSTANCE_PATH=/app/instance inside the container.
+- Ensure the path you set in HOST_INSTANCE_PATH contains the data your web app writes (e.g., /mnt/clippyfront/data/.../clips/... files). If your web app writes to a different host path, update HOST_INSTANCE_PATH accordingly.
+- If running on Linux and using host.docker.internal in env URLs, you may need to add a host gateway mapping: --add-host=host.docker.internal:host-gateway.
 
 ## Notes
 - FFmpeg is installed from Ubuntu packages; NVENC will be used automatically if available. The app will fall back to CPU encode if NVENC isn’t present.
@@ -82,7 +93,7 @@ docker run --rm --gpus all \
   -e TMPDIR=/app/instance/tmp \
   -e REQUIRE_INSTANCE_MOUNT=1 \
   -e CLIPPY_INSTANCE_PATH=/app/instance \
-  -v /mnt/clippy:/app/instance \
+  -v /mnt/clippyfront:/app/instance \
   --name clippy-gpu-worker clippyfront-gpu-worker:latest
 ```
 
@@ -121,7 +132,7 @@ Path aliasing for previews (optional): if the worker writes file paths with a di
 
 ```
 MEDIA_PATH_ALIAS_FROM=/app/instance/
-MEDIA_PATH_ALIAS_TO=/mnt/clippy/
+MEDIA_PATH_ALIAS_TO=/mnt/clippyfront/
 ```
 
 Rebuild tip: if you recently changed code and still hit EXDEV or missing path resolutions, rebuild the worker image without cache:

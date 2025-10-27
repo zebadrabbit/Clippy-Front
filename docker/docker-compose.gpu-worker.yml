@@ -14,8 +14,19 @@ services:
       - YT_DLP_BINARY=yt-dlp
       - CELERY_CONCURRENCY=${CELERY_CONCURRENCY:-1}
       - CELERY_QUEUES=${CELERY_QUEUES:-gpu,celery}
+      # Ensure the app uses the bind-mounted instance path inside the container
+      - CLIPPY_INSTANCE_PATH=/app/instance
+      # Fail fast if the mount isn't present/writable (recommended for workers)
+      - REQUIRE_INSTANCE_MOUNT=${REQUIRE_INSTANCE_MOUNT:-1}
+      # Keep temp files on the shared instance filesystem to avoid EXDEV on final save
+      - TMPDIR=/app/instance/tmp
     volumes:
-      - ../instance:/app/instance
+      # Mount the host instance/data root into the container. Configure HOST_INSTANCE_PATH
+      # in your .env or shell to point to the same storage used by the web app.
+      # Example: HOST_INSTANCE_PATH=/mnt/clippyfront
+      - ${HOST_INSTANCE_PATH:-/mnt/clippyfront}:/app/instance
+    # Prefer Compose's GPUs flag; falls back to deploy reservations on Swarm
+    gpus: all
     # GPU passthrough (Docker Desktop + NVIDIA)
     # Note: On many setups, Compose ignores GPU reservations unless using Swarm.
     # If GPU is not detected, prefer plain `docker run --gpus all`.

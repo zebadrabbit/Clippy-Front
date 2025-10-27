@@ -14,9 +14,9 @@ If you only need the GPU-in-Docker recipe, see also `docs/gpu-worker.md`. It now
 - Redis and PostgreSQL reachable from the worker
   - Prefer private/VPN networking (see `docs/wireguard.md`). Avoid exposing 6379/5432 publicly.
 - Shared storage for media (the app’s `instance/` directory).
-  - REQUIRED: host mount at `/mnt/clippy` containing `uploads/`, `downloads/`, `compilations/`, `tmp/`, and `assets/`
-  - Bind-mount `/mnt/clippy` into the container at `/app/instance`
-  - The app prefers `/mnt/clippy` as its instance path and can enforce its presence with `REQUIRE_INSTANCE_MOUNT=1`
+  - REQUIRED: host mount at `/mnt/clippyfront` containing `uploads/`, `downloads/`, `compilations/`, `tmp/`, and `assets/`
+  - Bind-mount `/mnt/clippyfront` into the container at `/app/instance`
+  - The app prefers `/mnt/clippyfront` as its instance path and can enforce its presence with `REQUIRE_INSTANCE_MOUNT=1`
   - See `docs/samba-and-mounts.md` for Linux/Windows/WSL2 mounts
 - For GPU in Docker
   - Linux: NVIDIA drivers + nvidia-container-toolkit installed
@@ -53,7 +53,7 @@ docker run --rm --gpus all \
   -e REQUIRE_INSTANCE_MOUNT=1 \
   -e CLIPPY_INSTANCE_PATH=/app/instance \
   -e TMPDIR=/app/instance/tmp \
-  -v "/mnt/clippy:/app/instance" \
+  -v "/mnt/clippyfront:/app/instance" \
   clippyfront-gpu-worker:latest
 ```
 
@@ -75,7 +75,7 @@ export CELERY_BROKER_URL=redis://10.8.0.1:6379/0
 export CELERY_RESULT_BACKEND=redis://10.8.0.1:6379/0
 export DATABASE_URL=postgresql://USER:PASSWORD@10.8.0.1/clippy_front
 # For native (non-Docker) workers, the instance path is on the host
-export CLIPPY_INSTANCE_PATH=/mnt/clippy
+export CLIPPY_INSTANCE_PATH=/mnt/clippyfront
 export REQUIRE_INSTANCE_MOUNT=1
 
 # Optional: prefer local ffmpeg/yt-dlp
@@ -98,14 +98,14 @@ On Windows, run this inside WSL2 with the repo checked out into the Linux filesy
 
 Workers and the web app must “see” the same files at the same logical paths:
 
-- REQUIRED mount: `/mnt/clippy` on the host; bind-mount to `/app/instance` for containers
-- When sharing over CIFS/SMB, mount the remote path on the worker host (Linux or WSL2) at `/mnt/clippy`, then bind-mount that into the container
+- REQUIRED mount: `/mnt/clippyfront` on the host; bind-mount to `/app/instance` for containers
+- When sharing over CIFS/SMB, mount the remote path on the worker host (Linux or WSL2) at `/mnt/clippyfront`, then bind-mount that into the container
 
 Cross-host path aliasing:
 
 - If file paths in the database have a different root on your worker than on the web server, use alias envs to translate:
   - `MEDIA_PATH_ALIAS_FROM=/app/instance/`
-  - `MEDIA_PATH_ALIAS_TO=/mnt/clippy/`
+  - `MEDIA_PATH_ALIAS_TO=/mnt/clippyfront/`
 - The web app also auto-rebases any path containing `/instance/` under its own `instance_path` if it exists on disk
 - Enable `MEDIA_PATH_DEBUG=1` temporarily to log how paths are resolved (both web server and worker)
  - Overlays: Avatar images are resolved under the shared assets. Set `AVATARS_PATH` to either the assets root (e.g., `/app/instance/assets`) or directly to the avatars directory (e.g., `/app/instance/assets/avatars`). Both forms are supported and normalized. Use `OVERLAY_DEBUG=1` for detailed resolution logs. On startup, if overlays are enabled but no avatars path/images are found, a warning is logged once.

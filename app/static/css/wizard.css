@@ -542,6 +542,21 @@
     padding-bottom: 1.5rem
 }
 
+/* Audio normalization header micro-adjustments */
+.audio-norm-head .form-check-input {
+    transform: scale(0.95);
+}
+.audio-norm-head .form-label {
+    margin-left: 2px; /* nudge text over slightly when checkbox present */
+}
+
+/* Visually mute slider when audio normalization is off */
+.audio-norm-card.off .opt-slider {
+    opacity: 0.4;
+    pointer-events: none;
+    filter: grayscale(0.2);
+}
+
 .opt-slider {
     position: relative;
     width: 100%;
@@ -600,66 +615,17 @@
     position: absolute;
     top: 50%;
     left: 12.5%; /* default to first option center */
-    width: 10px;
-    height: 10px;
+    width: 22px;
+    height: 22px;
     border-radius: 999px;
     background: var(--outline-color, var(--color-accent));
-    border: 2px solid #fff;
+    border: 0px solid;
     transform: translate(-50%, -50%);
     transition: left .15s ease-in-out, opacity .15s ease-in-out;
     opacity: 1;
 }
 
 .wizard-nav { gap: 0.75rem; }
-
-/* Glowing Next buttons while keeping theme face color (btn-primary background) */
-.btn-glow {
-    position: relative;
-    z-index: 0;
-    border-radius: 12px;
-    overflow: visible;
-}
-.btn-glow::before {
-    content: "";
-    position: absolute;
-    top: -2px;
-    left: -2px;
-    width: calc(100% + 4px);
-    height: calc(100% + 4px);
-    border-radius: 12px;
-    background: linear-gradient(
-        45deg,
-        var(--color-accent, #6610f2),
-        #0d6efd,
-        #22c55e,
-        #9b59b6,
-        var(--color-accent, #6610f2)
-    );
-    background-size: 400%;
-    filter: blur(10px);
-    animation: wizardGlow 20s linear infinite;
-    transition: opacity 0.25s ease-in-out;
-    opacity: 0;
-    z-index: -1;
-}
-.btn-glow:hover::before,
-.btn-glow:focus-visible::before {
-    opacity: 1;
-}
-.btn-glow:disabled::before {
-    opacity: 0;
-}
-@keyframes wizardGlow {
-    0% {
-        background-position: 0 0;
-    }
-    50% {
-        background-position: 400% 0;
-    }
-    100% {
-        background-position: 0 0;
-    }
-}
 
 /* Compile step: summary + clip list layout */
 .compile-summary {
@@ -702,6 +668,8 @@
     border-radius: 6px;
     background: #222;
 }
+.compile-clip-thumb-wrap { position: relative; width: 64px; height: 36px; border-radius: 6px; overflow: hidden; }
+.compile-clip-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 6px; pointer-events: none; }
 .compile-clip-meta { flex: 1 1 auto; min-width: 0; }
 .compile-clip-title { font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .compile-clip-len { font-size: 0.8rem; opacity: 0.8; }

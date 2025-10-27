@@ -348,6 +348,25 @@ def tier_create():
                 flash("Name is required", "danger")
                 return redirect(url_for("admin.tier_create"))
             desc = (request.form.get("description") or "").strip() or None
+            # Output caps
+            max_res_label = (
+                request.form.get("max_output_resolution") or ""
+            ).strip() or None
+            # Normalize allowed labels
+            if max_res_label:
+                mr = max_res_label.lower()
+                if mr in {"720p", "1080p", "1440p", "2160p", "2k", "4k"}:
+                    if mr == "2k":
+                        max_res_label = "1440p"
+                    elif mr == "4k":
+                        max_res_label = "2160p"
+                    else:
+                        max_res_label = mr
+                else:
+                    # Unknown label; clear to avoid invalid values
+                    max_res_label = None
+            max_fps = request.form.get("max_fps")
+            max_clips = request.form.get("max_clips_per_project")
             # Accept MB input from the form, fallback to legacy bytes key if provided
             storage_mb = request.form.get("storage_limit_mb")
             storage_bytes_legacy = request.form.get("storage_limit_bytes")
@@ -394,6 +413,9 @@ def tier_create():
             tier = Tier(
                 name=name,
                 description=desc,
+                max_output_resolution=max_res_label,
+                max_fps=_to_int_or_none(max_fps),
+                max_clips_per_project=_to_int_or_none(max_clips),
                 storage_limit_bytes=(
                     _mb_to_bytes(storage_mb)
                     if (storage_mb is not None and str(storage_mb).strip() != "")
@@ -434,6 +456,19 @@ def tier_edit(tier_id: int):
         try:
             tier.name = (request.form.get("name") or tier.name).strip()
             tier.description = (request.form.get("description") or "").strip() or None
+            # Output caps
+            max_res_label = (request.form.get("max_output_resolution") or "").strip()
+            if max_res_label == "":
+                tier.max_output_resolution = None
+            else:
+                mr = max_res_label.lower()
+                if mr in {"720p", "1080p", "1440p", "2160p", "2k", "4k"}:
+                    tier.max_output_resolution = (
+                        "1440p" if mr == "2k" else ("2160p" if mr == "4k" else mr)
+                    )
+                else:
+                    # Ignore invalid update and leave existing value
+                    pass
 
             def _to_int_or_none(v):
                 try:
@@ -441,6 +476,12 @@ def tier_edit(tier_id: int):
                     return int(v2) if v2 else None
                 except Exception:
                     return None
+
+            # FPS / clips caps
+            tier.max_fps = _to_int_or_none(request.form.get("max_fps"))
+            tier.max_clips_per_project = _to_int_or_none(
+                request.form.get("max_clips_per_project")
+            )
 
             # Update storage from MB if present; fallback to legacy bytes field
             def _mb_to_bytes(v):
@@ -956,6 +997,11 @@ def system_config():
                 "type": "int",
                 "label": "Default Max Clip Duration (s)",
             },
+            {
+                "key": "DEFAULT_TRANSITION_DURATION_SECONDS",
+                "type": "int",
+                "label": "Default Transition Duration (s)",
+            },
         ],
         "Security": [
             {"key": "FORCE_HTTPS", "type": "bool", "label": "Force HTTPS"},
@@ -1042,9 +1088,10 @@ def system_config():
     proj_root = os.path.dirname(current_app.root_path)
     env_path = os.path.join(proj_root, ".env")
     settings_path = os.path.join(proj_root, "config", "settings.py")
-    uploads_dir = os.path.join(
-        current_app.instance_path, current_app.config.get("UPLOAD_FOLDER", "uploads")
-    )
+    from app import storage as storage_lib
+
+    # Show the data root for project layout in the system config page
+    uploads_dir = storage_lib.data_root()
 
     def _exists(p: str) -> bool:
         try:
@@ -1203,10 +1250,7 @@ def system_config():
                 return redirect(url_for("admin.system_config", section="pagination"))
             try:
                 base_upload = os.path.join(
-                    current_app.instance_path,
-                    current_app.config["UPLOAD_FOLDER"],
-                    "system",
-                    "watermark",
+                    current_app.instance_path, "assets", "system", "watermark"
                 )
                 os.makedirs(base_upload, exist_ok=True)
                 ext = os.path.splitext(f.filename)[1].lower() or ""
@@ -1649,11 +1693,7 @@ def theme_activate(theme_id: int):
 def _handle_theme_uploads(theme: Theme) -> None:
     """Handle logo, favicon, watermark file uploads for a theme."""
     base_upload = os.path.join(
-        current_app.instance_path,
-        current_app.config["UPLOAD_FOLDER"],
-        "system",
-        "themes",
-        str(theme.id),
+        current_app.instance_path, "assets", "themes", str(theme.id)
     )
     os.makedirs(base_upload, exist_ok=True)
     files = {

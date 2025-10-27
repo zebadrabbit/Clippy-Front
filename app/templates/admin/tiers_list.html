@@ -22,6 +22,7 @@
                   <th>Name</th>
                   <th class="text-nowrap">Storage Limit</th>
                   <th class="text-nowrap">Render Limit</th>
+                  <th class="text-nowrap">Output Caps</th>
                   <th>Watermark</th>
                   <th>Flags</th>
                   <th class="text-nowrap">Scheduling</th>
@@ -52,6 +53,23 @@
                     {% endif %}
                   </td>
                   <td>{% if t.apply_watermark %}<span class="badge bg-secondary">Applied</span>{% else %}<span class="badge bg-info text-dark">Disabled</span>{% endif %}</td>
+                  <td>
+                    {% set caps = [] %}
+                    {% if t.max_output_resolution %}
+                      {% set _ = caps.append('<= ' ~ t.max_output_resolution|upper) %}
+                    {% endif %}
+                    {% if t.max_fps %}
+                      {% set _ = caps.append('FPS ≤ ' ~ t.max_fps) %}
+                    {% endif %}
+                    {% if t.max_clips_per_project %}
+                      {% set _ = caps.append('Clips ≤ ' ~ t.max_clips_per_project) %}
+                    {% endif %}
+                    {% if caps|length == 0 %}
+                      <span class="badge bg-success">Unlimited</span>
+                    {% else %}
+                      {% for c in caps %}<span class="badge bg-secondary me-1">{{ c }}</span>{% endfor %}
+                    {% endif %}
+                  </td>
                   <td>
                     {% if t.is_unlimited %}<span class="badge bg-warning text-dark">Unlimited</span>{% endif %}
                     {% if t.is_active %}<span class="badge bg-primary">Active</span>{% else %}<span class="badge bg-outline-secondary">Inactive</span>{% endif %}

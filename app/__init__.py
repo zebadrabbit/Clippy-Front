@@ -51,12 +51,12 @@ def create_app(config_class=None):
         Flask: Configured Flask application instance
     """
     # Prefer a shared, host-mounted instance directory when configured
-    # or when a well-known mount exists (e.g., /mnt/clippy). Avoid this
+    # or when a well-known mount exists (e.g., /mnt/clippyfront). Avoid this
     # auto-detection during pytest to keep tests hermetic.
     _is_pytest = bool(os.environ.get("PYTEST_CURRENT_TEST"))
     preferred_instance = os.environ.get("CLIPPY_INSTANCE_PATH")
-    if not _is_pytest and not preferred_instance and os.path.isdir("/mnt/clippy"):
-        preferred_instance = "/mnt/clippy"
+    if not _is_pytest and not preferred_instance and os.path.isdir("/mnt/clippyfront"):
+        preferred_instance = "/mnt/clippyfront"
 
     if preferred_instance:
         # Ensure the directory exists before constructing the app
@@ -233,9 +233,13 @@ def create_app(config_class=None):
     except Exception:
         raise
 
-    # Create upload directory if it doesn't exist
-    upload_dir = os.path.join(app.instance_path, app.config["UPLOAD_FOLDER"])
-    os.makedirs(upload_dir, exist_ok=True)
+    # Ensure project-based data root exists
+    try:
+        from app import storage as storage_lib
+
+        os.makedirs(storage_lib.data_root(), exist_ok=True)
+    except Exception:
+        pass
 
     # Initialize extensions
     init_extensions(app)
@@ -321,11 +325,9 @@ def create_app(config_class=None):
                 # Only if MediaFile table is empty
                 empty = MediaFile.query.limit(1).count() == 0
                 if empty:
-                    base_upload = os.path.join(
-                        app.instance_path, app.config["UPLOAD_FOLDER"]
-                    )
-                    downloads_dir = os.path.join(app.instance_path, "downloads")
-                    compilations_dir = os.path.join(app.instance_path, "compilations")
+                    from app import storage as storage_lib
+
+                    base_upload = storage_lib.data_root()
 
                     def _has_files(path: str) -> bool:
                         try:
@@ -341,10 +343,7 @@ def create_app(config_class=None):
                         except Exception:
                             return False
 
-                    if any(
-                        _has_files(p)
-                        for p in (base_upload, downloads_dir, compilations_dir)
-                    ):
+                    if _has_files(base_upload):
                         try:
                             # Ensure repo root on sys.path to import scripts module
                             import sys as _sys
@@ -412,6 +411,10 @@ def init_extensions(app):
                     user_cols = {c["name"] for c in insp.get_columns("users")}
                 except Exception:
                     user_cols = set()
+                try:
+                    tier_cols = {c["name"] for c in insp.get_columns("tiers")}
+                except Exception:
+                    tier_cols = set()
 
                 statements = []
                 # media_files: add tags if missing
@@ -601,6 +604,33 @@ def init_extensions(app):
                         "Applied users table runtime updates (%d change%s)",
                         len(user_statements),
                         "s" if len(user_statements) != 1 else "",
+                    )
+                # Additive columns for tiers: output constraints
+                tier_statements = []
+                if "max_output_resolution" not in tier_cols:
+                    tier_statements.append(
+                        text(
+                            "ALTER TABLE tiers ADD COLUMN max_output_resolution VARCHAR(10)"
+                        )
+                    )
+                if "max_fps" not in tier_cols:
+                    tier_statements.append(
+                        text("ALTER TABLE tiers ADD COLUMN max_fps INTEGER")
+                    )
+                if "max_clips_per_project" not in tier_cols:
+                    tier_statements.append(
+                        text(
+                            "ALTER TABLE tiers ADD COLUMN max_clips_per_project INTEGER"
+                        )
+                    )
+                if tier_statements:
+                    with engine.begin() as conn:
+                        for stmt in tier_statements:
+                            conn.execute(stmt)
+                    app.logger.info(
+                        "Applied tiers table runtime updates (%d change%s)",
+                        len(tier_statements),
+                        "s" if len(tier_statements) != 1 else "",
                     )
                 # Ensure system_settings table exists using ORM to avoid backend-specific DDL
                 try:
@@ -813,6 +843,7 @@ def init_extensions(app):
                             "DEFAULT_OUTPUT_RESOLUTION": "str",
                             "DEFAULT_OUTPUT_FORMAT": "str",
                             "DEFAULT_MAX_CLIP_DURATION": "int",
+                            "DEFAULT_TRANSITION_DURATION_SECONDS": "int",
                         }
                         # Allowlist of System Settings that can override app.config at runtime
                         allowed.update(

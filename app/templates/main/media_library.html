@@ -83,7 +83,7 @@
   </form>
 
   {% if media_files %}
-  <div id="media-grid" class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 g-3">
+  <div id="media-grid" class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-5 g-3">
     {% for m in media_files %}
     <div class="col">
       <div class="card h-100 position-relative media-card" data-id="{{ m.id }}" data-mime="{{ m.mime_type }}" data-type="{{ m.media_type.value if m.media_type else '' }}" data-name="{{ m.original_filename }}" data-tags="{{ m.tags or '' }}">
@@ -91,35 +91,47 @@
           <input class="form-check-input media-select" type="checkbox" value="{{ m.id }}">
         </div>
         {% if m.mime_type.startswith('image') %}
-          <img src="{{ url_for('main.media_preview', media_id=m.id) }}" class="card-img-top" alt="{{ m.original_filename }}">
+          <img src="{{ url_for('main.media_preview', media_id=m.id) }}" class="card-img-top media-thumb" alt="{{ m.original_filename }}">
         {% elif m.mime_type.startswith('video') %}
           <button type="button" class="btn p-0 border-0 text-start w-100 video-open position-relative" data-id="{{ m.id }}" style="background: var(--bs-card-bg);">
-            <img src="{{ url_for('main.media_thumbnail', media_id=m.id) }}" class="img-fluid" alt="{{ m.original_filename }}">
+            <img src="{{ url_for('main.media_thumbnail', media_id=m.id) }}" class="img-fluid media-thumb" alt="{{ m.original_filename }}">
             <i class="bi bi-play-circle-fill position-absolute top-50 start-50 translate-middle" style="font-size:2.5rem; opacity:0.85;"></i>
           </button>
         {% else %}
-          <div class="card-img-top d-flex align-items-center justify-content-center" style="height:160px; background: var(--bs-card-bg);">
+          <div class="card-img-top d-flex align-items-center justify-content-center media-thumb" style="height:140px; background: var(--bs-card-bg);">
             <i class="bi bi-file-earmark-text" style="font-size:2rem;"></i>
           </div>
         {% endif %}
         <div class="card-body">
           <div class="fw-semibold text-truncate" title="{{ m.original_filename }}">{{ m.original_filename }}</div>
-          <div class="d-flex align-items-center gap-2 mt-1">
-            {% set type_val = m.media_type.value if m.media_type else '' %}
-            {% set type_name = (m.media_type.name.title() if m.media_type and m.media_type.name else type_val) %}
+          {% set type_val = m.media_type.value if m.media_type else '' %}
+          {% set type_name = (m.media_type.name.title() if m.media_type and m.media_type.name else type_val) %}
+          {% set src_url = (m.clips|selectattr('source_url')|map(attribute='source_url')|first) %}
+          <ul class="list-unstyled small mb-0 mt-2">
             {% if type_val %}
-              <span class="badge text-bg-{{ type_val }}">{{ type_name }}</span>
+            <li>
+              <span class="badge text-bg-{{ type_val }}" data-role="type-badge">{{ type_name }}</span>
+            </li>
             {% endif %}
-            <small class="text-muted">{{ '%.1f'|format(m.file_size_mb) }} MB</small>
-          </div>
-          {% if m.tags %}
-            <div class="mt-1 small">
+            <li><span class="text-muted" data-role="size">{{ '%.1f'|format(m.file_size_mb) }} MB</span></li>
+        {# Show duration for all video media types. For intros/outros/transitions/compilations, assume video.
+          For clips, rely on MIME check to avoid showing for image clips. #}
+        {% set is_video = (m.mime_type and m.mime_type.startswith('video')) or type_val in ('intro','outro','transition','compilation') %}
+        {% if is_video %}
+        <li><span class="text-muted" data-role="duration"><i class="bi bi-clock"></i> {{ m.duration_formatted }}</span></li>
+        {% endif %}
+            {% if src_url %}
+            <li><a class="text-decoration-none" href="{{ src_url }}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i> Original</a></li>
+            {% endif %}
+            {% if m.tags %}
+            <li>
               {% for tag in m.tags.split(',') %}
                 {% set t = tag.strip() %}
                 {% if t %}<span class="badge bg-secondary me-1">{{ t }}</span>{% endif %}
               {% endfor %}
-            </div>
-          {% endif %}
+            </li>
+            {% endif %}
+          </ul>
         </div>
         <div class="card-footer d-flex justify-content-between align-items-center">
           <button type="button" class="btn btn-sm btn-outline-secondary media-edit" data-id="{{ m.id }}">Edit</button>

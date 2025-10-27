@@ -10,7 +10,7 @@ kept unless --include-legacy is set, in which case they're grouped by stem.
 Usage:
   python scripts/cleanup_avatars.py [--keep 5] [--dry-run] [--include-legacy]
   # Optionally target a specific directory
-  python scripts/cleanup_avatars.py --path /mnt/clippy/assets/avatars --keep 5
+    python scripts/cleanup_avatars.py --path /mnt/clippyfront/assets/avatars --keep 5
 """
 from __future__ import annotations
 

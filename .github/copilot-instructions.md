@@ -63,7 +63,7 @@ High-level data flow for a compilation:
 - Deduplicate downloads: `create_and_download_clips_api` normalizes URLs, skips batch dupes, and reuses existing `MediaFile` for the same URL owned by the user.
 - Wizard UX: five-step flow (Setup → Get Clips → Arrange → Compile → Export). Get Clips should auto-run fetch/queue; Arrange lists intro/outro/clip rows as horizontally scrollable sections; Timeline uses card-style items and forces Intro first/Outro last.
 - Vendor assets are local (CSP-friendly). If they’re missing, run `scripts/fetch_vendor_assets.sh`.
-- Prefer per-user storage paths under `instance/` and use `FFMPEG_BINARY`/`YT_DLP_BINARY` (resolved with `_resolve_binary`).
+- Prefer per-user storage paths under `instance/data/<username>/...` and use `FFMPEG_BINARY`/`YT_DLP_BINARY` (resolved with `_resolve_binary`).
 
 ## Development workflows
 - Setup
@@ -101,7 +101,7 @@ High-level data flow for a compilation:
 - For file paths and external executables, prefer `_resolve_binary` and `instance/` storage; don’t hardcode OS-specific paths.
 - When deleting a project, keep intros/outros/transitions by detaching (already implemented in `main/routes.py`).
 - To avoid duplicate storage, always go through the download API’s reuse logic rather than writing to `MediaFile` directly.
- - If media files exist on disk but aren’t visible in the UI, use `python scripts/reindex_media.py` (add `--regen-thumbnails` to restore thumbs) to backfill DB rows from `instance/uploads/`.
+ - If media files exist on disk but aren’t visible in the UI, use `python scripts/reindex_media.py` (add `--regen-thumbnails` to restore thumbs) to backfill DB rows from `instance/data/`.
 
 ## Example references
 - Deduped download flow: `app/api/routes.py::create_and_download_clips_api`
