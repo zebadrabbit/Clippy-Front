@@ -378,6 +378,7 @@ def compile_video_task(
         with tempfile.TemporaryDirectory() as temp_dir:
             # Process each clip
             processed_clips = []
+            used_clip_ids: list[int] = []
 
             for i, clip in enumerate(clips):
                 progress = 10 + (i / len(clips)) * 60  # 10-70% for clip processing
@@ -399,6 +400,10 @@ def compile_video_task(
                 clip_path = process_clip(session, clip, temp_dir, project)
                 if clip_path:
                     processed_clips.append(clip_path)
+                    try:
+                        used_clip_ids.append(int(clip.id))
+                    except Exception:
+                        pass
 
             if not processed_clips:
                 raise ValueError("No clips could be processed")
@@ -584,6 +589,7 @@ def compile_video_task(
                 "output_file": storage_lib.instance_canonicalize(final_output_path)
                 or final_output_path,
                 "clips_processed": len(processed_clips),
+                "used_clip_ids": used_clip_ids,
                 "duration": (datetime.utcnow() - job.started_at).total_seconds(),
                 **(job.result_data or {}),
             }
@@ -597,6 +603,7 @@ def compile_video_task(
                 or final_output_path,
                 "clips_processed": len(processed_clips),
                 "project_id": project_id,
+                "used_clip_ids": used_clip_ids,
             }
 
     except Exception as e:

@@ -26,7 +26,15 @@ from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
 
 from app import storage as storage_lib
-from app.models import Clip, MediaFile, MediaType, Project, ProjectStatus, db
+from app.models import (
+    Clip,
+    MediaFile,
+    MediaType,
+    ProcessingJob,
+    Project,
+    ProjectStatus,
+    db,
+)
 from app.version import get_version
 
 # Create main blueprint
@@ -203,8 +211,11 @@ def project_details_by_public(public_id):
         except Exception:
             db.session.rollback()
 
-    # Get project clips with ordering
-    clips = project.clips.order_by(Clip.order_index.asc(), Clip.created_at.asc()).all()
+    # Get project clips with ordering (default)
+    clips_query = project.clips.order_by(Clip.order_index.asc(), Clip.created_at.asc())
+    clips = clips_query.all()
+    total_clip_count = clips_query.count()
+    used_only = False
 
     # Get project media files and group by role
     media_files = project.media_files.order_by(MediaFile.uploaded_at.desc()).all()
@@ -231,6 +242,26 @@ def project_details_by_public(public_id):
         .first()
     )
 
+    # If we have a recent successful compile job with a used clip subset, prefer showing only those clips
+    try:
+        last_job = (
+            ProcessingJob.query.filter_by(
+                project_id=project.id, job_type="compile_video", status="success"
+            )
+            .order_by(ProcessingJob.completed_at.desc())
+            .first()
+        )
+        used_ids = []
+        if last_job and isinstance(last_job.result_data, dict):
+            used_ids = last_job.result_data.get("used_clip_ids") or []
+            if isinstance(used_ids, list) and used_ids:
+                # Keep the same ordering as default query
+                clips = [c for c in clips if c.id in set(used_ids)]
+                used_only = True
+    except Exception:
+        # Fail quietly; show default all clips
+        pass
+
     # Download URL for final compilation if present
     download_url = None
     if project.output_filename:
@@ -252,6 +283,9 @@ def project_details_by_public(public_id):
         title=project.name,
         project=project,
         clips=clips,
+        used_only=used_only,
+        used_count=len(clips),
+        total_clip_count=total_clip_count,
         media_files=media_files,
         intros=intros,
         outros=outros,
@@ -284,7 +318,10 @@ def project_details(project_id):
             url_for("main.project_details_by_public", public_id=project.public_id)
         )
     # Fallback: render directly
-    clips = project.clips.order_by(Clip.order_index.asc(), Clip.created_at.asc()).all()
+    clips_query = project.clips.order_by(Clip.order_index.asc(), Clip.created_at.asc())
+    clips = clips_query.all()
+    total_clip_count = clips_query.count()
+    used_only = False
     media_files = project.media_files.order_by(MediaFile.uploaded_at.desc()).all()
     intros = (
         project.media_files.filter_by(media_type=MediaType.INTRO)
@@ -306,6 +343,23 @@ def project_details(project_id):
         .order_by(MediaFile.uploaded_at.desc())
         .first()
     )
+    # Prefer showing only the clips used in the latest successful compile, if available
+    try:
+        last_job = (
+            ProcessingJob.query.filter_by(
+                project_id=project.id, job_type="compile_video", status="success"
+            )
+            .order_by(ProcessingJob.completed_at.desc())
+            .first()
+        )
+        used_ids = []
+        if last_job and isinstance(last_job.result_data, dict):
+            used_ids = last_job.result_data.get("used_clip_ids") or []
+            if isinstance(used_ids, list) and used_ids:
+                clips = [c for c in clips if c.id in set(used_ids)]
+                used_only = True
+    except Exception:
+        pass
     download_url = None
     if project.output_filename:
         try:
@@ -319,6 +373,9 @@ def project_details(project_id):
         title=project.name,
         project=project,
         clips=clips,
+        used_only=used_only,
+        used_count=len(clips),
+        total_clip_count=total_clip_count,
         media_files=media_files,
         intros=intros,
         outros=outros,

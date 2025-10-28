@@ -16,7 +16,13 @@
       <div class="card h-100">
         <div class="card-header card-header--primary d-flex justify-content-between align-items-center">
           <strong>Clips</strong>
-          <small class="text-muted">{{ clips|length }} total</small>
+          <small class="text-muted">
+            {% if used_only %}
+              {{ used_count }} used of {{ total_clip_count }}
+            {% else %}
+              {{ total_clip_count }} total
+            {% endif %}
+          </small>
         </div>
         <div class="card-body">
           {% if clips %}
