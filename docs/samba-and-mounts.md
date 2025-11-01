@@ -1,5 +1,8 @@
 # Sharing and mounting the instance directory (Samba, Linux, Windows/WSL2)
 
+> Note
+> The recommended way to deliver compiled artifacts from workers is now the rsync-over-SSH sidecar defined in `compose.worker.yaml` (see README → Deployment → Worker Setup). SMB/CIFS mounts are still useful for sharing the app’s `instance/` media between hosts, but they are not required for artifact delivery when using the sidecar.
+
 This guide shows how to share ClippyFront's `instance/` directory from a Linux server and mount it on Windows/WSL2 or another Linux machine. This is useful when a remote GPU worker needs to read/write media on the main server.
 
 Goals

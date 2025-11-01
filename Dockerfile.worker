@@ -1,0 +1,34 @@
+FROM alpine:3.20
+
+RUN apk add --no-cache \
+    bash \
+    rsync \
+    openssh-client \
+    inotify-tools \
+    autossh \
+    supervisor
+
+# Create directories
+RUN mkdir -p /scripts/worker /artifacts
+
+# Copy sync scripts (includes smoke-artifact.sh)
+COPY scripts/worker /scripts/worker
+RUN chmod +x /scripts/worker/*.sh
+
+# Supervisor config
+COPY scripts/worker/supervisord.conf /etc/supervisord.conf
+
+# Default environment (can be overridden)
+ENV PUSH_INTERVAL=60 \
+    INGEST_PORT=22 \
+    WORKER_ID=worker-01 \
+    ARTIFACTS_DIR=/artifacts \
+    WATCH_MODE=auto
+
+VOLUME ["/artifacts"]
+
+# Healthcheck: ensure scanner is running
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD pgrep -f clippy-scan >/dev/null || exit 1
+
+# Default command; can be overridden by compose/run for one-off scripts
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]

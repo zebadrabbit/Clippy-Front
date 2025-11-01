@@ -2,7 +2,7 @@
 API routes and endpoints.
 """
 # ruff: noqa: I001  # Suppress import-sorting cosmetic warning for this file
-from flask import Blueprint, current_app, jsonify, request, url_for
+from flask import Blueprint, current_app, jsonify, request, send_file, url_for
 from flask_login import current_user, login_required
 
 from app.integrations.discord import extract_clip_urls, get_channel_messages
@@ -22,6 +22,47 @@ api_bp = Blueprint("api", __name__)
 def health_check():
     """Health check endpoint."""
     return jsonify({"status": "healthy", "message": "Clippy API is running"})
+
+
+@api_bp.route("/media/signed/<int:media_id>", methods=["GET"])
+def signed_media_get(media_id: int):
+    """Serve a media file by id using a short-lived HMAC-signed URL.
+
+    Query params:
+      - u: owner user id (int)
+      - e: expiry epoch (int)
+      - sig: hex HMAC signature over (media_id, owner_id, e, optional ip)
+
+    This endpoint does NOT require login; authorization is encoded in the signature.
+    """
+    try:
+        from app.models import MediaFile
+        from app.security.signed_media import verify_signature, get_client_ip
+
+        owner_id = int(request.args.get("u", "0"))
+        exp = int(request.args.get("e", "0"))
+        sig = request.args.get("sig", "")
+        # Bind to IP if configured
+        client_ip = get_client_ip(request)
+        if not verify_signature(media_id, owner_id, exp, sig, client_ip):
+            return jsonify({"error": "Forbidden"}), 403
+        media = db.session.get(MediaFile, media_id)
+        if not media or int(media.user_id) != owner_id:
+            return jsonify({"error": "Not found"}), 404
+        if not media.file_path:
+            return jsonify({"error": "File missing"}), 404
+        # Guess mime (fallback handled by send_file)
+        try:
+            import mimetypes as _m
+
+            guessed, _ = _m.guess_type(media.file_path)
+            mimetype = guessed or (media.mime_type or "application/octet-stream")
+        except Exception:
+            mimetype = media.mime_type or "application/octet-stream"
+        return send_file(media.file_path, mimetype=mimetype, conditional=True)
+    except Exception as e:
+        current_app.logger.error(f"Signed media error: {e}")
+        return jsonify({"error": "Failed"}), 500
 
 
 ## Demo background task endpoint removed; no longer supported.

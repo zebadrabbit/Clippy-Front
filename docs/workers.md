@@ -9,6 +9,62 @@ Use cases
 
 If you only need the GPU-in-Docker recipe, see also `docs/gpu-worker.md`. It now links back here for details and troubleshooting.
 
+## Artifact sync via rsync-over-SSH
+
+Workers can export final renders to a dedicated artifacts volume for transfer to a central ingest host over SSH.
+
+How it works:
+
+- The compile task saves the final render to the normal instance path and, when `ARTIFACTS_DIR` is set and exists, mirrors a copy into `${ARTIFACTS_DIR}/<projectId>_<slug>_<UTC>`.
+- A `.DONE` sentinel is written into that directory. A sidecar scanner promotes `.DONE` → `.READY` once stable; a push sidecar rsyncs any `.READY` directory to `${INGEST_USER}@${INGEST_HOST}:${INGEST_PATH}/${WORKER_ID}/<dir>`.
+- On success, the sync sidecar writes `.PUSHED` with a timestamp.
+
+Quick start (compose stack included in repo): see `compose.worker.yaml` and the “Deployment → Worker Setup” section in `README.md`.
+
+Artifacts path configuration (Compose)
+
+- For the `compose.worker.yaml` stack in this repo, artifacts use a named Docker volume `artifacts` mounted at `/artifacts` in both worker and sync. No host path mounts are required.
+- Inside the worker, ensure `ARTIFACTS_DIR=/artifacts` so the export step writes to that path.
+
+Minimal variables for the sync sidecar:
+
+- `WORKER_ID` — identifier for namespacing on the ingest host
+- `INGEST_HOST`, `INGEST_USER`, `INGEST_PORT` (default 22), `INGEST_PATH`
+- `PUSH_INTERVAL` (default 60s)
+- SSH secrets mounted as Docker secrets: `rsync_key` and `known_hosts`
+
+Tuning and retention:
+
+- `RSYNC_BWLIMIT` (KB/s) to cap bandwidth, `RSYNC_EXTRA_FLAGS` for custom rsync flags
+- `CLEANUP_MODE`: `none` (default), `delete`, or `archive` (moves to `/artifacts/_pushed/<dir>`)
+ - Polling vs event-driven: The sync container includes `inotify-tools` and defaults to `WATCH_MODE=auto`, reacting immediately when `.DONE`/`.READY` files appear and also running periodic sweeps (`PUSH_INTERVAL`, default 60s). If no `.DONE` is present, the scanner can mark `.READY` after stability (`STABLE_MINUTES`, default 1 minute). Force behavior with `WATCH_MODE=inotify` or disable inotify with `WATCH_MODE=poll`.
+
+Worker requirement:
+
+- Set `ARTIFACTS_DIR=/artifacts` (or another path) in the worker environment, and ensure the path exists (e.g., via a Docker volume) so the export occurs.
+
+Delivery notifications (optional): set `DELIVERY_WEBHOOK_URL` (and `DELIVERY_WEBHOOK_TOKEN`) to receive a POST per successful push. Payload includes `worker_id`, `artifact.name`, `artifact.remote_path`, `artifact.pushed_at`, and `artifact.files`.
+
+Retention pruning:
+
+- The sync image runs a pruning loop that deletes archived `_pushed` entries older than `RETENTION_DAYS` (default 30). Set `MIN_FREE_GB` to enforce a minimum free space threshold by removing oldest archives.
+
+Smoke test
+
+```
+docker compose -f compose.worker.yaml run --rm artifact-sync /scripts/worker/smoke-artifact.sh
+```
+
+### Multiple workers topologies
+
+- Separate stacks (per-worker namespace): run one `worker` + one `artifact-sync` per host/VM, each with a unique `WORKER_ID` and its own `/artifacts` volume. Remote uploads go to `${INGEST_PATH}/${WORKER_ID}/...` per worker.
+
+- Scale workers with a shared sync: run multiple `worker` containers that write to the same `/artifacts` and a single `artifact-sync`. Set the sync’s `WORKER_ID` to a group label (e.g., the hostname). The manifest inside each artifact still records the originating worker’s id from its environment.
+
+- Redundant sync watchers: you may run more than one `artifact-sync` pointed at the same `/artifacts`. The `.PUSHING` lock file in each artifact directory prevents duplicate uploads across watchers.
+
+Collision considerations: artifact directory names are `<projectId>_<slug>_<UTC>`; duplicates are unlikely. If you anticipate extremely high concurrency across multiple workers, consider adding a short unique suffix to directory names—open to implement if needed.
+
 ## Prerequisites
 
 - Redis and PostgreSQL reachable from the worker
@@ -18,6 +74,7 @@ If you only need the GPU-in-Docker recipe, see also `docs/gpu-worker.md`. It now
   - Bind-mount `/mnt/clippyfront` into the container at `/app/instance`
   - The app prefers `/mnt/clippyfront` as its instance path and can enforce its presence with `REQUIRE_INSTANCE_MOUNT=1`
   - See `docs/samba-and-mounts.md` for Linux/Windows/WSL2 mounts
+- Optional for artifact sync: a named Docker volume (e.g., `artifacts`) mounted at `/artifacts` in both the worker and the sync sidecar; set `ARTIFACTS_DIR=/artifacts` in the worker env. Alternatively, set `ARTIFACTS_HOST_PATH` in `.env` to bind-mount a specific host directory to `/artifacts` for easier inspection and backups.
 - For GPU in Docker
   - Linux: NVIDIA drivers + nvidia-container-toolkit installed
   - Windows: Docker Desktop with WSL2 + NVIDIA GPU support enabled

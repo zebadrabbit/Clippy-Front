@@ -1,5 +1,8 @@
 # Secure cross-host networking with WireGuard
 
+> Note
+> WireGuard remains the recommended way to connect your web server and workers privately. For artifact delivery from workers to the ingest host, pair WireGuard with the rsync-over-SSH sidecar from `compose.worker.yaml` (see README → Deployment → Worker Setup). This avoids needing SMB shares just to transfer final outputs.
+
 This guide sets up a private VPN between your Linux host (server) and your Windows workstation (client), so Redis, Postgres, and the GPU worker communicate over an encrypted tunnel instead of exposing ports on your LAN.
 
 ## Topology

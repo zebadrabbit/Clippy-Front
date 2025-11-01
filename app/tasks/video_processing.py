@@ -2018,7 +2018,78 @@ def save_final_video(temp_path: str, project: Project) -> str:
         else:
             raise
 
+    # Also export a copy to an artifacts directory for rsync-based transfer if configured
+    try:
+        _export_artifact_if_configured(final_path, project)
+    except Exception:
+        # Never fail the compilation due to artifact export issues
+        pass
+
     return final_path
+
+
+def _export_artifact_if_configured(
+    final_output_path: str, project: Project
+) -> str | None:
+    """Optionally export the final output into an artifacts directory for external sync.
+
+    When ARTIFACTS_DIR is set and exists, copy the final output into a new
+    subdirectory under that root and write a .DONE sentinel. A separate sidecar
+    is responsible for promoting .DONE → .READY and pushing via rsync.
+
+    Returns the artifact directory path if export occurred, else None.
+    """
+    artifacts_root = (os.getenv("ARTIFACTS_DIR") or "").strip()
+    if not artifacts_root or not os.path.isdir(artifacts_root):
+        return None
+
+    # Unique, readable directory name for this compilation
+    # Format: <projectId>_<slug(project.name)>_<UTC yyyymmdd_HHMMSS>
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    name = project.name or f"project_{project.id}"
+    try:
+        import re as _re
+
+        slug = (
+            _re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._-")
+            or f"project_{project.id}"
+        )
+    except Exception:
+        slug = f"project_{project.id}"
+    dir_name = f"{int(project.id)}_{slug}_{ts}"
+    artifact_dir = os.path.join(artifacts_root, dir_name)
+    os.makedirs(artifact_dir, exist_ok=True)
+
+    # Copy the final output into the artifact directory (retain original filename)
+    dest_path = os.path.join(artifact_dir, os.path.basename(final_output_path))
+    if not os.path.exists(dest_path):
+        shutil.copy2(final_output_path, dest_path)
+
+    # Optional: write a tiny manifest for downstream consumers
+    try:
+        manifest = {
+            "project_id": int(project.id),
+            "project_name": project.name,
+            "user_id": int(getattr(project, "user_id", 0) or 0),
+            "filename": os.path.basename(dest_path),
+            "file_size": os.path.getsize(dest_path)
+            if os.path.exists(dest_path)
+            else None,
+            "created_at": datetime.utcnow().isoformat() + "Z",
+            "worker_id": os.getenv("WORKER_ID") or None,
+        }
+        with open(os.path.join(artifact_dir, "manifest.json"), "w") as fp:
+            json.dump(manifest, fp)
+    except Exception:
+        pass
+
+    # Signal completion; the scanner will promote to .READY
+    try:
+        open(os.path.join(artifact_dir, ".DONE"), "a").close()
+    except Exception:
+        pass
+
+    return artifact_dir
 
 
 def download_with_yt_dlp(

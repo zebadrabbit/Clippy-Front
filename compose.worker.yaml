@@ -1,0 +1,103 @@
+# Stack for a Celery worker plus an rsync-over-SSH artifact sync sidecar.
+# - Uses a named volume `artifacts` mounted at /artifacts in both containers
+# - Requires Docker secrets: `rsync_key` and `known_hosts`
+# - Optional reverse SSH tunnel sidecar is available via the `tunnel` profile
+
+name: clippyfront-worker
+
+volumes:
+  artifacts:
+    name: clippyfront_artifacts
+    external: true
+
+secrets:
+  rsync_key:
+    file: ./secrets/rsync_key
+  known_hosts:
+    file: ./secrets/known_hosts
+
+services:
+  worker:
+    image: ${WORKER_IMAGE:-ghcr.io/zebadrabbit/clippy-worker:latest}
+    container_name: clippy-worker
+    env_file:
+      - .env
+    environment:
+      # Ensure the worker writes exports here
+      - ARTIFACTS_DIR=/artifacts
+    volumes:
+      - artifacts:/artifacts
+    restart: unless-stopped
+
+  # Optional local build of the worker to avoid pulling from GHCR
+  # Use with: docker compose -f compose.worker.yaml --profile local up -d --build worker-local artifact-sync
+  worker-local:
+    profiles: ["local"]
+    build:
+      context: .
+      dockerfile: docker/worker.Dockerfile
+    image: clippyfront-worker:local
+    env_file:
+      - .env
+    environment:
+      - ARTIFACTS_DIR=/artifacts
+    volumes:
+      - artifacts:/artifacts
+    restart: unless-stopped
+
+  artifact-sync:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: clippy-artifact-sync
+    env_file:
+      - .env
+    environment:
+      - ARTIFACTS_DIR=/artifacts
+      # Use strict host key checking by default
+      - KNOWN_HOSTS_FILE=/run/secrets/known_hosts
+      - RSYNC_KEY_FILE=/run/secrets/rsync_key
+      - PUSH_INTERVAL=${PUSH_INTERVAL:-60}
+      # Explicitly pass required vars if present in .env
+      - WORKER_ID=${WORKER_ID}
+      - INGEST_HOST=${INGEST_HOST}
+      - INGEST_USER=${INGEST_USER}
+      - INGEST_PATH=${INGEST_PATH}
+      - INGEST_PORT=${INGEST_PORT:-22}
+    volumes:
+      - artifacts:/artifacts
+    secrets:
+      - rsync_key
+      - known_hosts
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/bin/sh", "-lc", "pgrep -f clippy-scan || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  tunnel:
+    # Optional reverse tunnel sidecar, enabled with: --profile tunnel
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: clippy-tunnel
+    profiles: ["tunnel"]
+    env_file:
+      - .env
+    entrypoint: ["/bin/sh", "-lc"]
+    command:
+      - >-
+        AUTOSSH_GATETIME=0 AUTOSSH_POLL=10 AUTOSSH_FIRST_POLL=30 \
+        autossh -M 0 -N \
+          -o StrictHostKeyChecking=yes \
+          -o UserKnownHostsFile=${KNOWN_HOSTS_FILE:-/run/secrets/known_hosts} \
+          -i ${RSYNC_KEY_FILE:-/run/secrets/rsync_key} \
+          -p ${INGEST_PORT:-22} \
+          ${INGEST_USER}@${INGEST_HOST} \
+          -R ${TUNNEL_REVERSE:-2222:localhost:22}
+    secrets:
+      - rsync_key
+      - known_hosts
+    restart: unless-stopped

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2025-11-01
+
+### Added
+- Rsync-over-SSH artifact sync for distributed workers: lightweight `artifact-sync` sidecar scans `/artifacts` and pushes any `.READY` directories to the ingest host with strict host key checking.
+- New compose stack `compose.worker.yaml` defining worker, local-first worker profile, `artifact-sync` sidecar, optional reverse SSH tunnel (profile), named `artifacts` volume, and Docker secrets (`rsync_key`, `known_hosts`).
+- Sidecar image `Dockerfile.worker` (Alpine) installs `rsync`, `openssh-client`, `inotify-tools`, `autossh`, and `supervisor`; healthcheck ensures the scanner is running.
+- Scripts: `scripts/worker/clippy-scan.sh` (inotify + periodic sweep, `.DONE`→`.READY` promotion, optional SSH probe) and `scripts/worker/clippy-push.sh` (strict SSH, temp 0600 private key, robust secret resolution, `.PUSHED` marker).
+- Override example `compose.worker.override.yaml.example` binding `./secrets` to `/secrets:ro` for WSL/Docker Desktop robustness, mapping env `KNOWN_HOSTS_FILE` and `RSYNC_KEY_FILE` to files inside `/secrets`.
+
+### Changed
+- README “Deployment → Worker Setup” updated with step-by-step local-first flow, strict host key probe, and smoke test. Notes clarify no host directory mounts are required beyond the named `artifacts` volume; secrets recommended via `/secrets` bind on WSL.
+
+### Fixed
+- Cleaned up duplicated shebang/trailing fragment in `scripts/worker/clippy-scan.sh`.
+
 ## [0.9.0] - 2025-10-27
 
 ### Added

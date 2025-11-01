@@ -57,14 +57,23 @@ def make_celery(app_name=__name__):
         ),
     )
 
-    # Optional beat schedule for the scheduler tick
+    # Optional beat schedules
+    beat_schedule = {}
     if getattr(config, "SCHEDULER_ENABLE_TICK", False):
-        celery_app.conf.beat_schedule = {
-            "automation-scheduler-tick": {
-                "task": "app.tasks.automation.scheduled_tasks_tick",
-                "schedule": int(getattr(config, "SCHEDULER_TICK_SECONDS", 60) or 60),
-            }
+        beat_schedule["automation-scheduler-tick"] = {
+            "task": "app.tasks.automation.scheduled_tasks_tick",
+            "schedule": int(getattr(config, "SCHEDULER_TICK_SECONDS", 60) or 60),
         }
+    # Ingest import periodic scan
+    if getattr(config, "INGEST_IMPORT_ENABLED", False):
+        beat_schedule["ingest-importer-scan"] = {
+            "task": "app.tasks.media_maintenance.ingest_import_task",
+            "schedule": int(
+                getattr(config, "INGEST_IMPORT_INTERVAL_SECONDS", 60) or 60
+            ),
+        }
+    if beat_schedule:
+        celery_app.conf.beat_schedule = beat_schedule
 
     return celery_app
 

@@ -2,8 +2,8 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "0.9.0"
-__version_info__ = (0, 9, 0)
+__version__ = "0.10.0"
+__version_info__ = (0, 10, 0)
 
 # Version history tracking
 VERSION_HISTORY = {
@@ -92,6 +92,12 @@ VERSION_HISTORY = {
         "Timeline-aware compile and worker hardening: the compile API, worker, and wizard now honor only the clips placed on the timeline (clip_ids) in the exact order; "
         "added tests to enforce empty selection rejection and subset ordering. Celery worker reuses a single Flask app instance per process to reduce DB connection churn; "
         "resolved a syntax error introduced during refactor. Docs updated: README and workers guide cover task-signature upgrades, STATIC_BUMPER_PATH override, and path-alias tips."
+    ),
+    "0.10.0": (
+        "Distributed worker artifact sync: added an rsync-over-SSH sidecar with strict host key checking to push artifacts from a named Docker volume; "
+        "new compose stack (compose.worker.yaml) with optional reverse-tunnel sidecar, local-first worker profile, and Docker secrets for rsync key and known_hosts; "
+        "artifact-sync image (Dockerfile.worker) includes rsync, openssh-client, inotify-tools, autossh, supervisor; scripts/clippy-scan.sh and clippy-push.sh manage .DONE→.READY promotion, inotify+poll scanning, and robust secret resolution; "
+        "README updated with step-by-step worker setup, WSL-safe /secrets override, strict-check probe, and smoke test examples."
     ),
 }
 

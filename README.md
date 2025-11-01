@@ -226,6 +226,282 @@ pre-commit install   # set up hooks
 python scripts/health_check.py --db "$DATABASE_URL" --redis "$REDIS_URL"
 ```
 
+## Deployment → Worker Setup
+
+This repository includes an rsync-over-SSH artifact sync system for distributed workers. The pattern is:
+
+- A Celery worker container produces compiled outputs into a shared named volume `artifacts` at `/artifacts`.
+- A lightweight sidecar (`artifact-sync`) scans `/artifacts` every 60s and pushes any directory containing a `.READY` sentinel to an ingest host via SSH/rsync.
+- An optional `tunnel` sidecar can maintain a reverse SSH tunnel if outbound connectivity is restricted.
+
+Artifacts mount location:
+
+- By default, `compose.worker.yaml` uses a named Docker volume called `artifacts` and mounts it at `/artifacts` in both the worker and sync containers.
+- Inside the worker, set `ARTIFACTS_DIR=/artifacts` so the compile pipeline knows where to export the final outputs and write the `.DONE` sentinel.
+
+### 1) Generate SSH keypair for the worker
+
+```bash
+mkdir -p secrets
+ssh-keygen -t ed25519 -N "" -f secrets/rsync_key
+```
+
+### 2) Trust the ingest host and install the worker public key there
+
+On your control machine:
+
+```bash
+# Replace with your ingest host and port
+export INGEST_HOST=ingest.example.com
+export INGEST_PORT=22
+
+# Capture the host key for StrictHostKeyChecking
+ssh-keyscan -p "$INGEST_PORT" "$INGEST_HOST" > secrets/known_hosts
+
+# Show the worker public key to add to the ingest host's authorized_keys
+cat secrets/rsync_key.pub
+```
+
+On the ingest host, append the above public key to the target user’s `~/.ssh/authorized_keys` (the user should own the destination path below).
+
+#### Ingest host account (INGEST_USER)
+
+`INGEST_USER` is the SSH username on your ingest host. It must be a real Unix user on that machine with write access to `INGEST_PATH` (e.g., `/srv/ingest`). A simple, secure baseline is to create a dedicated unprivileged account and directory owned by that user:
+
+```bash
+# On the ingest host (run as root or via sudo)
+adduser --disabled-password --gecos "" ingest    # or: useradd -m ingest
+mkdir -p /srv/ingest
+chown ingest:ingest /srv/ingest
+chmod 750 /srv/ingest
+
+# Install the worker public key for key-only SSH
+sudo -u ingest mkdir -p ~ingest/.ssh
+sudo -u ingest bash -c 'cat >> ~ingest/.ssh/authorized_keys' < /path/to/rsync_key.pub
+chmod 700 ~ingest/.ssh
+chmod 600 ~ingest/.ssh/authorized_keys
+```
+
+Hardening tips (optional): in `authorized_keys`, you can prepend restrictions like `no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty`, and/or a `from="<worker-ip>"` source filter if you have a static source IP.
+
+### 3) Create a minimal .env for the artifact sync
+
+```bash
+cat > .env << 'EOF'
+# Identify this worker in the destination path
+WORKER_ID=worker-01
+
+# Ingest SSH target and destination path for artifacts
+INGEST_HOST=ingest.example.com
+INGEST_USER=ingest   # Unix user on the ingest host with write access to INGEST_PATH
+INGEST_PORT=22
+INGEST_PATH=/srv/ingest
+
+# Scan/push interval in seconds
+PUSH_INTERVAL=60
+
+# Optional: reverse-tunnel mapping when enabling the tunnel profile
+# TUNNEL_REVERSE=2222:localhost:22
+EOF
+```
+
+### 4) Start the stack (local-first)
+
+```bash
+docker compose -f compose.worker.yaml --profile local up -d --build worker-local artifact-sync
+```
+
+This brings up:
+
+- `worker-local`: the Celery worker built locally from `docker/worker.Dockerfile` (tag `clippyfront-worker:local`) that writes outputs into `/artifacts`.
+- `artifact-sync`: a tiny container that runs `scripts/worker/clippy-scan.sh` and `clippy-push.sh` to detect `.READY` directories and push them via rsync/SSH.
+
+The named volume `artifacts` is shared between both containers. SSH credentials are mounted as Docker secrets: `rsync_key` and `known_hosts`.
+
+Optional: enable the reverse tunnel sidecar with a profile if your network requires inbound connectivity on the ingest host:
+
+```bash
+docker compose -f compose.worker.yaml --profile tunnel up -d
+```
+
+Alternative: use the published worker image from GHCR
+
+If you see an error like:
+
+```
+error from registry: denied
+```
+
+1) Authenticate to GHCR to pull the worker image
+
+```bash
+# Create a GitHub Personal Access Token (classic) with read:packages
+# Then login to GHCR (will prompt or read from stdin)
+echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_USER" --password-stdin
+
+docker compose -f compose.worker.yaml up -d --build worker artifact-sync
+```
+
+2) Alternatively, override the image to a locally-built tag without profiles:
+
+```bash
+WORKER_IMAGE=clippyfront-worker:local docker compose -f compose.worker.yaml up -d --build worker artifact-sync
+```
+
+The local worker build uses `docker/worker.Dockerfile` in this repo and writes artifacts to the shared named volume at `/artifacts` the same way.
+
+For a full GPU worker deployment guide with recommended environment variables, examples, and troubleshooting, see `docs/gpu-worker.md`. For broader worker patterns (native, Docker, storage, networking), see `docs/workers.md`.
+
+Notes:
+
+- The sync sidecar respects env vars: `WORKER_ID`, `INGEST_HOST`, `INGEST_USER`, `INGEST_PATH`, `INGEST_PORT`, `PUSH_INTERVAL`. It scans `/artifacts` and pushes any directory containing a `.READY` sentinel; on success, it writes `.PUSHED` with a timestamp.
+- If you already produce a `.DONE` sentinel, the scanner will promote it to `.READY`. Otherwise, it heuristically marks directories `.READY` once they appear stable (no file changes for ~1 minute) and non-empty.
+- No host directory mounts are required—only the named volume `artifacts` and Docker secrets.
+
+Secrets troubleshooting (secrets mounted as directories on some platforms)
+
+- On some platforms (WSL/Docker Desktop), Compose may present secrets under `/run/secrets/<name>` as directories instead of files. The sidecar handles both, but manual SSH probes can fail unless you target an actual file.
+- Easiest, cross-platform approach: bind your local `./secrets` directory into the container and point the sidecar at those paths via env.
+
+```bash
+# Use a robust override that mounts the whole ./secrets dir at /secrets
+cp compose.worker.override.yaml.example compose.worker.override.yaml
+docker compose -f compose.worker.yaml -f compose.worker.override.yaml up -d --build artifact-sync
+
+# Optional: strict host key check probe inside the container
+docker compose -f compose.worker.yaml -f compose.worker.override.yaml exec artifact-sync sh -lc '\
+  ssh -o StrictHostKeyChecking=yes \
+     -o UserKnownHostsFile=${KNOWN_HOSTS_FILE:-/run/secrets/known_hosts} \
+     -i ${RSYNC_KEY_FILE:-/run/secrets/rsync_key} \
+     -p ${INGEST_PORT:-22} \
+     ${INGEST_USER}@${INGEST_HOST} true'
+```
+
+If you prefer to stick with Docker secrets, ensure `secrets/known_hosts` and `secrets/rsync_key` are real files on the host (not directories) before you (re)create `artifact-sync`.
+
+Quick examples:
+
+```
+# Example: ingest behind WireGuard at 10.8.0.1:22
+ssh-keyscan -p 22 -t ed25519 -H 10.8.0.1 > secrets/known_hosts
+
+# Bring up just the sync sidecar for a smoke test
+docker compose -f compose.worker.yaml up -d --build artifact-sync
+
+# Create a dummy artifact in the shared volume
+docker compose -f compose.worker.yaml run --rm artifact-sync /scripts/worker/smoke-artifact.sh
+
+# Tail logs
+docker compose -f compose.worker.yaml logs --tail=200 artifact-sync
+```
+
+Polling vs event-driven latency:
+
+- By default the image now includes inotify and runs in `WATCH_MODE=auto`, so it reacts immediately when a `.DONE` or `.READY` file is created (event-driven) and still performs periodic safety sweeps.
+- Without `.DONE`, readiness can still rely on stability: no file modifications for `STABLE_MINUTES` (default 1 minute). You can set `STABLE_MINUTES=0` if you always write `.DONE`.
+- To force modes: set `WATCH_MODE=inotify` (event-driven only + sweeps) or `WATCH_MODE=poll` to disable inotify and rely only on `PUSH_INTERVAL`.
+
+Advanced options:
+
+- Limit egress with `RSYNC_BWLIMIT` (KB/s) and pass `RSYNC_EXTRA_FLAGS` (e.g., `--chmod=F644,D755`).
+- Control local retention after successful push with `CLEANUP_MODE`:
+	- `none` (default): keep the directory with `.PUSHED` marker
+	- `delete`: remove the directory entirely after a successful push
+	- `archive`: move to `/artifacts/_pushed/<dir>` for local retention
+
+Optional delivery webhook:
+
+- Set `DELIVERY_WEBHOOK_URL=https://...` (and optionally `DELIVERY_WEBHOOK_TOKEN`) to receive a POST after each successful push with JSON:
+	`{ "worker_id": "...", "artifact": { "name": "...", "remote_path": "...", "pushed_at": "ISO8601", "files": N } }`
+
+Retention pruning:
+
+- A background job removes archived artifacts older than `RETENTION_DAYS` (default 30). You can also enforce a minimum free space with `MIN_FREE_GB`.
+
+Smoke test:
+
+- Validate the scan/push flow by creating a dummy artifact locally:
+
+```bash
+# Rebuild the artifact-sync image to ensure scripts are included
+docker compose -f compose.worker.yaml build --no-cache artifact-sync
+
+# Start the scanner only (no worker dependency required)
+docker compose -f compose.worker.yaml up -d artifact-sync
+
+# Create a dummy artifact in the shared volume without starting dependencies
+# Use --entrypoint to run via bash regardless of image entrypoint settings
+docker compose -f compose.worker.yaml run --no-deps --rm \
+	--entrypoint /bin/bash artifact-sync -lc '/scripts/worker/smoke-artifact.sh'
+
+Troubleshooting: Host key verification failed
+
+If pushes fail with `Host key verification failed.`, refresh the host key for your target and recreate the sidecar:
+
+```
+ssh-keyscan -p 22 -H 10.8.0.1 > secrets/known_hosts
+docker compose -f compose.worker.yaml up -d --force-recreate artifact-sync
+```
+```
+
+### Multiple workers
+
+There are a few safe ways to run more than one worker:
+
+- One worker per sync (recommended for per-worker segregation)
+	- Run a separate compose stack (or service pair) for each worker host.
+	- Give each its own `/artifacts` volume and a unique `WORKER_ID`.
+	- Remote paths become `${INGEST_PATH}/${WORKER_ID}/...`, cleanly namespaced.
+
+- Many workers, one sync (shared namespace)
+	- You can scale the `worker` service and keep a single `artifact-sync` that watches a shared `/artifacts` volume.
+	- Set `WORKER_ID` on the sync to a group label (e.g., the host name). All artifacts upload under that prefix.
+	- The artifact manifest still records the originating worker’s `worker_id` (from the worker container env) even if the sync uses a group `WORKER_ID`.
+
+- HA sync watchers (optional)
+	- You may run multiple `artifact-sync` watchers against the same `/artifacts`. A `.PUSHING` lock file prevents duplicate uploads; whichever sync grabs it first pushes, others skip.
+
+Notes:
+- Ensure every worker uses a distinct `WORKER_ID` if you want remote-level segregation. If you deliberately share a `WORKER_ID`, artifacts from those workers land under the same remote prefix.
+- Artifact directory names include project id, slug, and UTC timestamp to seconds. Collisions are rare; if you expect extremely high concurrency, we can add a short unique suffix for extra safety.
+
+### Secure HTTP media for workers (signed URLs)
+
+If your render workers can’t mount the same instance storage, they can fetch source media over HTTP using short‑lived, signed URLs that are resistant to URL snooping.
+
+How it works:
+
+- The server exposes `GET /api/media/signed/<media_id>?u=<owner_id>&e=<epoch>&sig=<hmac>`.
+- The signature is HMAC‑SHA256 over `(media_id, owner_id, expiry, optional_ip)` using `MEDIA_SIGNING_KEY` (falls back to `SECRET_KEY`).
+- Tokens expire after `MEDIA_URL_TTL` seconds (default 300). Optionally bind to the requester IP with `MEDIA_URL_BIND_IP=true`.
+
+Configuration (.env):
+
+```
+MEDIA_SIGNING_KEY= # optional; defaults to SECRET_KEY
+MEDIA_URL_TTL=300
+MEDIA_URL_BIND_IP=false
+```
+
+Generating URLs (server‑side helpers):
+
+- In app code, import `generate_signed_media_url(media_id, owner_user_id, ttl_seconds=None, client_ip=None)` from `app.security.signed_media`.
+- Example:
+
+```python
+from app.security.signed_media import generate_signed_media_url
+
+url = generate_signed_media_url(media.id, media.user_id, ttl_seconds=300)
+```
+
+Workers can then `GET` the URL and stream the file without a user session. If you enable IP binding, generate tokens with the known worker IP (e.g., your WireGuard address) or keep the default and enforce TLS + short TTLs.
+
+Notes:
+
+- This route is authorization‑by‑signature and does not require login. It only serves files when the HMAC, owner id, and expiry validate, and the media exists for that owner.
+- For large jobs, consider batching signed URL generation and passing them to the worker with the task payload.
+- Always run behind HTTPS in production.
+
 ## Project Structure (abridged)
 
 ```
@@ -254,6 +530,45 @@ ClippyFront/
 └── .env.example                 # Env var template
 ```
 
+For a detailed, per-directory guide (what each folder is for and what you can do there), see docs/repo-structure.md.
+
+## Server-side ingest importer (optional)
+
+If your GPU workers push compiled outputs to a central ingest path (e.g., `/srv/ingest/${WORKER_ID}/...`), you can enable a periodic importer in this server to copy/move/link those files into the app's project storage and record them in the database automatically.
+
+Enable via environment (.env) and run Celery Beat alongside your worker:
+
+- INGEST_IMPORT_ENABLED=true
+- INGEST_ROOT=/srv/ingest
+- INGEST_IMPORT_USERNAME=admin                 # target owner username
+- INGEST_IMPORT_PROJECT="Highlights Oct-2025"  # target project name
+- INGEST_IMPORT_CREATE_PROJECT=true            # create if missing
+- INGEST_IMPORT_PATTERN=*.mp4                  # which files to import
+- INGEST_IMPORT_ACTION=copy                    # copy|move|link
+- INGEST_IMPORT_STABLE_SECONDS=60              # consider artifact dirs ready after N seconds unchanged
+- INGEST_IMPORT_WORKER_IDS=                    # optional CSV of worker ids to limit scan; empty = all
+- INGEST_IMPORT_INTERVAL_SECONDS=60            # periodic scan interval
+
+Processes:
+
+- Celery worker (already required):
+	- `celery -A app.tasks.celery_app worker --loglevel=info`
+- Celery beat (schedules the importer):
+	- `celery -A app.tasks.celery_app beat --loglevel=info`
+
+The task `app.tasks.media_maintenance.ingest_import_task` will:
+
+- Scan `${INGEST_ROOT}/${WORKER_ID}/<artifact>/...` for files matching the pattern
+- Heuristically consider an artifact directory “ready” when its mtime is older than `INGEST_IMPORT_STABLE_SECONDS`
+- Import files into `instance/data/<username>/<project_slug>/compilations/` using the chosen action (copy/move/link)
+- Run a reindex to add DB rows and generate thumbnails so the files appear in the UI
+
+Alternative: one-off import helper
+
+If you prefer a one-shot import, use:
+
+`python scripts/import_from_ingest.py --username <user> --project <name> --ingest-root /srv/ingest --worker-id <id> --action copy --pattern "*.mp4" --regen-thumbnails`
+
 ## Troubleshooting
 
 - Dropzone not defined or blocked by CSP: ensure you ran `scripts/fetch_vendor_assets.sh` and the CSS/JS are served from `app/static/vendor`.
@@ -264,15 +579,6 @@ ClippyFront/
 ### Celery error: unexpected keyword argument 'clip_ids'
 
 This means the web app and worker are running different code versions (the compile task signature changed). Rebuild/restart your worker(s) so they pick up the new code, and ensure the web app is also updated. After upgrades that change task signatures, restart both web and workers to keep them in sync.
-
-### Admin password seems to change daily
-
-If your admin password appears to “change,” it was typically due to multiple SQLite files being created with relative paths. We now standardize on PostgreSQL to avoid this class of issue. If you still hit issues:
-
-- Ensure you’re using the same environment variables (`FLASK_ENV`, `DATABASE_URL`) for each run.
-- Avoid re-running `init_db.py --all` unless you intend to drop/recreate tables.
-- Reset the admin password explicitly when needed:
-	- `python init_db.py --reset-admin --password <newpassword>`
 
 ### Media files exist on disk but don't show up
 

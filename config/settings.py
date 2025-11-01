@@ -111,6 +111,39 @@ class Config:
         "yes",
     }
 
+    # Signed media URL configuration (for worker access via HTTP)
+    MEDIA_SIGNING_KEY = os.environ.get("MEDIA_SIGNING_KEY")  # defaults to SECRET_KEY
+    MEDIA_URL_TTL = int(os.environ.get("MEDIA_URL_TTL", 300))  # seconds
+    MEDIA_URL_BIND_IP = os.environ.get("MEDIA_URL_BIND_IP", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+    # Ingest importer (server-side) configuration
+    INGEST_IMPORT_ENABLED = os.environ.get(
+        "INGEST_IMPORT_ENABLED", "false"
+    ).lower() in {"1", "true", "yes", "on"}
+    INGEST_ROOT = os.environ.get("INGEST_ROOT", "/srv/ingest")
+    # Comma-separated list of worker IDs to scan (empty => all subdirs under INGEST_ROOT)
+    INGEST_IMPORT_WORKER_IDS = os.environ.get("INGEST_IMPORT_WORKER_IDS", "")
+    # Default owner/project for imported files if no smarter mapping is provided
+    INGEST_IMPORT_USERNAME = os.environ.get("INGEST_IMPORT_USERNAME")
+    INGEST_IMPORT_PROJECT = os.environ.get("INGEST_IMPORT_PROJECT")
+    INGEST_IMPORT_CREATE_PROJECT = os.environ.get(
+        "INGEST_IMPORT_CREATE_PROJECT", "true"
+    ).lower() in {"1", "true", "yes", "on"}
+    INGEST_IMPORT_PATTERN = os.environ.get("INGEST_IMPORT_PATTERN", "*.mp4")
+    INGEST_IMPORT_ACTION = os.environ.get("INGEST_IMPORT_ACTION", "copy")
+    INGEST_IMPORT_STABLE_SECONDS = int(
+        os.environ.get("INGEST_IMPORT_STABLE_SECONDS", 60)
+    )
+    # Celery Beat schedule (seconds) for periodic scans
+    INGEST_IMPORT_INTERVAL_SECONDS = int(
+        os.environ.get("INGEST_IMPORT_INTERVAL_SECONDS", 60)
+    )
+
     # Automation scheduler (Celery Beat) optional enable
     SCHEDULER_ENABLE_TICK = os.environ.get(
         "SCHEDULER_ENABLE_TICK", "false"

@@ -1,0 +1,9 @@
+services:
+  artifact-sync:
+    # Bind the entire secrets directory to avoid file-vs-dir ambiguity (WSL/Docker Desktop safe)
+    secrets: []
+    volumes:
+      - ./secrets:/secrets:ro
+    environment:
+      KNOWN_HOSTS_FILE: /secrets/known_hosts
+      RSYNC_KEY_FILE: /secrets/rsync_key

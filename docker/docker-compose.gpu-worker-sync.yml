@@ -1,0 +1,57 @@
+version: "3.9"
+
+services:
+  gpu-worker-sync:
+    build:
+      context: ..
+      dockerfile: docker/worker-combined.Dockerfile
+    image: clippyfront-gpu-worker-sync:latest
+    environment:
+      # Core app/worker env
+      - USE_GPU_QUEUE=true
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://host.docker.internal:6379/0}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://host.docker.internal:6379/0}
+      - DATABASE_URL=${DATABASE_URL}
+      - CLIPPY_INSTANCE_PATH=/app/instance
+      - REQUIRE_INSTANCE_MOUNT=${REQUIRE_INSTANCE_MOUNT:-1}
+      - TMPDIR=/app/instance/tmp
+      # Artifact export + sync
+      - ARTIFACTS_DIR=/artifacts
+      - WORKER_ID=${WORKER_ID:-gpu-worker-01}
+      - INGEST_HOST=${INGEST_HOST}
+      - INGEST_USER=${INGEST_USER}
+      - INGEST_PORT=${INGEST_PORT:-22}
+      - INGEST_PATH=${INGEST_PATH}
+      - PUSH_INTERVAL=${PUSH_INTERVAL:-60}
+      - WATCH_MODE=${WATCH_MODE:-auto}
+      - CLEANUP_MODE=${CLEANUP_MODE:-none}
+      - RSYNC_BWLIMIT=${RSYNC_BWLIMIT}
+      - RSYNC_EXTRA_FLAGS=${RSYNC_EXTRA_FLAGS}
+      - DELIVERY_WEBHOOK_URL=${DELIVERY_WEBHOOK_URL}
+      - DELIVERY_WEBHOOK_TOKEN=${DELIVERY_WEBHOOK_TOKEN}
+      - DELIVERY_WEBHOOK_TIMEOUT=${DELIVERY_WEBHOOK_TIMEOUT:-5}
+      - RETENTION_DAYS=${RETENTION_DAYS:-30}
+      - MIN_FREE_GB=${MIN_FREE_GB}
+    volumes:
+      # Instance storage (must point to the same data as the web app)
+      - ${HOST_INSTANCE_PATH:-/mnt/clippyfront}:/app/instance
+      # Artifacts: named volume by default; set ARTIFACTS_HOST_PATH in .env to bind-mount
+      - ${ARTIFACTS_HOST_PATH:-artifacts}:/artifacts
+    secrets:
+      - rsync_key
+      - known_hosts
+    gpus: all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+
+volumes:
+  artifacts:
+
+secrets:
+  rsync_key:
+    file: ../secrets/rsync_key
+  known_hosts:
+    file: ../secrets/known_hosts

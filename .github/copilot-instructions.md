@@ -10,9 +10,6 @@ Keep changes safe, reproducible, and easy to review. Follow these concise rules 
 - Before running Python, pip, pytest, or tools, activate it:
   - POSIX: `source venv/bin/activate`
 - When the venv is active, do NOT hardcode full paths to executables (e.g., `/path/to/venv/bin/ruff`). Prefer calling them by name (`python`, `ruff`, `pytest`) so the active shell resolves from the venv.
-- If a command fails due to a missing executable, (re-)activate the venv and try again:
-  - `source venv/bin/activate` → rerun the command.
-- If you ever find yourself using a full path to a tool (e.g., `/home/winter/work/ClippyFront/venv/bin/ruff`), stop and activate the venv, then run the tool by name instead (e.g., `ruff`).
 - Use `python -m pip` for installs; never use global installs or `sudo pip`.
 - Respect `requirements.txt` and `pyproject.toml` as sources of truth. If deps change, update files and show the exact install command.
 - Run commands in this order when proposing or automating: 1) activate venv → 2) install/upgrade deps → 3) lint/format → 4) type-check (if configured) → 5) tests.
@@ -110,3 +107,32 @@ High-level data flow for a compilation:
 - Models and enums: `app/models.py`
 
 If anything here seems off or incomplete (e.g., different step flow, additional tasks, or new integrations), let me know and I’ll update these instructions accordingly.
+
+
+# Copilot project context: Clippy-Front workers
+
+Goal:
+Integrate an rsync-over-SSH artifact sync system for Clippy-Front’s distributed workers.
+
+Requirements:
+- Add a Docker Compose file (`compose.worker.yaml`) that defines:
+  - `worker` service (uses image `ghcr.io/zebadrabbit/clippy-worker:latest`)
+  - optional `tunnel` sidecar for reverse SSH (autossh)
+  - named volume `artifacts`
+  - Docker secrets for `rsync_key` and `known_hosts`
+- Add scripts in `scripts/worker/`:
+  - `clippy-push.sh`
+  - `clippy-scan.sh`
+  - include executable permissions and `#!/usr/bin/env bash` shebang
+- Ensure scripts use env vars:
+  `WORKER_ID`, `INGEST_HOST`, `INGEST_USER`, `INGEST_PATH`, `INGEST_PORT`, `PUSH_INTERVAL`
+- Add a `Dockerfile.worker` that installs `rsync`, `openssh-client`, `supervisor`, and copies those scripts.
+- Update project README under **Deployment → Worker Setup** with:
+  1. Generate SSH keypair
+  2. Add public key to ingest host
+  3. Define `.env` with minimal worker config
+  4. `docker compose -f compose.worker.yaml up -d`
+
+Behavior:
+- The worker container scans `/artifacts` every 60 s and pushes any directory containing a `.READY` sentinel.
+- No host directory mounts; only named volume `artifacts`.
