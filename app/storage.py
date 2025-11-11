@@ -3,7 +3,7 @@ Project-based storage helpers.
 
 Layout:
     <DATA_ROOT>/<username>/<project_slug>/{clips,intros,outros,transitions,compilations}
-    Thumbnails: <DATA_ROOT>/<username>/_thumbnails
+    Thumbnails: stored alongside their media files with _thumb.jpg suffix
     Library (shared, reusable): <DATA_ROOT>/<username>/_library/{intros,outros,transitions,images,clips}
 
 DATA_FOLDER may be an absolute or relative path. If relative, it's resolved under app.instance_path.
@@ -48,15 +48,12 @@ def user_root(user) -> str:
 
 def project_root(user, project_name: str | None) -> str:
     slug = slugify(project_name or "project")
-    return os.path.join(user_root(user), slug)
+    base_path = os.path.join(user_root(user), slug)
+    return base_path
 
 
 def library_root(user) -> str:
     return os.path.join(user_root(user), "_library")
-
-
-def thumbnails_dir(user) -> str:
-    return os.path.join(user_root(user), "_thumbnails")
 
 
 def clips_dir(user, project_name: str | None) -> str:
@@ -92,6 +89,43 @@ def ensure_dirs(*paths: str) -> None:
             os.makedirs(p, exist_ok=True)
         except Exception:
             pass
+
+
+def cleanup_project_tree(user, project_name: str | None) -> None:
+    """Best-effort removal of an empty project directory tree.
+
+    Preserves the shared library ("_library") and user-level folders, only
+    removing the specific project's root if it becomes empty after media
+    deletion. Subfolders removed only when empty.
+    """
+    try:
+        root = project_root(user, project_name)
+        # Known subfolders under a project root
+        subdirs = [
+            "clips",
+            "compilations",
+            "images",
+            "intros",
+            "outros",
+            "transitions",
+        ]
+        for name in subdirs:
+            d = os.path.join(root, name)
+            try:
+                if os.path.isdir(d) and not os.listdir(d):
+                    os.rmdir(d)
+            except Exception:
+                # Ignore if not empty or cannot remove
+                pass
+        # Remove project root if now empty
+        try:
+            if os.path.isdir(root) and not os.listdir(root):
+                os.rmdir(root)
+        except Exception:
+            pass
+    except Exception:
+        # Never raise from cleanup
+        pass
 
 
 def instance_canonicalize(path: str | None) -> str | None:

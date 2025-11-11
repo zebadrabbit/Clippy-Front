@@ -78,3 +78,33 @@ def test_preview_and_download_by_public_owner_and_nonowner(client, app, auth):
     assert pv_other.status_code == 404
     dl_other = client.get(f"/p/{public_id}/download")
     assert dl_other.status_code == 404
+
+
+def test_delete_project_removes_project_directory(client, app, auth):
+    auth.login()
+    # Create a project
+    r = client.post("/api/projects", json={"name": "Compilation of 2025-11-02"})
+    assert r.status_code == 201
+    project_id = r.get_json()["project_id"]
+
+    # Create an empty project directory tree to simulate prior usage
+    from app import storage as storage_lib
+    from app.models import Project, User, db
+
+    with app.app_context():
+        user = db.session.query(User).filter_by(username="tester").first()
+        proj = db.session.get(Project, project_id)
+        proj_root = storage_lib.project_root(user, proj.name)
+        os.makedirs(proj_root, exist_ok=True)
+        assert os.path.isdir(proj_root)
+
+    # Delete via main route
+    resp = client.post(f"/projects/{project_id}/delete", follow_redirects=False)
+    assert resp.status_code in (301, 302)
+
+    # Project directory should be removed if empty
+    with app.app_context():
+        user = db.session.query(User).filter_by(username="tester").first()
+        # name is known
+        root = storage_lib.project_root(user, "Compilation of 2025-11-02")
+        assert not os.path.exists(root)

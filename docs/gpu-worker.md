@@ -169,6 +169,41 @@ Notes
  - `USE_GPU_QUEUE` affects how the web app routes compile tasks. Setting it inside this worker container does not change which queues the worker consumes; use `-Q`/`CELERY_QUEUES` instead.
  - Avatars/overlays: Set `AVATARS_PATH` to the shared assets root (e.g., `/app/instance/assets`) or directly to `/app/instance/assets/avatars`. The app normalizes both. Enable `OVERLAY_DEBUG=1` to trace avatar resolution. On startup, if overlays are enabled but no avatars are found at the resolved path, a warning is logged once.
 
+### WSL2 NVENC Support
+
+When running on Windows with WSL2 and an NVIDIA GPU, ffmpeg needs access to CUDA libraries. The worker Docker images automatically set `LD_LIBRARY_PATH` to include WSL2 CUDA paths:
+
+```bash
+LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/cuda/lib64:/usr/local/nvidia/lib64
+```
+
+**Troubleshooting NVENC detection:**
+
+1. Verify NVIDIA drivers are installed on Windows host
+2. Check Docker Desktop has "Use WSL 2 based engine" enabled
+3. Verify GPU passthrough works:
+   ```bash
+   docker run --rm --gpus all nvidia/cuda:12.2.0-runtime-ubuntu22.04 nvidia-smi
+   ```
+4. Test NVENC availability in worker container:
+   ```bash
+   docker exec <worker-container> ffmpeg -hide_banner -encoders | grep nvenc
+   ```
+5. Check for CUDA library errors in worker logs:
+   ```bash
+   docker logs <worker-container> 2>&1 | grep -i "cuda\|nvenc"
+   ```
+
+If ffmpeg shows "Cannot load libcuda.so.1" or similar errors, verify:
+- Windows NVIDIA drivers are up to date (536.67+)
+- WSL2 kernel is updated: `wsl --update`
+- The `/usr/lib/wsl/lib` directory exists in the container and contains `libcuda.so.1`
+
+To disable NVENC and force CPU encoding (for debugging):
+```bash
+export FFMPEG_DISABLE_NVENC=1
+```
+
 ### Optional: standalone artifact sync container
 
 If you only want the sync sidecars (without running the Celery worker in the same compose project), you can run just the `artifact-sync` service from `compose.worker.yaml` and point it at a local `/artifacts` volume where your workflow drops `.DONE`/`.READY` directories.

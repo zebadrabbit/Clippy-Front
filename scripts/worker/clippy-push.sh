@@ -109,10 +109,30 @@ rsync -az --delete \
   --exclude ".PUSHING" --exclude ".READY" --exclude ".DONE" \
   "$ARTIFACT_DIR"/ "${INGEST_USER}@${INGEST_HOST}:${REMOTE_DIR}/"
 
+# Create .READY sentinel on the remote side to signal transfer completion
+"${SSH_CMD[@]}" "${INGEST_USER}@${INGEST_HOST}" "date -u +'%Y-%m-%dT%H:%M:%SZ' > '${REMOTE_DIR}/.READY'"
+
 # Mark as pushed
 date -u +"%Y-%m-%dT%H:%M:%SZ" > "$ARTIFACT_DIR/.PUSHED"
 rm -f "$LOCKFILE" "$TMP_KEY"
 trap - EXIT
+
+# Optional cleanup policy after successful push
+case "${CLEANUP_MODE:-none}" in
+  delete)
+    echo "[push] Cleaning up (delete) $(basename "$ARTIFACT_DIR") from local artifacts"
+    rm -rf "$ARTIFACT_DIR" || true
+    ;;
+  archive)
+    arch_root="${ARCHIVE_DIR:-${ARTIFACTS_DIR:-/artifacts}/_pushed}"
+    mkdir -p "$arch_root" || true
+    ts="$(date -u +%Y%m%dT%H%M%SZ)"
+    dest="$arch_root/$(basename "$ARTIFACT_DIR")_${ts}"
+    echo "[push] Archiving to $dest"
+    mv "$ARTIFACT_DIR" "$dest" || true
+    ;;
+  *) ;;
+esac
 
 echo "[push] Done $BASE"
 exit 0

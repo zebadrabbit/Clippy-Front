@@ -167,6 +167,23 @@ Cross-host path aliasing:
 - Enable `MEDIA_PATH_DEBUG=1` temporarily to log how paths are resolved (both web server and worker)
  - Overlays: Avatar images are resolved under the shared assets. Set `AVATARS_PATH` to either the assets root (e.g., `/app/instance/assets`) or directly to the avatars directory (e.g., `/app/instance/assets/avatars`). Both forms are supported and normalized. Use `OVERLAY_DEBUG=1` for detailed resolution logs. On startup, if overlays are enabled but no avatars path/images are found, a warning is logged once.
 
+### No shared storage? Use the raw media endpoint over HTTP
+
+If your render worker cannot mount the same `instance/` storage as the web app, it can fetch media over HTTP from an internal‑only raw endpoint.
+
+Pipeline behavior:
+
+- Try local/remapped file paths first.
+- When not found, download from `${MEDIA_BASE_URL}/api/media/raw/<media_id>` into the task’s temp directory before processing, with retry/backoff on transient errors.
+
+Configure a base URL so workers can build absolute links outside a request context:
+
+```
+MEDIA_BASE_URL=https://your-clippyfront.example.com
+```
+
+Security: The raw endpoint doesn’t require login. Restrict access at the network layer (VPN, firewall, private ingress) and prefer HTTPS when traversing untrusted networks.
+
 ## Networking
 
 - Windows/macOS: `host.docker.internal` resolves to the host; use it for Redis/Postgres when the host runs them

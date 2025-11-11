@@ -83,16 +83,11 @@ def _ensure_thumbnail(app, media: MediaFile):
             return
         if media.thumbnail_path and os.path.exists(media.thumbnail_path):
             return
-        # Use project-based thumbnails directory
-        try:
-            owner = db.session.get(User, media.user_id)
-        except Exception:
-            owner = None
-        thumbs_dir = storage_lib.thumbnails_dir(owner)
-        os.makedirs(thumbs_dir, exist_ok=True)
-        # Deterministic thumbnail name based on media filename stem
+        # Store thumbnail alongside the media file with _thumb.jpg suffix
+        media_path = os.path.abspath(media.file_path)
+        media_dir = os.path.dirname(media_path)
         stem = os.path.splitext(os.path.basename(media.file_path))[0]
-        thumb_path = os.path.join(thumbs_dir, f"{stem}.jpg")
+        thumb_path = os.path.join(media_dir, f"{stem}_thumb.jpg")
         if os.path.exists(thumb_path):
             media.thumbnail_path = thumb_path
             return
@@ -123,7 +118,7 @@ def _ensure_thumbnail(app, media: MediaFile):
         pass
 
 
-def reindex(regen_thumbs: bool = False, app=None) -> int:
+def reindex(regen_thumbs: bool = False, app=None, skip_prune: bool = False) -> int:
     # Load environment variables from .env if present
     try:
         load_dotenv()
@@ -139,8 +134,22 @@ def reindex(regen_thumbs: bool = False, app=None) -> int:
     with app.app_context():
         data_root = storage_lib.data_root()
         created = 0
+        pruned = 0
+        detached = 0
 
-        # Cleanup: remove any previously indexed sidecar .meta.json entries (DB rows only)
+        def _materialize_path(p: str | None) -> str | None:
+            """Convert '/instance/..' canonical paths to this app's instance disk path."""
+            if not p:
+                return p
+            try:
+                if str(p).startswith("/instance/"):
+                    suffix = str(p)[len("/instance/") :].lstrip("/")
+                    return os.path.join(app.instance_path, suffix)
+                return p
+            except Exception:
+                return p
+
+        # Cleanup A: remove any previously indexed sidecar .meta.json entries (DB rows only)
         try:
             sidecars = (
                 db.session.query(MediaFile)
@@ -153,6 +162,37 @@ def reindex(regen_thumbs: bool = False, app=None) -> int:
                 db.session.commit()
         except Exception:
             db.session.rollback()
+
+        # Cleanup B: prune orphaned MediaFile rows whose files no longer exist on disk.
+        # Also detach any Clip rows pointing at such MediaFile rows to avoid stale re-use.
+        # Skip this during import workflows to avoid deleting clips that are being downloaded.
+        if not skip_prune:
+            try:
+                all_media = MediaFile.query.all()
+                for m in all_media:
+                    mpath = _materialize_path(m.file_path)
+                    if not mpath or not os.path.isfile(mpath):
+                        # Detach clip references safely
+                        try:
+                            for c in list(getattr(m, "clips", []) or []):
+                                c.media_file_id = None
+                                # Mark as not downloaded so UI/API can redownload if needed
+                                try:
+                                    c.is_downloaded = False
+                                except Exception:
+                                    pass
+                                detached += 1
+                        except Exception:
+                            pass
+                        try:
+                            db.session.delete(m)
+                            pruned += 1
+                        except Exception:
+                            db.session.rollback()
+                if pruned or detached:
+                    db.session.commit()
+            except Exception:
+                db.session.rollback()
 
         # Build sets for quick skip
         mf_all = MediaFile.query.all()
@@ -314,7 +354,10 @@ def reindex(regen_thumbs: bool = False, app=None) -> int:
                 db.session.rollback()
                 print(f"Commit failed: {e}")
                 return 0
-        print(f"Reindexed {created} file(s).")
+        msg = f"Reindexed {created} file(s)."
+        if pruned or detached:
+            msg = f"{msg} Pruned {pruned} missing media entr(ies); detached {detached} clip reference(s)."
+        print(msg)
         return created
 
 

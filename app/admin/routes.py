@@ -41,7 +41,7 @@ from app.models import (
     db,
 )
 from app.tasks.celery_app import celery_app
-from app.tasks.media_maintenance import dedupe_media_task, reindex_media_task
+from app.tasks.media_maintenance import reindex_media_task
 from app.version import get_changelog, get_version
 
 # Create admin blueprint
@@ -830,6 +830,11 @@ def project_delete(project_id: int):
     project = db.session.get(Project, project_id)
     if not project:
         return jsonify({"error": "Project not found"}), 404
+
+    # Capture project name and user before deletion for cleanup
+    project_name = project.name
+    project_user = project.user
+
     try:
         # Remove compiled output if present
         try:
@@ -871,6 +876,14 @@ def project_delete(project_id: int):
             db.session.delete(c)
         db.session.delete(project)
         db.session.commit()
+
+        # Cleanup empty project directory tree for this user/project
+        try:
+            from app import storage as storage_lib
+
+            storage_lib.cleanup_project_tree(project_user, project_name)
+        except Exception:
+            pass
         return jsonify({"success": True, "removed": removed, "preserved": preserved})
     except Exception as e:
         db.session.rollback()
@@ -1414,18 +1427,154 @@ def maintenance():
                 f"Started reindex task ({task.id}). Check Jobs in the UI to monitor.",
                 "info",
             )
-        elif action == "dedupe_media":
-            user_id = request.form.get("user_id", type=int)
-            dry_run = request.form.get("dry_run") == "1"
-            task = dedupe_media_task.delay(dry_run=dry_run, user_id=user_id)
+        elif action == "prune_reindex":
+            # Reuse the same reindex task; the underlying reindexer prunes orphaned
+            # MediaFile rows and detaches stale Clip references automatically.
+            task = reindex_media_task.delay(False)
             flash(
-                f"Started media deduplication task ({task.id}). This keeps newest entries and removes duplicates.",
-                "warning",
+                f"Started prune + reindex task ({task.id}). Missing media will be pruned and DB reindexed.",
+                "info",
             )
+        elif action == "purge_all_user_data":
+            # DANGEROUS: Clear all user media, projects, and related data
+            try:
+                stats = _purge_all_user_data()
+                flash(
+                    f"⚠️ PURGE COMPLETE: Deleted {stats['projects']} projects, "
+                    f"{stats['media_files']} media files, {stats['clips']} clips, "
+                    f"{stats['jobs']} jobs, {stats['compilation_tasks']} compilation tasks, "
+                    f"{stats['scheduled_tasks']} scheduled tasks, {stats['render_usage']} render usage records. "
+                    f"Users and tiers preserved.",
+                    "warning",
+                )
+            except Exception as e:
+                current_app.logger.error(f"Purge failed: {e}")
+                db.session.rollback()
+                flash(f"Purge failed: {str(e)}", "danger")
         return redirect(url_for("admin.maintenance"))
 
     # GET: show simple form
     return render_template("admin/maintenance.html", title="Maintenance")
+
+
+def _purge_all_user_data():
+    """
+    DANGEROUS: Delete all user-generated content while preserving accounts.
+
+    Removes:
+    - All Projects
+    - All MediaFiles (and files on disk)
+    - All Clips
+    - All ProcessingJobs
+    - All CompilationTasks
+    - All ScheduledTasks
+    - All RenderUsage records
+    - All user data directories on disk
+
+    Preserves:
+    - User accounts and authentication
+    - Tier definitions
+    - System settings
+    - Themes
+
+    Returns:
+        dict: Statistics about deleted records
+    """
+    import shutil
+
+    from app import storage as storage_lib
+    from app.models import (
+        Clip,
+        CompilationTask,
+        MediaFile,
+        ProcessingJob,
+        Project,
+        RenderUsage,
+        ScheduledTask,
+        User,
+    )
+
+    stats = {
+        "projects": 0,
+        "media_files": 0,
+        "clips": 0,
+        "jobs": 0,
+        "compilation_tasks": 0,
+        "scheduled_tasks": 0,
+        "render_usage": 0,
+    }
+
+    # Delete all media files (and files on disk)
+    media_files = MediaFile.query.all()
+    for m in media_files:
+        try:
+            # Delete actual file
+            if m.file_path and os.path.exists(m.file_path):
+                os.remove(m.file_path)
+        except Exception:
+            pass
+        try:
+            # Delete thumbnail
+            if m.thumbnail_path and os.path.exists(m.thumbnail_path):
+                os.remove(m.thumbnail_path)
+        except Exception:
+            pass
+        db.session.delete(m)
+        stats["media_files"] += 1
+
+    # Delete all clips
+    clips = Clip.query.all()
+    for c in clips:
+        db.session.delete(c)
+        stats["clips"] += 1
+
+    # Delete all projects
+    projects = Project.query.all()
+    for p in projects:
+        db.session.delete(p)
+        stats["projects"] += 1
+
+    # Delete all processing jobs
+    jobs = ProcessingJob.query.all()
+    for j in jobs:
+        db.session.delete(j)
+        stats["jobs"] += 1
+
+    # Delete all compilation tasks
+    compilation_tasks = CompilationTask.query.all()
+    for ct in compilation_tasks:
+        db.session.delete(ct)
+        stats["compilation_tasks"] += 1
+
+    # Delete all scheduled tasks
+    scheduled_tasks = ScheduledTask.query.all()
+    for st in scheduled_tasks:
+        db.session.delete(st)
+        stats["scheduled_tasks"] += 1
+
+    # Delete all render usage records
+    render_usage = RenderUsage.query.all()
+    for ru in render_usage:
+        db.session.delete(ru)
+        stats["render_usage"] += 1
+
+    # Commit all database deletions
+    db.session.commit()
+
+    # Clean up all user data directories on disk
+    users = User.query.all()
+    for user in users:
+        try:
+            user_dir = storage_lib.user_root(user)
+            if os.path.exists(user_dir):
+                shutil.rmtree(user_dir)
+                current_app.logger.info(f"Removed user directory: {user_dir}")
+        except Exception as e:
+            current_app.logger.error(
+                f"Failed to remove user directory for {user.username}: {e}"
+            )
+
+    return stats
 
 
 @admin_bp.route("/workers")

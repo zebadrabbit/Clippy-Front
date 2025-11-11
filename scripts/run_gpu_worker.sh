@@ -74,6 +74,7 @@ exec docker run --rm \
   --gpus all \
   ${ADD_HOST_ARG} \
   -e NVIDIA_DRIVER_CAPABILITIES=compute,video,utility \
+  -e LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/cuda/lib64:/usr/local/nvidia/lib64 \
   -e CELERY_BROKER_URL="${BROKER_URL}" \
   -e CELERY_RESULT_BACKEND="${RESULT_BACKEND}" \
   -e DATABASE_URL="${DATABASE_URL}" \

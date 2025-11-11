@@ -28,9 +28,11 @@ ENV FLASK_ENV=production \
     FFMPEG_BINARY=ffmpeg \
     YT_DLP_BINARY=yt-dlp \
     CELERY_CONCURRENCY=1 \
-    CELERY_QUEUES=gpu,celery
+    CELERY_QUEUES=gpu,celery \
+    LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/cuda/lib64:/usr/local/nvidia/lib64:${LD_LIBRARY_PATH}
 
 # Expose nothing by default (worker only)
 
 # Entrypoint: Celery worker listening on gpu and default queues
-CMD ["sh", "-lc", "celery --broker=${CELERY_BROKER_URL} --result-backend=${CELERY_RESULT_BACKEND} -A app.tasks.celery_app worker --loglevel=info -Q ${CELERY_QUEUES} -c ${CELERY_CONCURRENCY}"]
+# Ensure LD_LIBRARY_PATH is exported before running celery
+CMD ["sh", "-c", "export LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/cuda/lib64:/usr/local/nvidia/lib64:${LD_LIBRARY_PATH} && celery --broker=${CELERY_BROKER_URL} --result-backend=${CELERY_RESULT_BACKEND} -A app.tasks.celery_app worker --loglevel=info -Q ${CELERY_QUEUES} -c ${CELERY_CONCURRENCY}"]

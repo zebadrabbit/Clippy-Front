@@ -142,8 +142,9 @@ def build_overlay_filter(author: str | None, game: str | None, fontfile: str) ->
     return "[0:v]" + ",".join(chain) + "[v]"
 
 
-_NVENC_AVAILABLE: bool | None = None
-_NVENC_REASON: str = ""
+# Cache NVENC availability per ffmpeg binary path. This avoids stale results
+# when the resolved binary changes (e.g., local ./bin/ffmpeg vs system ffmpeg).
+_NVENC_CACHE: dict[str, tuple[bool, str]] = {}
 
 
 def _env_nvenc_disabled() -> bool:
@@ -156,14 +157,13 @@ def _env_nvenc_disabled() -> bool:
 
 
 def _detect_nvenc(ffmpeg_bin: str) -> bool:
-    global _NVENC_AVAILABLE
-    global _NVENC_REASON
-    if _NVENC_AVAILABLE is not None:
-        return _NVENC_AVAILABLE
+    global _NVENC_CACHE
+    key = str(ffmpeg_bin or "ffmpeg")
+    if key in _NVENC_CACHE:
+        return _NVENC_CACHE[key][0]
     if _env_nvenc_disabled():
-        _NVENC_AVAILABLE = False
-        _NVENC_REASON = "Disabled via environment"
-        return _NVENC_AVAILABLE
+        _NVENC_CACHE[key] = (False, "Disabled via environment")
+        return False
     try:
         import subprocess
         import tempfile
@@ -176,9 +176,8 @@ def _detect_nvenc(ffmpeg_bin: str) -> bool:
             timeout=5,
         )
         if "h264_nvenc" not in (res.stdout or ""):
-            _NVENC_AVAILABLE = False
-            _NVENC_REASON = "h264_nvenc encoder not listed by ffmpeg"
-            return _NVENC_AVAILABLE
+            _NVENC_CACHE[key] = (False, "h264_nvenc encoder not listed by ffmpeg")
+            return False
 
         # Try a small but valid encode to verify CUDA/driver availability
         fd, tmp_path = tempfile.mkstemp(suffix=".mp4")
@@ -209,25 +208,28 @@ def _detect_nvenc(ffmpeg_bin: str) -> bool:
                 text=True,
                 timeout=10,
             )
-            _NVENC_AVAILABLE = test.returncode == 0
-            _NVENC_REASON = (
-                "ok" if _NVENC_AVAILABLE else (test.stdout or "unknown error")
-            )
+            ok = test.returncode == 0
+            reason = "ok" if ok else (test.stdout or "unknown error")
+            _NVENC_CACHE[key] = (ok, reason)
         finally:
             try:
                 os.remove(tmp_path)
             except Exception:
                 pass
     except Exception:
-        _NVENC_AVAILABLE = False
-        _NVENC_REASON = "exception during detection"
-    return _NVENC_AVAILABLE
+        _NVENC_CACHE[key] = (False, "exception during detection")
+    return _NVENC_CACHE[key][0]
 
 
 def detect_nvenc(ffmpeg_bin: str) -> tuple[bool, str]:
-    """Public detection API returning availability and a reason string."""
+    """Public detection API returning availability and a reason string.
+
+    Results are cached per-binary path.
+    """
+    key = str(ffmpeg_bin or "ffmpeg")
     available = _detect_nvenc(ffmpeg_bin)
-    return available, (_NVENC_REASON or ("ok" if available else "unavailable"))
+    reason = _NVENC_CACHE.get(key, (available, "ok" if available else "unavailable"))[1]
+    return available, reason
 
 
 def _env_nvenc_preset() -> str:

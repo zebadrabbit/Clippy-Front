@@ -78,6 +78,12 @@ class Config:
     DISCORD_CHANNEL_ID = os.environ.get("DISCORD_CHANNEL_ID")
     TWITCH_CLIENT_ID = os.environ.get("TWITCH_CLIENT_ID")
     TWITCH_CLIENT_SECRET = os.environ.get("TWITCH_CLIENT_SECRET")
+
+    # Worker API Configuration
+    # Shared secret for workers to authenticate with the Flask app
+    WORKER_API_KEY = os.environ.get("WORKER_API_KEY", "")
+    FLASK_APP_URL = os.environ.get("FLASK_APP_URL", "http://localhost:5000")
+
     # Optional avatars path for overlay feature (defaults resolved at runtime if not set)
     AVATARS_PATH = os.environ.get("AVATARS_PATH")
 
@@ -111,15 +117,10 @@ class Config:
         "yes",
     }
 
-    # Signed media URL configuration (for worker access via HTTP)
-    MEDIA_SIGNING_KEY = os.environ.get("MEDIA_SIGNING_KEY")  # defaults to SECRET_KEY
-    MEDIA_URL_TTL = int(os.environ.get("MEDIA_URL_TTL", 300))  # seconds
-    MEDIA_URL_BIND_IP = os.environ.get("MEDIA_URL_BIND_IP", "false").lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    # Worker media over HTTP
+    # Base URL used by workers (or any process without a request context) to build
+    # absolute raw media URLs. Example: https://clippy.example.com
+    MEDIA_BASE_URL = os.environ.get("MEDIA_BASE_URL")
 
     # Ingest importer (server-side) configuration
     INGEST_IMPORT_ENABLED = os.environ.get(
@@ -142,6 +143,25 @@ class Config:
     # Celery Beat schedule (seconds) for periodic scans
     INGEST_IMPORT_INTERVAL_SECONDS = int(
         os.environ.get("INGEST_IMPORT_INTERVAL_SECONDS", 60)
+    )
+
+    # Auto-ingest compilations scanner (server-side Beat task)
+    AUTO_INGEST_COMPILATIONS_ENABLED = os.environ.get(
+        "AUTO_INGEST_COMPILATIONS_ENABLED", "false"
+    ).lower() in {"1", "true", "yes", "on"}
+    AUTO_INGEST_WORKER_IDS = os.environ.get("AUTO_INGEST_WORKER_IDS", "")
+    AUTO_INGEST_COMPILATIONS_INTERVAL_SECONDS = int(
+        os.environ.get("AUTO_INGEST_COMPILATIONS_INTERVAL_SECONDS", 60)
+    )
+
+    # Cleanup imported artifacts (server-side Beat task)
+    CLEANUP_IMPORTED_ENABLED = os.environ.get(
+        "CLEANUP_IMPORTED_ENABLED", "false"
+    ).lower() in {"1", "true", "yes", "on"}
+    CLEANUP_IMPORTED_AGE_HOURS = int(os.environ.get("CLEANUP_IMPORTED_AGE_HOURS", 24))
+    CLEANUP_IMPORTED_WORKER_IDS = os.environ.get("CLEANUP_IMPORTED_WORKER_IDS", "")
+    CLEANUP_IMPORTED_INTERVAL_SECONDS = int(
+        os.environ.get("CLEANUP_IMPORTED_INTERVAL_SECONDS", 3600)
     )
 
     # Automation scheduler (Celery Beat) optional enable
@@ -243,10 +263,7 @@ class ProductionConfig(Config):
     DEBUG = False
 
     # Production database (PostgreSQL recommended)
-    SQLALCHEMY_DATABASE_URI = (
-        os.environ.get("DATABASE_URL")
-        or "postgresql://user:password@localhost/clippy_front"
-    )
+    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL")
 
     # Enhanced security for production
     FORCE_HTTPS = True

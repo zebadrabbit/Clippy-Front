@@ -1,6 +1,6 @@
 # Repository structure and directory guide
 
-Updated: 2025-10-30
+Updated: 2025-11-11
 
 This guide explains what each directory is for and what you can do there. It lists directories that currently contain more than two files, plus a few key runtime folders for context. Paths are relative to the repository root.
 
@@ -11,8 +11,22 @@ Notes
 ## app/
 Flask application package with blueprints, models, tasks, assets, and templates.
 
-- You’ll typically add business logic, routes, and background tasks here.
+- You'll typically add business logic, routes, and background tasks here.
 - Key subfolders (with >2 files) are documented below.
+
+### app/api/
+API blueprint endpoints organized by domain.
+- Purpose: RESTful API for projects, media, jobs, health checks, automation, and worker communication.
+- Do here: Add new API endpoints, modify request/response formats, implement new worker APIs.
+- Files:
+  - `routes.py` - Main API registration and legacy integration endpoints (Twitch/Discord)
+  - `projects.py` - Project CRUD and clip management
+  - `media.py` - Media file serving and management
+  - `jobs.py` - Task/job status tracking
+  - `health.py` - Health check endpoints
+  - `automation.py` - Automation task/schedule management
+  - `worker.py` - Worker-specific endpoints for DMZ-isolated communication
+  - `_helpers.py` - Shared API utilities
 
 ### app/auth/
 Authentication blueprint.
@@ -24,7 +38,15 @@ Authentication blueprint.
 Celery tasks and helpers.
 - Purpose: Background jobs such as clip downloads, compilation, automation scheduler, maintenance.
 - Do here: Add/change Celery tasks, tune queue behavior, and task utilities.
-- Notable files: `celery_app.py`, `video_processing.py`, `automation.py`, `media_maintenance.py`, `tier_limits.py`, `path_utils.py`.
+- Notable files:
+  - `celery_app.py` - Celery app configuration
+  - `video_processing.py` - Core video download and compilation tasks
+  - `automation.py` - Automated compilation scheduler
+  - `media_maintenance.py` - Media cleanup and maintenance
+  - `worker_api.py` - Worker API client for DMZ-isolated workers
+  - `download_clip_api_based.py` - Reference implementation for API-based download task
+  - `tier_limits.py` - Tier limit enforcement
+  - `path_utils.py` - Path resolution utilities
 
 ### app/templates/admin/
 Admin UI templates.
@@ -112,9 +134,9 @@ Worker-side sync and deployment helpers.
 
 ## tests/
 Pytest suite.
-- Purpose: API, media, project flows, quotas/tiers, compile selection, signed media.
+- Purpose: API, media, project flows, quotas/tiers, compile selection.
 - Do here: Add tests for new features and bug fixes; keep fast and focused.
-- Files: `test_api.py`, `test_media.py`, `test_projects.py`, `test_quotas.py`, `test_tier_limits.py`, `test_signed_media.py`, etc.
+- Files: `test_api.py`, `test_media.py`, `test_projects.py`, `test_quotas.py`, `test_tier_limits.py`, etc.
 
 ## secrets/
 Local secrets for the worker sync stack (Docker secrets source).
@@ -125,7 +147,7 @@ Local secrets for the worker sync stack (Docker secrets source).
 ---
 
 ## Other notable paths (may have ≤2 files but important)
-- app/: Additional modules like `models.py`, `storage.py`, `ffmpeg_config.py`, `logging_config.py`, and blueprint packages (`admin/`, `api/`, `main/`, `integrations/`, `security/`). See `.github/copilot-instructions.md` for an architecture overview.
+- app/: Additional modules like `models.py`, `storage.py`, `ffmpeg_config.py`, `logging_config.py`, and blueprint packages (`admin/`, `api/`, `main/`, `integrations/`). See `.github/copilot-instructions.md` for an architecture overview.
 - app/templates/: Top-level layout `base.html` and subfolders listed above.
 - app/static/css/: Base styles (two files): `base.css`, `wizard.css`.
 - instance/: Runtime data root (outside of git in production). Includes `assets/` (e.g., `static.mp4`, avatars), `data/`, `uploads/`, `logs/`, `tmp/`. See `instance/data-structure.md`.

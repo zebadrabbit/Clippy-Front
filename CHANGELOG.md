@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2025-11-11
+
+### Added
+- Worker API endpoints (`/api/worker/*`) for DMZ-isolated worker communication:
+  - `GET /api/worker/clips/<id>` - Fetch clip metadata for download tasks
+  - `POST /api/worker/clips/<id>/status` - Update clip download status
+  - `GET /api/worker/media/<id>` - Fetch media file metadata (intro/outro/transitions)
+  - `POST /api/worker/jobs` - Create processing job records
+  - `PUT /api/worker/jobs/<id>` - Update job progress and status
+  - `GET /api/worker/projects/<id>` - Fetch project compilation metadata
+- Worker API client library (`app/tasks/worker_api.py`) with authentication helpers
+- Comprehensive worker documentation:
+  - `WORKER_SETUP.md` - Complete worker configuration guide with quick start
+  - `WORKER_API_MIGRATION.md` - Long-term migration plan to eliminate DB dependencies
+  - `.env.worker.example` - Detailed worker environment template with all options
+- Configuration: `WORKER_API_KEY` and `FLASK_APP_URL` settings for API authentication
+- Enhanced error messaging: `get_db_session()` now provides clear guidance when DATABASE_URL is missing
+- Improved clip download API logging with better error tracking
+
+### Changed
+- README updated with worker setup quick start and references to new documentation
+- Worker compose files consolidated: removed redundant examples, kept `compose.worker.yaml` as primary
+- API routes now organized into focused modules: `health.py`, `jobs.py`, `media.py`, `projects.py`, `automation.py`, `worker.py`
+
+### Deprecated
+- Direct database access from workers (still required for v0.11.0, planned for removal in future releases)
+
+### Security
+- Worker API endpoints require bearer token authentication (`WORKER_API_KEY`)
+- Workers documented to use dedicated DB user with minimal privileges
+- Network isolation recommendations for worker database access
+
+### Documentation
+- Added WORKER_SETUP.md with troubleshooting guide and common commands
+- Added WORKER_API_MIGRATION.md explaining pragmatic short-term vs long-term approach
+- Updated docs/gpu-worker.md with WSL2 NVENC troubleshooting
+- Cleaned up redundant compose files from docker/ directory
+
+### Notes
+- Workers currently require `DATABASE_URL` to function (416-line download task, 800+ line compile task)
+- Full API migration estimated at 3-4 weeks; API infrastructure ready for gradual refactoring
+- See WORKER_API_MIGRATION.md for migration strategy and timeline
+
 ## [0.10.0] - 2025-11-01
 
 ### Added

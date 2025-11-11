@@ -157,6 +157,7 @@
               <li data-key="fetch" class="active"><a href="#">Fetch</a></li>
               <li data-key="extract"><a href="#">Parse</a></li>
               <li data-key="download"><a href="#">Download</a></li>
+              <li data-key="import"><a href="#">Import</a></li>
               <li data-key="done"><a href="#">Done</a></li>
             </ul>
           </div>
@@ -172,6 +173,11 @@
 
       <!-- Step 3: Arrange -->
       <div class="wizard-step d-none" data-step="3">
+        <!-- Ingest banner (shown while auto-importing rsynced clips) -->
+        <div id="arrange-ingest-banner" class="alert alert-info d-none d-flex align-items-center gap-2 mb-3" role="status" aria-live="polite">
+          <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+          <div id="arrange-ingest-text">Importing rsynced raw clips…</div>
+        </div>
         <!-- Timeline on top -->
         <div class="mb-3">
           <div class="card">
@@ -276,26 +282,55 @@
 
       <!-- Step 5: Export -->
       <div class="wizard-step d-none" data-step="5">
-        <div class="alert alert-success d-none" id="export-ready">
-          <strong>🎬 Showtime!</strong> Your compilation’s ready. What’s next?
+        <!-- Export ingest banner (shown while importing final render) -->
+        <div id="export-ingest-banner" class="alert alert-info d-none d-flex align-items-center gap-2 mb-3" role="status" aria-live="polite">
+          <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+          <div id="export-ingest-text">Importing final render…</div>
         </div>
-          <!-- Export layout: video preview + details + actions -->
-          <div class="export-pane mt-2">
-            <div class="export-left">
-              <video id="export-video" class="export-video" controls></video>
+                <!-- Success banner with celebration -->
+        <div class="alert alert-success d-none border-0 shadow-sm mb-4" id="export-ready">
+          <div class="d-flex align-items-center gap-3">
+            <div style="font-size: 3rem; line-height: 1;">🎉</div>
+            <div>
+              <h4 class="alert-heading mb-1">Your Compilation is Ready!</h4>
+              <p class="mb-0">Watch it below, download it, or share it with the world.</p>
             </div>
-            <div class="export-right d-flex flex-column">
-              <div>
-                <h6 class="mb-2">Details</h6>
-                <ul class="list-unstyled export-details" id="export-details"></ul>
-              </div>
-              <div class="mt-auto d-flex flex-wrap gap-2 pt-2">
-                <a class="btn btn-success btn-shadow-dark disabled" aria-disabled="true" id="download-output"><i class="bi bi-download"></i> Download Video</a>
-                <button class="btn btn-outline-danger btn-shadow-dark disabled" id="upload-youtube" aria-disabled="true"><i class="bi bi-youtube"></i> Upload to YouTube</button>
-                <button class="btn btn-outline-primary btn-shadow-dark disabled" id="upload-discord" aria-disabled="true"><i class="bi bi-discord"></i> Upload to Discord</button>
+          </div>
+        </div>
+
+        <!-- Export layout: video preview + details + actions -->
+        <div class="export-pane mt-2">
+          <div class="export-left">
+            <div class="position-relative">
+              <video id="export-video" class="export-video" controls poster="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='600'%3E%3Crect width='800' height='600' fill='%23000'/%3E%3Ctext x='400' y='300' font-family='Arial' font-size='24' fill='%23666' text-anchor='middle'%3ELoading video...%3C/text%3E%3C/svg%3E"></video>
+            </div>
+          </div>
+          <div class="export-right d-flex flex-column">
+            <div class="flex-grow-1">
+              <h5 class="mb-3 d-flex align-items-center gap-2">
+                <i class="bi bi-info-circle"></i>
+                Compilation Details
+              </h5>
+              <ul class="list-unstyled export-details" id="export-details">
+                <li class="text-muted"><i class="bi bi-hourglass-split"></i> Loading project information...</li>
+              </ul>
+            </div>
+            <div class="mt-auto pt-3 border-top">
+              <h6 class="mb-2 text-muted">Actions</h6>
+              <div class="d-flex flex-wrap gap-2">
+                <a class="btn btn-success btn-lg disabled" aria-disabled="true" id="download-output">
+                  <i class="bi bi-download"></i> Download Video
+                </a>
+                <button class="btn btn-outline-danger disabled" id="upload-youtube" aria-disabled="true" title="Coming soon">
+                  <i class="bi bi-youtube"></i> Upload to YouTube
+                </button>
+                <button class="btn btn-outline-primary disabled" id="upload-discord" aria-disabled="true" title="Coming soon">
+                  <i class="bi bi-discord"></i> Upload to Discord
+                </button>
               </div>
             </div>
           </div>
+        </div>
           <div class="d-flex justify-content-between mt-3">
           <button class="btn btn-outline-secondary" data-prev="4">Back: Compile</button>
           <a class="btn btn-primary btn-shadow-dark" href="{{ url_for('main.projects') }}">Finish</a>

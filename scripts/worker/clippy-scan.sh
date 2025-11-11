@@ -43,21 +43,22 @@ preflight() {
     log "WARNING: Missing INGEST_HOST/INGEST_USER/INGEST_PATH; pushes will be skipped"
     ok=0
   fi
-  # Accept secrets that are regular files or directories containing at least one file
-  if [[ -f "/run/secrets/rsync_key" ]]; then :; elif [[ -d "/run/secrets/rsync_key" && -n "$(ls -A /run/secrets/rsync_key 2>/dev/null)" ]]; then :; else
-    log "WARNING: Missing Docker secret rsync_key (file or non-empty dir) at /run/secrets/rsync_key; pushes will fail"
-    ok=0
-  fi
-  if [[ -f "/run/secrets/known_hosts" ]]; then :; elif [[ -d "/run/secrets/known_hosts" && -n "$(ls -A /run/secrets/known_hosts 2>/dev/null)" ]]; then :; else
-    log "WARNING: Missing Docker secret known_hosts (file or non-empty dir) at /run/secrets/known_hosts; SSH host verification will fail"
-    ok=0
-  fi
-
-  # Best-effort SSH probe (non-fatal): log host key type and auth viability
+  # Resolve effective secret files, honoring overrides; warn only if the resolved files are missing
   local known
   known="$(resolve_secret_file "${KNOWN_HOSTS_FILE:-/run/secrets/known_hosts}" || true)"
   local key
   key="$(resolve_secret_file "${RSYNC_KEY_FILE:-/run/secrets/rsync_key}" || true)"
+  if [[ -z "$key" || ! -s "$key" ]]; then
+    log "WARNING: Missing rsync private key (resolved from RSYNC_KEY_FILE=${RSYNC_KEY_FILE:-/run/secrets/rsync_key}); pushes will fail"
+    ok=0
+  fi
+  if [[ -z "$known" || ! -s "$known" ]]; then
+    # Don't fail hard here; SSH StrictHostKeyChecking will catch it during push
+    log "WARNING: Missing known_hosts (resolved from KNOWN_HOSTS_FILE=${KNOWN_HOSTS_FILE:-/run/secrets/known_hosts}); SSH host verification will fail"
+    ok=0
+  fi
+
+  # Best-effort SSH probe (non-fatal): log host key type and auth viability
   if [[ -n "$known" ]]; then
     local first
     first="$(head -n1 "$known" 2>/dev/null || true)"

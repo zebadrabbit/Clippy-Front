@@ -20,6 +20,22 @@
     </div>
   </div>
 
+  <div class="card mb-3">
+    <div class="card-body">
+      <h5 class="card-title">Prune Orphans + Reindex</h5>
+      <p class="card-text">
+        Remove stale database entries for media whose files are missing on disk, detach any
+        clip references to those missing files, and then reindex the library. Use this if you
+        deleted files manually or cleaned storage outside the app.
+      </p>
+      <form method="post">
+        <input type="hidden" name="action" value="prune_reindex" />
+        <button type="submit" class="btn btn-danger">Start Prune + Reindex</button>
+      </form>
+      <small class="text-muted d-block mt-2">Note: This does not delete any actual media files; it cleans up database rows and refreshes the index.</small>
+    </div>
+  </div>
+
     <div class="card mt-3">
     <div class="card-body">
       <h5 class="card-title">Deduplicate Media</h5>
@@ -41,6 +57,40 @@
             <button type="submit" class="btn btn-warning">Start Deduplication</button>
           </div>
         </div>
+      </form>
+    </div>
+      </div>
+
+    <div class="card mt-3 border-danger">
+    <div class="card-body">
+      <h5 class="card-title text-danger">
+        <i class="bi bi-exclamation-triangle-fill"></i> DANGER: Purge All User Data
+      </h5>
+      <p class="card-text">
+        <strong class="text-danger">This is a destructive operation that cannot be undone!</strong>
+      </p>
+      <p class="card-text">
+        This will permanently delete ALL user-generated content from both the database and disk:
+      </p>
+      <ul class="mb-3">
+        <li>All projects and compilations</li>
+        <li>All uploaded media files (clips, intros, outros, transitions, images)</li>
+        <li>All thumbnails and previews</li>
+        <li>All processing jobs and tasks</li>
+        <li>All render usage history</li>
+        <li>All user data directories on disk</li>
+      </ul>
+      <p class="card-text">
+        <strong>Preserved data:</strong> User accounts, passwords, tiers, system settings, and themes will remain intact.
+      </p>
+      <p class="card-text text-muted">
+        <small><i class="bi bi-info-circle"></i> Use this to clean up stale data, orphaned files, or reset the system to a clean state while keeping user accounts.</small>
+      </p>
+      <form method="post" onsubmit="return confirm('⚠️ FINAL WARNING ⚠️\n\nThis will DELETE ALL USER DATA permanently!\n\nAre you absolutely sure you want to continue?\n\nType YES in the browser prompt if you are certain.');">
+        <input type="hidden" name="action" value="purge_all_user_data" />
+        <button type="submit" class="btn btn-danger btn-lg">
+          <i class="bi bi-trash3-fill"></i> PURGE ALL USER DATA
+        </button>
       </form>
     </div>
       </div>

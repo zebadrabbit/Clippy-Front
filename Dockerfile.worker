@@ -1,34 +1,31 @@
+# Artifact-sync sidecar image for scanning and rsync-over-SSH pushes
 FROM alpine:3.20
 
 RUN apk add --no-cache \
     bash \
+    curl \
+    coreutils \
     rsync \
     openssh-client \
     inotify-tools \
-    autossh \
     supervisor
 
-# Create directories
-RUN mkdir -p /scripts/worker /artifacts
+WORKDIR /
 
-# Copy sync scripts (includes smoke-artifact.sh)
+# Copy worker scripts
 COPY scripts/worker /scripts/worker
 RUN chmod +x /scripts/worker/*.sh
 
-# Supervisor config
-COPY scripts/worker/supervisord.conf /etc/supervisord.conf
-
-# Default environment (can be overridden)
+# Default environment (override via compose/.env)
 ENV PUSH_INTERVAL=60 \
     INGEST_PORT=22 \
     WORKER_ID=worker-01 \
-    ARTIFACTS_DIR=/artifacts \
-    WATCH_MODE=auto
+    ARTIFACTS_DIR=/artifacts
 
 VOLUME ["/artifacts"]
 
 # Healthcheck: ensure scanner is running
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD pgrep -f clippy-scan >/dev/null || exit 1
 
-# Default command; can be overridden by compose/run for one-off scripts
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+# Default entrypoint runs the scanner
+ENTRYPOINT ["/scripts/worker/clippy-scan.sh"]

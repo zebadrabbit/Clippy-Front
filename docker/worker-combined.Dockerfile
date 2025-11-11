@@ -48,7 +48,8 @@ ENV FLASK_ENV=production \
     ARTIFACTS_DIR=/artifacts \
     PUSH_INTERVAL=60 \
     WATCH_MODE=auto \
-    INGEST_PORT=22
+    INGEST_PORT=22 \
+    LD_LIBRARY_PATH=/usr/lib/wsl/lib:/usr/local/cuda/lib64:/usr/local/nvidia/lib64:${LD_LIBRARY_PATH}
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD bash -lc 'pgrep -f "celery .*worker" >/dev/null && pgrep -f clippy-push.sh >/dev/null && pgrep -f clippy-scan.sh >/dev/null'
 

@@ -156,47 +156,8 @@ def _reused_media_for_url(
 
     Returns (reused, media_file, source_platform)
     """
-    key = _extract_key(url_s)
-    norm = _normalize_url(url_s)
-
-    # In-project first
-    existing_here = (
-        session.query(Clip)
-        .filter(Clip.project_id == project_id)
-        .order_by(Clip.created_at.desc())
-        .all()
-    )
-    for ex in existing_here:
-        try:
-            ex_key = _extract_key(ex.source_url or "")
-            ex_norm = _normalize_url(ex.source_url or "")
-        except Exception:
-            ex_key = ""
-            ex_norm = ""
-        if (ex_key and key and ex_key == key) or (ex_norm and ex_norm == norm):
-            if ex.media_file_id:
-                return True, ex.media_file, ex.source_platform
-            break
-
-    # Cross-project by same user
-    candidates = (
-        session.query(Clip)
-        .join(Project, Project.id == Clip.project_id)
-        .filter(Project.user_id == user_id, Clip.media_file_id.isnot(None))
-        .order_by(Clip.created_at.desc())
-        .limit(500)
-        .all()
-    )
-    for prev in candidates:
-        try:
-            pv_key = _extract_key(prev.source_url or "")
-            pv_norm = _normalize_url(prev.source_url or "")
-        except Exception:
-            pv_key = ""
-            pv_norm = ""
-        if (pv_key and key and pv_key == key) or (pv_norm and pv_norm == norm):
-            if prev.media_file_id:
-                return True, prev.media_file, prev.source_platform
+    # Worker-side reuse disabled: do not attempt to find/reuse previously-downloaded media.
+    # Returning False forces creating a new Clip row and queuing a download task.
     return False, None, None
 
 

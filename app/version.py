@@ -2,8 +2,8 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "0.10.0"
-__version_info__ = (0, 10, 0)
+__version__ = "0.11.0"
+__version_info__ = (0, 11, 0)
 
 # Version history tracking
 VERSION_HISTORY = {
@@ -98,6 +98,13 @@ VERSION_HISTORY = {
         "new compose stack (compose.worker.yaml) with optional reverse-tunnel sidecar, local-first worker profile, and Docker secrets for rsync key and known_hosts; "
         "artifact-sync image (Dockerfile.worker) includes rsync, openssh-client, inotify-tools, autossh, supervisor; scripts/clippy-scan.sh and clippy-push.sh manage .DONE→.READY promotion, inotify+poll scanning, and robust secret resolution; "
         "README updated with step-by-step worker setup, WSL-safe /secrets override, strict-check probe, and smoke test examples."
+    ),
+    "0.11.0": (
+        "Worker API infrastructure and configuration overhaul: created worker API endpoints (/api/worker/*) for DMZ-isolated communication "
+        "(clip metadata, status updates, processing jobs, media files, project data); added worker API client library with authentication; "
+        "comprehensive worker setup documentation (WORKER_SETUP.md) and migration plan (WORKER_API_MIGRATION.md); .env.worker.example template; "
+        "enhanced clip download API logging; improved error messages for missing DATABASE_URL. Workers currently require database access; "
+        "API endpoints ready for gradual migration to eliminate DB dependency."
     ),
 }
 

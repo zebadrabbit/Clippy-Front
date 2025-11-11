@@ -133,10 +133,22 @@ def get_db_session():
 
     Returns:
         Session: Database session
+
+    Raises:
+        RuntimeError: If DATABASE_URL is not configured
     """
     app = _get_app()
 
     with app.app_context():
+        # Verify database is configured
+        db_url = app.config.get("SQLALCHEMY_DATABASE_URI", "").strip()
+        if not db_url or db_url == "sqlite:///:memory:":
+            raise RuntimeError(
+                "DATABASE_URL not configured for worker. "
+                "Workers currently require database access to function. "
+                "See WORKER_API_MIGRATION.md and .env.worker.example for configuration details."
+            )
+
         # Create a new session for this task
         Session = scoped_session(sessionmaker(bind=db.engine))
         return Session()

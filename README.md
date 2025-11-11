@@ -228,16 +228,93 @@ python scripts/health_check.py --db "$DATABASE_URL" --redis "$REDIS_URL"
 
 ## Deployment → Worker Setup
 
+**📖 See [WORKER_SETUP.md](WORKER_SETUP.md) for complete worker configuration guide**
+
+### Quick Start
+
+1) Copy worker environment template
+
+```bash
+cp .env.worker.example .env
+```
+
+2) Configure required settings in `.env`:
+
+```bash
+# Celery/Redis
+CELERY_BROKER_URL=redis://your-redis:6379/0
+CELERY_RESULT_BACKEND=redis://your-redis:6379/0
+
+# Database (currently required - see WORKER_API_MIGRATION.md)
+DATABASE_URL=postgresql://clippy_worker:password@db-host:5432/clippy_front
+
+# Storage
+HOST_INSTANCE_PATH=/mnt/clippyfront
+CELERY_CONCURRENCY=4
+CELERY_QUEUES=gpu,celery
+```
+
+3) Deploy worker
+
+```bash
+docker compose -f compose.worker.yaml up -d worker artifact-sync
+```
+
+### Artifact Export Setup (Optional)
+
+For workers to push final renders to a central ingest server:
+
+1) Generate SSH keypair for the worker
+
+```bash
+mkdir -p secrets
+ssh-keygen -t ed25519 -N "" -f secrets/rsync_key
+```
+
+2) Add the public key to the ingest host and capture its host key
+
+```bash
+# Replace with your host/port
+export INGEST_HOST=ingest.example.com
+export INGEST_PORT=22
+ssh-keyscan -p "$INGEST_PORT" "$INGEST_HOST" > secrets/known_hosts
+cat secrets/rsync_key.pub   # add to ~<INGEST_USER>/.ssh/authorized_keys on the ingest host
+```
+
+3) Create a minimal .env for the worker/sync loop
+
+```bash
+cat > .env << 'EOF'
+WORKER_ID=worker-01
+INGEST_HOST=ingest.example.com
+INGEST_USER=ingest
+INGEST_PORT=22
+INGEST_PATH=/srv/ingest
+PUSH_INTERVAL=60
+# Automatically delete artifacts locally after successful push
+CLEANUP_MODE=delete
+EOF
+```
+
+4) Launch the worker stack
+
+```bash
+docker compose -f compose.worker.yaml up -d --build
+```
+
+This starts a worker with a shared `artifacts` volume and an rsync-over-SSH loop that scans `/artifacts` every 60s and pushes any directory containing a `.READY` sentinel to `${INGEST_PATH}/${WORKER_ID}/...` on the ingest host. Strict host key checking is enforced via the `known_hosts` secret.
+
+
 This repository includes an rsync-over-SSH artifact sync system for distributed workers. The pattern is:
 
-- A Celery worker container produces compiled outputs into a shared named volume `artifacts` at `/artifacts`.
-- A lightweight sidecar (`artifact-sync`) scans `/artifacts` every 60s and pushes any directory containing a `.READY` sentinel to an ingest host via SSH/rsync.
+- A Celery worker container writes artifacts into a shared named volume `artifacts` at `/artifacts`.
+- A lightweight sidecar (`artifact-sync`) scans `/artifacts` every 60s and pushes any directory containing a `.READY` sentinel to an ingest host via SSH/rsync (it also promotes `.DONE` → `.READY`).
 - An optional `tunnel` sidecar can maintain a reverse SSH tunnel if outbound connectivity is restricted.
 
 Artifacts mount location:
 
 - By default, `compose.worker.yaml` uses a named Docker volume called `artifacts` and mounts it at `/artifacts` in both the worker and sync containers.
-- Inside the worker, set `ARTIFACTS_DIR=/artifacts` so the compile pipeline knows where to export the final outputs and write the `.DONE` sentinel.
+- Inside the worker, set `ARTIFACTS_DIR=/artifacts` so pipelines can export artifacts and write a `.DONE` sentinel.
 
 ### 1) Generate SSH keypair for the worker
 
@@ -313,7 +390,7 @@ docker compose -f compose.worker.yaml --profile local up -d --build worker-local
 
 This brings up:
 
-- `worker-local`: the Celery worker built locally from `docker/worker.Dockerfile` (tag `clippyfront-worker:local`) that writes outputs into `/artifacts`.
+- `worker-local`: the Celery worker built locally from `docker/worker.Dockerfile` (tag `clippyfront-worker:local`) that writes artifacts into `/artifacts`.
 - `artifact-sync`: a tiny container that runs `scripts/worker/clippy-scan.sh` and `clippy-push.sh` to detect `.READY` directories and push them via rsync/SSH.
 
 The named volume `artifacts` is shared between both containers. SSH credentials are mounted as Docker secrets: `rsync_key` and `known_hosts`.
@@ -358,18 +435,49 @@ Notes:
 - If you already produce a `.DONE` sentinel, the scanner will promote it to `.READY`. Otherwise, it heuristically marks directories `.READY` once they appear stable (no file changes for ~1 minute) and non-empty.
 - No host directory mounts are required—only the named volume `artifacts` and Docker secrets.
 
+What gets pushed:
+
+- Raw clips (Gather): after each successful download, the worker exports the unmodified file into an artifact directory like `clip_<id>_<slug>_<UTC>`, writes a small manifest (clip/project/user IDs, source URL, sizes), drops a `.DONE` sentinel, and the sidecar pushes it. A `thumbnail.jpg` is included when available.
+- Final compilations (Compile): after rendering, the worker exports the final mp4 into an artifact directory `<projectId>_<slug>_<UTC>`, writes a manifest, generates a small `thumbnail.jpg`, and drops `.DONE`.
+
+Thumbnails to the app:
+
+- Thumbnails are generated locally by the worker and included in the artifact directories. They appear in the UI after the ingest importer picks up the artifacts (no separate HTTPS thumbnail uploads required).
+
+When workers can’t mount the app’s storage
+
+- If your worker does not have the same `instance/` storage available, it can fetch inputs (clips, intros/outros, transitions) over HTTP from an internal raw endpoint.
+- Set a base URL so the worker can construct absolute links outside a request context:
+
+```
+MEDIA_BASE_URL=https://your-clippyfront.example.com
+```
+
+The pipeline will attempt local/remapped paths first; if not available, it downloads from `${MEDIA_BASE_URL}/api/media/raw/<media_id>` into a temporary folder before running ffmpeg. Keep this endpoint reachable only to trusted networks (VPN or private ingress).
+
+Author avatars without worker secrets
+
+- Workers do not need Twitch credentials. The server resolves and caches avatars during clip creation and exposes them via an internal endpoint.
+- Ensure workers have `MEDIA_BASE_URL` set. If an avatar isn’t found locally, the worker will fetch it from:
+
+```
+${MEDIA_BASE_URL}/api/avatars/by-clip/<clip_id>
+```
+
+- This keeps secrets on the server only, and still allows avatars to render in overlays on remote workers.
+
 Secrets troubleshooting (secrets mounted as directories on some platforms)
 
 - On some platforms (WSL/Docker Desktop), Compose may present secrets under `/run/secrets/<name>` as directories instead of files. The sidecar handles both, but manual SSH probes can fail unless you target an actual file.
 - Easiest, cross-platform approach: bind your local `./secrets` directory into the container and point the sidecar at those paths via env.
 
 ```bash
-# Use a robust override that mounts the whole ./secrets dir at /secrets
-cp compose.worker.override.yaml.example compose.worker.override.yaml
-docker compose -f compose.worker.yaml -f compose.worker.override.yaml up -d --build artifact-sync
+# Use the Tundra override that mounts the whole ./secrets dir at /secrets
+# (or create your own based on compose.worker.tundra.yaml)
+docker compose -f compose.worker.yaml -f compose.worker.tundra.yaml up -d --build artifact-sync
 
 # Optional: strict host key check probe inside the container
-docker compose -f compose.worker.yaml -f compose.worker.override.yaml exec artifact-sync sh -lc '\
+docker compose -f compose.worker.yaml -f compose.worker.tundra.yaml exec artifact-sync sh -lc '\
   ssh -o StrictHostKeyChecking=yes \
      -o UserKnownHostsFile=${KNOWN_HOSTS_FILE:-/run/secrets/known_hosts} \
      -i ${RSYNC_KEY_FILE:-/run/secrets/rsync_key} \
@@ -465,42 +573,22 @@ Notes:
 - Ensure every worker uses a distinct `WORKER_ID` if you want remote-level segregation. If you deliberately share a `WORKER_ID`, artifacts from those workers land under the same remote prefix.
 - Artifact directory names include project id, slug, and UTC timestamp to seconds. Collisions are rare; if you expect extremely high concurrency, we can add a short unique suffix for extra safety.
 
-### Secure HTTP media for workers (signed URLs)
+### Worker HTTP media (raw endpoint)
 
-If your render workers can’t mount the same instance storage, they can fetch source media over HTTP using short‑lived, signed URLs that are resistant to URL snooping.
+If your render workers can’t mount the same instance storage, they can fetch source media over HTTP via an internal‑only raw endpoint.
 
 How it works:
 
-- The server exposes `GET /api/media/signed/<media_id>?u=<owner_id>&e=<epoch>&sig=<hmac>`.
-- The signature is HMAC‑SHA256 over `(media_id, owner_id, expiry, optional_ip)` using `MEDIA_SIGNING_KEY` (falls back to `SECRET_KEY`).
-- Tokens expire after `MEDIA_URL_TTL` seconds (default 300). Optionally bind to the requester IP with `MEDIA_URL_BIND_IP=true`.
+- The server exposes `GET /api/media/raw/<media_id>` which streams the file by id.
+- This endpoint intentionally does not require login; restrict access at the network layer (e.g., VPN, firewall, private ingress).
 
 Configuration (.env):
 
 ```
-MEDIA_SIGNING_KEY= # optional; defaults to SECRET_KEY
-MEDIA_URL_TTL=300
-MEDIA_URL_BIND_IP=false
+MEDIA_BASE_URL=https://your-clippyfront.example.com
 ```
 
-Generating URLs (server‑side helpers):
-
-- In app code, import `generate_signed_media_url(media_id, owner_user_id, ttl_seconds=None, client_ip=None)` from `app.security.signed_media`.
-- Example:
-
-```python
-from app.security.signed_media import generate_signed_media_url
-
-url = generate_signed_media_url(media.id, media.user_id, ttl_seconds=300)
-```
-
-Workers can then `GET` the URL and stream the file without a user session. If you enable IP binding, generate tokens with the known worker IP (e.g., your WireGuard address) or keep the default and enforce TLS + short TTLs.
-
-Notes:
-
-- This route is authorization‑by‑signature and does not require login. It only serves files when the HMAC, owner id, and expiry validate, and the media exists for that owner.
-- For large jobs, consider batching signed URL generation and passing them to the worker with the task payload.
-- Always run behind HTTPS in production.
+The worker pipeline first tries to resolve a local/remapped filesystem path; if not found, it downloads from `${MEDIA_BASE_URL}/api/media/raw/<id>` with retry/backoff and timeouts. Keep the raw endpoint reachable only to trusted worker networks.
 
 ## Project Structure (abridged)
 

@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+: "${ARTIFACTS_DIR:=/artifacts}"
+
+name="demo_$(date -u +%Y%m%dT%H%M%SZ)"
+dir="$ARTIFACTS_DIR/$name"
+
+echo "Creating smoke artifact at $dir"
+mkdir -p "$dir"
+echo "hello" >"$dir/hello.txt"
+date -Is >"$dir/manifest.txt"
+touch "$dir/.READY"
+echo "Created $dir with .READY sentinel"#!/usr/bin/env bash
+set -euo pipefail
+
 ARTIFACTS_DIR=${ARTIFACTS_DIR:-/artifacts}
 name="smoke_$(date -u +%Y%m%d_%H%M%S)"
 dir="${ARTIFACTS_DIR%/}/${name}"

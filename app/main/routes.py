@@ -41,6 +41,45 @@ from app.version import get_version
 main_bp = Blueprint("main", __name__)
 
 
+def _rebase_instance_path(path: str | None) -> str | None:
+    """Map container/portable instance paths to this app's concrete instance_path.
+
+    Supports the following patterns:
+      - '/instance/…'  -> <app.instance_path>/…
+      - '/app/instance/…' -> <app.instance_path>/… (common inside containers)
+      - Explicit alias via env: MEDIA_PATH_ALIAS_FROM -> MEDIA_PATH_ALIAS_TO
+
+    If no mapping applies, return the input unchanged.
+    """
+    if not path:
+        return path
+    try:
+        p = str(path)
+        # 1) Explicit alias mapping when configured
+        alias_from = os.getenv("MEDIA_PATH_ALIAS_FROM")
+        alias_to = os.getenv("MEDIA_PATH_ALIAS_TO")
+        if alias_from and alias_to and p.startswith(alias_from):
+            # Join safely to avoid missing path separators (e.g., 'instancedata')
+            suffix = p[len(alias_from) :].lstrip(os.sep)
+            base = alias_to.rstrip(os.sep)
+            cand = os.path.join(base, suffix)
+            return cand
+
+        # 2) Canonical '/instance/' prefix
+        if p.startswith("/instance/"):
+            suffix = p[len("/instance/") :].lstrip("/")
+            return os.path.join(current_app.instance_path, suffix)
+
+        # 3) Container '/app/instance/' prefix
+        prefix = "/app/instance/"
+        if p.startswith(prefix):
+            suffix = p[len(prefix) :].lstrip("/")
+            return os.path.join(current_app.instance_path, suffix)
+    except Exception:
+        return path
+    return path
+
+
 @main_bp.route("/")
 def index():
     """
@@ -198,6 +237,7 @@ def project_details_by_public(public_id):
     Returns:
         Response: Rendered project details template or 404
     """
+    # Owner-only view via opaque id
     project = Project.query.filter_by(
         public_id=public_id, user_id=current_user.id
     ).first_or_404()
@@ -399,6 +439,10 @@ def delete_project(project_id: int):
         id=project_id, user_id=current_user.id
     ).first_or_404()
 
+    # Capture project name and user before deletion for cleanup
+    project_name = project.name
+    project_user = current_user
+
     try:
         # Remove compiled output if present
         try:
@@ -451,6 +495,12 @@ def delete_project(project_id: int):
         # Finally, delete the project
         db.session.delete(project)
         db.session.commit()
+
+        # Best-effort cleanup of empty project directory tree on disk
+        try:
+            storage_lib.cleanup_project_tree(project_user, project_name)
+        except Exception:
+            pass
 
         flash(
             f"Project deleted. Preserved {preserved} reusable media item(s) in your library.",
@@ -593,10 +643,10 @@ def upload_media(project_id):
                 thumb_path = None
                 if mime_type and mime_type.startswith("video"):
                     try:
-                        thumbs_dir = storage_lib.thumbnails_dir(current_user)
-                        storage_lib.ensure_dirs(thumbs_dir)
-                        thumb_name = f"{uuid4().hex}.jpg"
-                        thumb_path = os.path.join(thumbs_dir, thumb_name)
+                        # Store thumbnail alongside the video file
+                        dest_dir = os.path.dirname(dest_path)
+                        stem = os.path.splitext(os.path.basename(dest_path))[0]
+                        thumb_path = os.path.join(dest_dir, f"{stem}_thumb.jpg")
                         # Extract a frame at configured timestamp; scale width per config keeping aspect ratio
                         from app.ffmpeg_config import config_args as _cfg_args
 
@@ -695,13 +745,18 @@ def upload_media(project_id):
                 media_file = MediaFile(
                     filename=unique_name,
                     original_filename=original_name,
-                    file_path=dest_path,
+                    file_path=storage_lib.instance_canonicalize(dest_path) or dest_path,
                     file_size=os.path.getsize(dest_path),
                     mime_type=mime_type,
                     media_type=mtype,
                     user_id=current_user.id,
                     project_id=project.id,
-                    thumbnail_path=thumb_path,
+                    thumbnail_path=(
+                        storage_lib.instance_canonicalize(thumb_path)
+                        if thumb_path
+                        else None
+                    )
+                    or thumb_path,
                     checksum=checksum,
                     duration=v_duration,
                     width=v_width,
@@ -1123,57 +1178,22 @@ def media_upload():
         except Exception:
             pass
 
-        # If same content already exists for this user, reuse existing DB row and remove duplicate file
-        try:
-            if checksum:
-                existing = (
-                    db.session.query(MediaFile)
-                    .filter_by(user_id=current_user.id, checksum=checksum)
-                    .first()
-                )
-                if existing and os.path.exists(existing.file_path):
-                    # Remove the new file; return existing record
-                    try:
-                        os.remove(dest_path)
-                    except Exception:
-                        pass
-                    return (
-                        jsonify(
-                            {
-                                "success": True,
-                                "id": existing.id,
-                                "filename": existing.filename,
-                                "type": existing.media_type.value,
-                                "preview_url": url_for(
-                                    "main.media_preview", media_id=existing.id
-                                ),
-                                "thumbnail_url": url_for(
-                                    "main.media_thumbnail", media_id=existing.id
-                                ),
-                                "mime": existing.mime_type,
-                                "original_filename": existing.original_filename,
-                                "tags": existing.tags or "",
-                                # Extras for client-rendered cards
-                                "file_size_mb": round(
-                                    (existing.file_size or 0) / (1024 * 1024), 1
-                                ),
-                                "duration": existing.duration,
-                                "duration_formatted": existing.duration_formatted,
-                            }
-                        ),
-                        200,
-                    )
-        except Exception:
-            pass
+        # NOTE: deduplication by checksum has been disabled project-wide.
+        # Historically we would detect identical uploads (same checksum) and
+        # return an existing MediaFile row while deleting the newly uploaded
+        # file. That behavior caused surprising cross-project reuse and races.
+        # To keep uploads deterministic and ensure every upload generates a
+        # MediaFile row, we now always continue and create a new DB record
+        # below even when a checksum match exists.
 
         # Generate thumbnail for videos (deterministic name; reuse if exists)
         thumb_path = None
         if mime_type and mime_type.startswith("video"):
             try:
-                thumbs_dir = storage_lib.thumbnails_dir(current_user)
-                storage_lib.ensure_dirs(thumbs_dir)
+                # Store thumbnail alongside the video file
+                dest_dir = os.path.dirname(dest_path)
                 stem = os.path.splitext(unique_name)[0]
-                thumb_path = os.path.join(thumbs_dir, f"{stem}.jpg")
+                thumb_path = os.path.join(dest_dir, f"{stem}_thumb.jpg")
                 if not os.path.exists(thumb_path):
                     # Extract a frame at configured timestamp; scale width per config keeping aspect ratio
                     from app.ffmpeg_config import config_args as _cfg_args
@@ -1248,13 +1268,16 @@ def media_upload():
         media_file = MediaFile(
             filename=unique_name,
             original_filename=original_name,
-            file_path=dest_path,
+            file_path=storage_lib.instance_canonicalize(dest_path) or dest_path,
             file_size=os.path.getsize(dest_path),
             mime_type=mime_type,
             media_type=mtype,
             user_id=current_user.id,
             project_id=None,
-            thumbnail_path=thumb_path,
+            thumbnail_path=(
+                storage_lib.instance_canonicalize(thumb_path) if thumb_path else None
+            )
+            or thumb_path,
             checksum=checksum,
             duration=v_duration,
             width=v_width,
@@ -1310,7 +1333,7 @@ def media_preview(media_id: int):
         return jsonify({"error": "Not authorized"}), 403
 
     # Resolve path that may have been created on a different host/container
-    resolved_path = media.file_path
+    resolved_path = _rebase_instance_path(media.file_path) or media.file_path
     try:
         return send_file(resolved_path, mimetype=media.mime_type, conditional=True)
     except FileNotFoundError:
@@ -1329,7 +1352,9 @@ def media_thumbnail(media_id: int):
 
     # Local resolver for media paths
     # If we have a thumbnail, serve it
-    thumb_path = media.thumbnail_path or ""
+    thumb_path = _rebase_instance_path(media.thumbnail_path or "") or (
+        media.thumbnail_path or ""
+    )
     if thumb_path and os.path.exists(thumb_path):
         try:
             return send_file(thumb_path, mimetype="image/jpeg", conditional=True)
@@ -1337,21 +1362,16 @@ def media_thumbnail(media_id: int):
             pass
     # Lazy-generate a thumbnail for videos on-demand
     try:
+        resolved_media_path = _rebase_instance_path(media.file_path) or media.file_path
         if (
             media.mime_type
             and media.mime_type.startswith("video")
-            and os.path.exists(media.file_path)
+            and os.path.exists(resolved_media_path)
         ):
-            # Prefer new storage thumbnails location
-            owner = getattr(media, "user", None)
-            if owner is None:
-                from app.models import User as _User
-
-                owner = db.session.get(_User, media.user_id)
-            thumbs_dir = storage_lib.thumbnails_dir(owner or current_user)
-            storage_lib.ensure_dirs(thumbs_dir)
+            # Store thumbnail alongside the media file
+            media_dir = os.path.dirname(resolved_media_path)
             stem = os.path.splitext(os.path.basename(media.file_path))[0]
-            thumb_path = os.path.join(thumbs_dir, f"{stem}.jpg")
+            thumb_path = os.path.join(media_dir, f"{stem}_thumb.jpg")
             if not os.path.exists(thumb_path):
                 subprocess.run(
                     [
@@ -1360,7 +1380,7 @@ def media_thumbnail(media_id: int):
                         "-ss",
                         "1",
                         "-i",
-                        media.file_path,
+                        resolved_media_path,
                         "-frames:v",
                         "1",
                         "-vf",
@@ -1373,7 +1393,10 @@ def media_thumbnail(media_id: int):
                 )
             # Save path to DB if not already set
             if not media.thumbnail_path or media.thumbnail_path != thumb_path:
-                media.thumbnail_path = thumb_path
+                # Store canonical '/instance/…' form for portability
+                media.thumbnail_path = (
+                    storage_lib.instance_canonicalize(thumb_path) or thumb_path
+                )
                 try:
                     db.session.commit()
                 except Exception:
@@ -1384,7 +1407,8 @@ def media_thumbnail(media_id: int):
         pass
     # Fallback: for images, serve image; for video with no thumbnail, placeholder if available
     if media.mime_type and media.mime_type.startswith("image"):
-        return send_file(media.file_path, mimetype=media.mime_type, conditional=True)
+        img_path = _rebase_instance_path(media.file_path) or media.file_path
+        return send_file(img_path, mimetype=media.mime_type, conditional=True)
     placeholder_svg = os.path.join(
         current_app.root_path, "static", "img", "video_placeholder.svg"
     )
@@ -1742,31 +1766,68 @@ def theme_css():
 @login_required
 def download_compiled_output_by_public(public_id: str):
     """Download the compiled output video for a project if available."""
+    # Owner-only download via opaque id
     project = Project.query.filter_by(
         public_id=public_id, user_id=current_user.id
     ).first_or_404()
 
-    if not project.output_filename:
-        return jsonify({"error": "No compiled output available"}), 404
-
-    # Resolve compiled file path (prefer new per-project layout, fallback to legacy)
+    # Resolve compiled file path with robust fallbacks, similar to owner route
+    final_path = None
+    # Prefer associated MediaFile entries
     try:
+        compiled = (
+            project.media_files.filter_by(media_type=MediaType.COMPILATION)
+            .order_by(MediaFile.uploaded_at.desc())
+            .all()
+        )
+        for mf in compiled:
+            if (
+                project.output_filename
+                and mf.filename == project.output_filename
+                and mf.file_path
+            ):
+                cand = _rebase_instance_path(mf.file_path) or mf.file_path
+                if os.path.exists(cand):
+                    final_path = cand
+                    break
+        if not final_path and compiled:
+            mf = compiled[0]
+            cand = _rebase_instance_path(mf.file_path) if mf.file_path else None
+            if cand and os.path.exists(cand):
+                final_path = cand
+    except Exception:
+        final_path = None
+
+    # Fallbacks based on filename and storage layout
+    try:
+        from app.storage import clips_dir as _clips_dir
         from app.storage import compilations_dir as _comp_dir
 
-        new_candidate = os.path.join(
-            _comp_dir(project.owner, project.name), project.output_filename
+        user = project.owner
+        new_candidate = (
+            os.path.join(_comp_dir(user, project.name), project.output_filename)
+            if project.output_filename
+            else None
+        )
+        clips_candidate = (
+            os.path.join(_clips_dir(user, project.name), project.output_filename)
+            if project.output_filename
+            else None
         )
     except Exception:
         new_candidate = None
-    legacy_candidate = os.path.join(
-        current_app.instance_path, "compilations", project.output_filename
+        clips_candidate = None
+    legacy_candidate = (
+        os.path.join(current_app.instance_path, "compilations", project.output_filename)
+        if project.output_filename
+        else None
     )
-    final_path = (
-        new_candidate
-        if (new_candidate and os.path.exists(new_candidate))
-        else legacy_candidate
-    )
-    if not os.path.exists(final_path):
+    if not final_path:
+        for cand in (new_candidate, clips_candidate, legacy_candidate):
+            if cand and os.path.exists(cand):
+                final_path = cand
+                break
+    if not final_path or not os.path.exists(final_path):
         return jsonify({"error": "Compiled file not found"}), 404
 
     # Guess mime type based on extension
@@ -1787,30 +1848,68 @@ def preview_compiled_output_by_public(public_id: str):
 
     Supports HTTP Range requests so the HTML5 <video> element can seek.
     """
+    # Owner-only preview via opaque id
     project = Project.query.filter_by(
         public_id=public_id, user_id=current_user.id
     ).first_or_404()
 
-    if not project.output_filename:
-        return jsonify({"error": "No compiled output available"}), 404
-
+    # Resolve compiled file path with robust fallbacks, similar to owner route
+    final_path = None
+    # Prefer associated MediaFile entries
     try:
+        compiled = (
+            project.media_files.filter_by(media_type=MediaType.COMPILATION)
+            .order_by(MediaFile.uploaded_at.desc())
+            .all()
+        )
+        for mf in compiled:
+            if (
+                project.output_filename
+                and mf.filename == project.output_filename
+                and mf.file_path
+            ):
+                cand = _rebase_instance_path(mf.file_path) or mf.file_path
+                if os.path.exists(cand):
+                    final_path = cand
+                    break
+        if not final_path and compiled:
+            mf = compiled[0]
+            cand = _rebase_instance_path(mf.file_path) if mf.file_path else None
+            if cand and os.path.exists(cand):
+                final_path = cand
+    except Exception:
+        final_path = None
+
+    # Fallbacks based on filename and storage layout
+    try:
+        from app.storage import clips_dir as _clips_dir
         from app.storage import compilations_dir as _comp_dir
 
-        new_candidate = os.path.join(
-            _comp_dir(project.owner, project.name), project.output_filename
+        user = project.owner
+        new_candidate = (
+            os.path.join(_comp_dir(user, project.name), project.output_filename)
+            if project.output_filename
+            else None
+        )
+        clips_candidate = (
+            os.path.join(_clips_dir(user, project.name), project.output_filename)
+            if project.output_filename
+            else None
         )
     except Exception:
         new_candidate = None
-    legacy_candidate = os.path.join(
-        current_app.instance_path, "compilations", project.output_filename
+        clips_candidate = None
+    legacy_candidate = (
+        os.path.join(current_app.instance_path, "compilations", project.output_filename)
+        if project.output_filename
+        else None
     )
-    final_path = (
-        new_candidate
-        if (new_candidate and os.path.exists(new_candidate))
-        else legacy_candidate
-    )
-    if not os.path.exists(final_path):
+    if not final_path:
+        for cand in (new_candidate, clips_candidate, legacy_candidate):
+            if cand and os.path.exists(cand):
+                final_path = cand
+                break
+    if not final_path or not os.path.exists(final_path):
         return jsonify({"error": "Compiled file not found"}), 404
 
     guessed, _ = mimetypes.guess_type(final_path)
@@ -1846,4 +1945,167 @@ def preview_compiled_output_by_public(public_id: str):
         return rv
     except Exception:
         # Fallback to full file
+        return send_file(final_path, mimetype=mimetype, conditional=True)
+
+
+@main_bp.route("/projects/<int:project_id>/download")
+@login_required
+def download_compiled_output(project_id: int):
+    """Download the compiled output video (ownership enforced)."""
+    project = Project.query.filter_by(
+        id=project_id, user_id=current_user.id
+    ).first_or_404()
+
+    if not project.output_filename:
+        return jsonify({"error": "No compiled output available"}), 404
+
+    # Try to resolve via associated MediaFile first (most reliable)
+    final_path = None
+    try:
+        compiled = (
+            project.media_files.filter_by(media_type=MediaType.COMPILATION)
+            .order_by(MediaFile.uploaded_at.desc())
+            .all()
+        )
+        # Prefer exact filename match
+        for mf in compiled:
+            if mf.filename == project.output_filename and mf.file_path:
+                cand = _rebase_instance_path(mf.file_path) or mf.file_path
+                if os.path.exists(cand):
+                    final_path = cand
+                    break
+        # Fallback to latest compilation's path
+        if not final_path and compiled:
+            mf = compiled[0]
+            cand = _rebase_instance_path(mf.file_path) if mf.file_path else None
+            if cand and os.path.exists(cand):
+                final_path = cand
+    except Exception:
+        final_path = None
+
+    # Fallbacks: new per-project layout, clips dir (historical), legacy global
+    if not final_path:
+        try:
+            from app.storage import clips_dir as _clips_dir
+            from app.storage import compilations_dir as _comp_dir
+
+            user = project.owner
+            new_candidate = os.path.join(
+                _comp_dir(user, project.name), project.output_filename
+            )
+            clips_candidate = os.path.join(
+                _clips_dir(user, project.name), project.output_filename
+            )
+        except Exception:
+            new_candidate = None
+            clips_candidate = None
+        legacy_candidate = os.path.join(
+            current_app.instance_path, "compilations", project.output_filename
+        )
+        for cand in (new_candidate, clips_candidate, legacy_candidate):
+            if cand and os.path.exists(cand):
+                final_path = cand
+                break
+
+    if not final_path or not os.path.exists(final_path):
+        return jsonify({"error": "Compiled file not found"}), 404
+
+    guessed, _ = mimetypes.guess_type(final_path)
+    mimetype = guessed or "application/octet-stream"
+    return send_file(
+        final_path,
+        mimetype=mimetype,
+        as_attachment=True,
+        download_name=project.output_filename,
+    )
+
+
+@main_bp.route("/projects/<int:project_id>/preview")
+@login_required
+def preview_compiled_output(project_id: int):
+    """Stream the compiled output inline with Range support (ownership enforced)."""
+    project = Project.query.filter_by(
+        id=project_id, user_id=current_user.id
+    ).first_or_404()
+
+    if not project.output_filename:
+        return jsonify({"error": "No compiled output available"}), 404
+
+    # Try MediaFile first
+    final_path = None
+    try:
+        compiled = (
+            project.media_files.filter_by(media_type=MediaType.COMPILATION)
+            .order_by(MediaFile.uploaded_at.desc())
+            .all()
+        )
+        for mf in compiled:
+            if mf.filename == project.output_filename and mf.file_path:
+                cand = _rebase_instance_path(mf.file_path) or mf.file_path
+                if os.path.exists(cand):
+                    final_path = cand
+                    break
+        if not final_path and compiled:
+            mf = compiled[0]
+            cand = _rebase_instance_path(mf.file_path) if mf.file_path else None
+            if cand and os.path.exists(cand):
+                final_path = cand
+    except Exception:
+        final_path = None
+
+    if not final_path:
+        try:
+            from app.storage import clips_dir as _clips_dir
+            from app.storage import compilations_dir as _comp_dir
+
+            user = project.owner
+            new_candidate = os.path.join(
+                _comp_dir(user, project.name), project.output_filename
+            )
+            clips_candidate = os.path.join(
+                _clips_dir(user, project.name), project.output_filename
+            )
+        except Exception:
+            new_candidate = None
+            clips_candidate = None
+        legacy_candidate = os.path.join(
+            current_app.instance_path, "compilations", project.output_filename
+        )
+        for cand in (new_candidate, clips_candidate, legacy_candidate):
+            if cand and os.path.exists(cand):
+                final_path = cand
+                break
+
+    if not final_path or not os.path.exists(final_path):
+        return jsonify({"error": "Compiled file not found"}), 404
+
+    guessed, _ = mimetypes.guess_type(final_path)
+    mimetype = guessed or "video/mp4"
+
+    range_header = request.headers.get("Range", None)
+    if not range_header:
+        return send_file(final_path, mimetype=mimetype, conditional=True)
+
+    try:
+        file_size = os.path.getsize(final_path)
+        units, _, rng = range_header.partition("=")
+        if units != "bytes":
+            return send_file(final_path, mimetype=mimetype, conditional=True)
+        start_str, _, end_str = rng.partition("-")
+        start = int(start_str) if start_str.isdigit() else 0
+        end = int(end_str) if end_str.isdigit() else file_size - 1
+        start = max(0, min(start, file_size - 1))
+        end = max(start, min(end, file_size - 1))
+        length = end - start + 1
+
+        with open(final_path, "rb") as f:
+            f.seek(start)
+            data = f.read(length)
+
+        rv = Response(data, 206, mimetype=mimetype, direct_passthrough=True)
+        rv.headers.add("Content-Range", f"bytes {start}-{end}/{file_size}")
+        rv.headers.add("Accept-Ranges", "bytes")
+        rv.headers.add("Content-Length", str(length))
+        return rv
+    except Exception:
         return send_file(final_path, mimetype=mimetype, conditional=True)

@@ -61,13 +61,70 @@
     if (stepStr === '3' && wizard.projectId) {
       // Auto-refresh Arrange lists so user doesn't need to click refresh
       Promise.resolve().then(async () => {
+        // Proactively import rsynced raw clips when entering Arrange if none are present yet
+        try {
+          const lst = await api(`/api/projects/${wizard.projectId}/clips`);
+          const hasAny = Array.isArray(lst?.items) && lst.items.length > 0;
+          if (!hasAny) {
+            // Run a shallow ingest so we don't block the UI for long
+            try {
+              showArrangeIngestBanner('Importing rsynced raw clips…');
+              await runRawIngest({ shallow: true });
+            } catch (_) { /* non-fatal */ }
+          }
+        } catch (_) {}
+        try { await populateClipsGrid(); } catch (_) {}
+        hideArrangeIngestBanner();
         try { await refreshIntros(); } catch (_) {}
         try { await refreshOutros(); } catch (_) {}
         try { await refreshTransitions(); } catch (_) {}
         try { renderTransitionsBadge(); } catch (_) {}
       });
     }
-    if (stepStr === '5' && wizard.projectId) { refreshExportInfo().catch(() => {}); }
+    if (stepStr === '5') {
+      if (wizard.projectId) {
+        refreshExportInfo().catch((e) => {
+          console.error('Failed to refresh export info:', e);
+        });
+      } else {
+        console.warn('Cannot load export info: No project ID available');
+      }
+    }
+  }
+
+  // Arrange ingest banner helpers
+  function showArrangeIngestBanner(text){
+    try {
+      const el = document.getElementById('arrange-ingest-banner');
+      const label = document.getElementById('arrange-ingest-text');
+      if (!el) return;
+      if (label && typeof text === 'string' && text.trim() !== '') label.textContent = text;
+      el.classList.remove('d-none');
+    } catch (_) {}
+  }
+  function hideArrangeIngestBanner(){
+    try {
+      const el = document.getElementById('arrange-ingest-banner');
+      if (!el) return;
+      el.classList.add('d-none');
+    } catch (_) {}
+  }
+  // Export ingest banner helpers
+  function showExportIngestBanner(text){
+    try {
+      const el = document.getElementById('export-ingest-banner');
+      const label = document.getElementById('export-ingest-text');
+      if (!el) return;
+      if (label && typeof text === 'string' && text.trim() !== '') label.textContent = text;
+      el.classList.remove('d-none');
+    } catch (_) {}
+  }
+  function hideExportIngestBanner(){
+    try {
+      const el = document.getElementById('export-ingest-banner');
+      if (!el) return;
+      el.classList.add('d-none');
+    } catch (_) {}
   }
   document.querySelectorAll('#wizard-chevrons li').forEach(li => li.addEventListener('click', (e) => {
     e.preventDefault();
@@ -84,6 +141,28 @@
 
   // Next/Back buttons and helpers
   let wizard = { projectId: null, downloadTasks: [], compileTaskId: null, selectedTransitionIds: [], settings: {} };
+
+  // Try to restore project ID from URL params or localStorage
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const urlProjectId = params.get('project_id') || params.get('projectId');
+    if (urlProjectId) {
+      wizard.projectId = parseInt(urlProjectId, 10);
+      console.log('Restored project ID from URL:', wizard.projectId);
+      // Save to localStorage for persistence
+      localStorage.setItem('wizard_project_id', wizard.projectId);
+    } else {
+      // Try localStorage as fallback
+      const savedProjectId = localStorage.getItem('wizard_project_id');
+      if (savedProjectId) {
+        wizard.projectId = parseInt(savedProjectId, 10);
+        console.log('Restored project ID from localStorage:', wizard.projectId);
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to restore project ID:', e);
+  }
+
   const USER_HAS_TWITCH = (document.getElementById('wizard-data')?.dataset.userHasTwitch === '1');
   async function api(path, opts={}){
     const res = await fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts));
@@ -180,6 +259,13 @@
     try {
       const r = await api('/api/projects', { method: 'POST', body: JSON.stringify(payload) });
       wizard.projectId = r.project_id;
+      // Save project ID to localStorage for persistence across page reloads
+      try {
+        localStorage.setItem('wizard_project_id', wizard.projectId);
+        console.log('Saved project ID to localStorage:', wizard.projectId);
+      } catch (e) {
+        console.warn('Failed to save project ID to localStorage:', e);
+      }
       wizard.route = route;
       wizard.maxClips = Math.max(1, Math.min(100, isNaN(maxClips) ? 20 : maxClips));
       gotoStep(2);
@@ -204,19 +290,19 @@
           setGcActive('queue');
           setGcStatus(`Stacking ${wizard.downloadTasks.length} download(s)…`);
           setGcFill(35);
-          // Skip polling for reused items; only poll real tasks
-          const hasRealTasks = (wizard.downloadTasks || []).some(t => t && t.task_id);
+          // All clips now queue download tasks (even reused ones which will copy files)
+          const hasDownloadTasks = (wizard.downloadTasks || []).some(t => t && t.task_id);
           setGcDone('queue');
-          if (hasRealTasks) {
+          if (hasDownloadTasks) {
             setGcActive('download');
             setGcFill(40);
             await startDownloadPolling();
           } else {
-            // All reused; mark progress, enable Next, and populate clips
+            // No tasks to poll (shouldn't happen but handle gracefully)
             setGcDone('download');
-            setGcDone('done');
             setGcActive('done');
-            setGcStatus('All clips were already on deck. Reusing media.');
+            setGcDone('done');
+            setGcStatus('Ready.');
             setGcFill(100);
             document.getElementById('next-2').disabled = false;
             try { await populateClipsGrid(); } catch (_) {}
@@ -345,14 +431,18 @@
     }
     const r = await api(`/api/projects/${wizard.projectId}/clips/download`, { method: 'POST', body: JSON.stringify(payload) });
     wizard.downloadTasks = r.items || [];
-    setGcStatus(`Queued ${wizard.downloadTasks.length} downloads${wizard.maxClips ? ` (limit ${wizard.maxClips})` : ''}.`);
+    const actualCount = r.count !== undefined ? r.count : wizard.downloadTasks.length;
+    const skipped = r.skipped || 0;
+    const requested = r.requested || (wizard.maxClips || limit);
+    console.log(`API created ${actualCount} clips from ${requested} requested (${skipped} skipped as duplicates)`);
+    setGcStatus(`Queued ${wizard.downloadTasks.length} download${wizard.downloadTasks.length !== 1 ? 's' : ''} (${actualCount} clip${actualCount !== 1 ? 's' : ''}${skipped > 0 ? `, ${skipped} duplicate${skipped !== 1 ? 's' : ''} skipped` : ''}).`);
   }
 
   // Download progress/polling
   let dlTimer = null;
   async function startDownloadPolling() {
   setGcStatus('Pulling clips down…');
-    // Only poll real tasks that have a valid task_id
+    // Poll all download tasks (including those that will reuse/copy existing files)
     const realTasks = (wizard.downloadTasks || []).filter(t => t && t.task_id);
     const total = realTasks.length || 1;
     async function poll(){
@@ -381,9 +471,43 @@
       if (done >= total) {
         clearInterval(dlTimer);
         setGcDone('download');
-        setGcDone('done');
+        setGcActive('import');
+        setGcStatus('Importing artifacts from workers…');
+        setGcFill(80);
+
+        // Run ingest to import artifacts from /srv/ingest/
+        // This picks up files that were rsync'd from workers
+        try {
+          await runRawIngest({ shallow: false, regenThumbnails: true });
+        } catch(e) {
+          console.error('Ingest failed:', e);
+        }
+        setGcDone('import');
+
+        // Final verification: ensure all clips have media files and thumbnails
+        setGcStatus('Verifying all clips are ready…');
+        let retries = 0;
+        const maxRetries = 3;
+        while (retries < maxRetries) {
+          const verify = await verifyAllClipsReady();
+          if (verify.ready && verify.total > 0) {
+            break;
+          }
+          if (verify.missing > 0) {
+            console.log(`Verification attempt ${retries + 1}/${maxRetries}: ${verify.missing} clips still missing`);
+            setGcStatus(`Waiting for ${verify.missing} clip(s) to finish processing... (${retries + 1}/${maxRetries})`);
+            // Wait longer and retry ingest to pick up any late arrivals
+            await new Promise(r => setTimeout(r, 3000));
+            if (retries < maxRetries - 1) {
+              try { await runRawIngest({ shallow: false, regenThumbnails: true }); } catch(_) {}
+            }
+          }
+          retries++;
+        }
+
         setGcActive('done');
-        setGcStatus('Downloads wrapped.');
+        setGcDone('done');
+        setGcStatus('Ready.');
         setGcFill(100);
         document.getElementById('next-2').disabled = false;
         try { await populateClipsGrid(); } catch (_) {}
@@ -393,15 +517,141 @@
     dlTimer = setInterval(poll, 1000);
     await poll();
   }
-  document.getElementById('next-2')?.addEventListener('click', () => gotoStep(3));
+  document.getElementById('next-2')?.addEventListener('click', async () => {
+    // Navigate to Arrange without triggering another ingest here.
+    // Step 3 already does a shallow import if no clips are present.
+    gotoStep(3);
+  });
 
   // Step 2 helpers: compact progress UI
   function setGcStatus(text){ const el = document.getElementById('gc-status'); if (el) el.textContent = text || ''; }
   function setGcFill(pct){ const el = document.getElementById('gc-fill'); if (el){ const v = Math.max(0, Math.min(100, Math.floor(pct||0))); el.style.width = v + '%'; el.setAttribute('aria-valuenow', String(v)); } }
   function getGcStepEl(key){ return document.querySelector(`#gc-steps li[data-key="${key}"]`); }
+
+  // On-demand raw ingest helper: POST /api/projects/<id>/ingest/raw and poll until done
+  async function runRawIngest(opts={}){
+    if (!wizard.projectId) return;
+    const shallow = !!opts.shallow; // when true, don't block long if endpoint is busy
+    const regen = !!opts.regenThumbnails;
+    // Reflect import stage in chevrons if present
+    setGcActive('import');
+    setGcStatus('Importing rsynced raw clips…');
+    try {
+      const resp = await fetch(`/api/projects/${wizard.projectId}/ingest/raw`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(CSRF ? { 'X-CSRFToken': CSRF } : {}) },
+        body: JSON.stringify({ action: 'copy', regen_thumbnails: regen })
+      });
+      if (!resp.ok) { try{ const j = await resp.json(); if (j && j.error) throw new Error(j.error); }catch(e){}; throw new Error('ingest start failed'); }
+      const j = await resp.json();
+      const taskId = j.task_id;
+      if (!taskId) return;
+      const started = Date.now();
+      async function poll(){
+        const s = await api(`/api/tasks/${taskId}`);
+        const st = String((s && (s.state || s.status)) || '').toUpperCase();
+        if (st === 'SUCCESS') {
+          // After ingest completes, verify all clips have been properly imported
+          try {
+            const verifyResult = await verifyAllClipsReady();
+            if (!verifyResult.ready) {
+              console.warn('Some clips still not ready after ingest:', verifyResult);
+              setGcStatus(`Waiting for ${verifyResult.missing} more clip(s)...`);
+              await new Promise(r => setTimeout(r, 2000));
+              return poll(); // Re-run ingest
+            }
+          } catch (e) {
+            console.error('Verification error:', e);
+          }
+          return 'ok';
+        }
+        if (st === 'FAILURE') throw new Error('ingest failed');
+        if (shallow && (Date.now() - started) > 3000) return 'later';
+        await new Promise(r => setTimeout(r, 800));
+        return poll();
+      }
+      await poll();
+      setGcDone('import');
+      setGcStatus('Imported rsynced raw clips.');
+    } catch (e) {
+      // Non-fatal; UI already shows downloaded/reused clips
+      console.error('Ingest error:', e);
+      setGcError('import');
+      setGcStatus('Import step skipped.');
+    }
+  }
+
+  // Verify all expected clips have been imported and have thumbnails
+  async function verifyAllClipsReady(){
+    if (!wizard.projectId) return { ready: true, total: 0, missing: 0 };
+    try {
+      const data = await api(`/api/projects/${wizard.projectId}/clips`);
+      const clips = (data && data.items) || [];
+      let missing = 0;
+      const missingDetails = [];
+      for (const clip of clips) {
+        // Check if clip has media file with thumbnail
+        if (!clip.media || !clip.media.thumbnail_url) {
+          missing++;
+          missingDetails.push({
+            id: clip.id,
+            title: clip.title,
+            hasMedia: !!clip.media,
+            hasThumbnail: !!(clip.media && clip.media.thumbnail_url),
+            mediaId: clip.media ? clip.media.id : null,
+            url: clip.source_url
+          });
+          console.warn(`Clip ${clip.id} (${clip.title}) missing media or thumbnail:`, clip.media);
+        }
+      }
+      console.log(`Verification: ${clips.length} total clips, ${missing} missing media/thumbnails, ${clips.length - missing} ready`);
+      if (missingDetails.length > 0) {
+        console.log('Missing details:', missingDetails);
+        console.log('Full clip data for debugging:', clips);
+      }
+      return {
+        ready: missing === 0,
+        total: clips.length,
+        missing: missing,
+        clips: clips
+      };
+    } catch (e) {
+      console.error('Failed to verify clips:', e);
+      return { ready: true, total: 0, missing: 0 }; // Fail open to avoid blocking
+    }
+  }
+  // On-demand compiled ingest helper: POST /api/projects/<id>/ingest/compiled and poll
+  async function runCompiledIngest(opts={}){
+    if (!wizard.projectId) return;
+    const shallow = !!opts.shallow;
+    try {
+      const resp = await fetch(`/api/projects/${wizard.projectId}/ingest/compiled`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(CSRF ? { 'X-CSRFToken': CSRF } : {}) },
+        body: JSON.stringify({ action: 'copy' })
+      });
+      if (!resp.ok) throw new Error('ingest compiled start failed');
+      const j = await resp.json();
+      const taskId = j.task_id;
+      if (!taskId) return;
+      const started = Date.now();
+      async function poll(){
+        const s = await api(`/api/tasks/${taskId}`);
+        const st = String((s && (s.state || s.status)) || '').toUpperCase();
+        if (st === 'SUCCESS') return 'ok';
+        if (st === 'FAILURE') throw new Error('ingest compiled failed');
+        if (shallow && (Date.now() - started) > 3000) return 'later';
+        await new Promise(r => setTimeout(r, 800));
+        return poll();
+      }
+      await poll();
+    } catch (_) {
+      // Non-fatal
+    }
+  }
   function clearGcStates(){ document.querySelectorAll('#gc-steps li').forEach(s => { s.classList.remove('active','error'); }); }
   function setGcActive(key){ clearGcStates(); const el = getGcStepEl(key); if (el) el.classList.add('active'); }
-  function setGcDone(key){ const el = getGcStepEl(key); if (el){ el.classList.remove('active','error'); el.classList.add('done'); } }
+  function setGcDone(key){ const el = getGcStepEl(key); if (el){ el.classList.remove('error'); el.classList.add('done'); } }
   function setGcError(key){ const el = getGcStepEl(key); if (el){ el.classList.remove('active','done'); el.classList.add('error'); } }
 
   // Compile summary renderer
@@ -833,8 +1083,16 @@
             try { await refreshExportInfo(); } catch (e) {
               const dl = document.getElementById('download-output');
               dl.classList.remove('disabled');
-              dl.href = `/projects/${wizard.projectId}/download-output`;
+              // Fallback to owner-only download route
+              dl.href = `/projects/${wizard.projectId}/download`;
             }
+            // Kick off compiled-artifact ingest on the server so Export can show a download URL
+            try {
+              showExportIngestBanner('Importing final render…');
+              await runCompiledIngest({ shallow: false });
+              hideExportIngestBanner();
+              await refreshExportInfo();
+            } catch (_) {}
             document.getElementById('upload-youtube').classList.remove('disabled');
             document.getElementById('upload-discord').classList.remove('disabled');
             return;
@@ -872,7 +1130,10 @@
   });
 
   async function refreshExportInfo(){
-    if (!wizard.projectId) return;
+    if (!wizard.projectId) {
+      console.warn('refreshExportInfo: No project ID set');
+      return;
+    }
     function fmtBytes(n){
       const num = Number(n);
       if (!isFinite(num) || num <= 0) return '—';
@@ -883,19 +1144,39 @@
     }
     function fmtSec(sec){ const s = Math.max(0, Math.floor(Number(sec)||0)); const m = Math.floor(s/60); const r = (s%60).toString().padStart(2,'0'); return `${m}:${r}`; }
     try {
+      console.log(`Fetching project details for project ${wizard.projectId}`);
       const details = await api(`/api/projects/${wizard.projectId}`);
+      console.log('Project details:', details);
+
       const dl = document.getElementById('download-output');
       const ready = document.getElementById('export-ready');
       const video = document.getElementById('export-video');
       const list = document.getElementById('export-details');
-      if (details && details.download_url) {
+
+      if (details && (details.download_url || details.preview_url)) {
+        // Enable download button
         dl.classList.remove('disabled');
-        dl.href = details.download_url;
+        dl.removeAttribute('aria-disabled');
+        if (details.download_url) dl.href = details.download_url;
+
+        // Show success banner
         ready.classList.remove('d-none');
-        dl.textContent = `Download Video${details.output_filename ? ` (${details.output_filename})` : ''}`;
-        if (video) {
-          try { video.src = details.download_url; } catch (_) {}
+
+        // Update button text
+        dl.innerHTML = `<i class="bi bi-download"></i> Download Video${details.output_filename ? ` (${details.output_filename})` : ''}`;
+
+        // Load video player
+        if (video && details.preview_url) {
+          try {
+            video.src = details.preview_url;
+            video.load();
+            console.log('Video player loaded with:', details.preview_url);
+          } catch (e) {
+            console.error('Failed to load video:', e);
+          }
         }
+
+        // Populate details list
         if (list) {
           list.innerHTML = '';
           const rows = [
@@ -912,8 +1193,12 @@
             list.appendChild(li);
           });
         }
+      } else {
+        console.warn('Project details missing download/preview URLs:', details);
       }
-    } catch (_) {}
+    } catch (e) {
+      console.error('Failed to load export info:', e);
+    }
   }
 
   // Intro/Outro listing and selection
@@ -1126,4 +1411,21 @@
       wrap.classList.toggle('show', !wantCollapsed);
     }
   }
+
+  // Initialize Export step if we're already on it (e.g., page reload or direct navigation)
+  (function initExportStep(){
+    const currentStep = document.querySelector('.wizard-step:not(.d-none)')?.dataset.step;
+    if (currentStep === '5') {
+      console.log('Initializing Export step on page load');
+      if (wizard.projectId) {
+        setTimeout(() => {
+          refreshExportInfo().catch((e) => {
+            console.error('Failed to load export info on init:', e);
+          });
+        }, 100);
+      } else {
+        console.warn('Export step active but no project ID available');
+      }
+    }
+  })();
 })();
