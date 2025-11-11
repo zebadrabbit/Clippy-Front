@@ -46,55 +46,109 @@ Refactoring estimate: **3-4 weeks of focused development + testing**
 
 ## Implementation Status
 
-### ✅ Completed
+### ✅ Completed (v0.11.0)
 
-1. **Created worker API endpoints** (`app/api/worker.py`):
+1. **Created worker API endpoints** (`app/api/worker.py` - 13 endpoints):
    - `GET /api/worker/clips/<clip_id>` - Fetch clip metadata
    - `POST /api/worker/clips/<clip_id>/status` - Update clip status
    - `GET /api/worker/media/<media_id>` - Fetch media file metadata
+   - `POST /api/worker/media` - Create media file record
    - `POST /api/worker/jobs` - Create processing job
    - `PUT /api/worker/jobs/<job_id>` - Update job progress/status
    - `GET /api/worker/projects/<project_id>` - Fetch project metadata
+   - `PUT /api/worker/projects/<project_id>/status` - Update project status
+   - `GET /api/worker/users/<user_id>/quota` - Get storage quota
+   - `GET /api/worker/users/<user_id>/tier-limits` - Get tier limits
+   - `POST /api/worker/users/<user_id>/record-render` - Record render usage
 
-2. **Created worker API client** (`app/tasks/worker_api.py`):
+2. **Created worker API client** (`app/tasks/worker_api.py` - 11 functions):
    - Helper functions for workers to call Flask APIs
    - Handles authentication with `WORKER_API_KEY`
-   - Functions: `get_clip_metadata()`, `update_clip_status()`, `create_processing_job()`, etc.
+   - Functions: `get_clip_metadata()`, `update_clip_status()`, `create_processing_job()`,
+     `update_processing_job()`, `get_media_metadata()`, `create_media_file()`,
+     `get_project_metadata()`, `update_project_status()`, `get_user_quota()`,
+     `get_user_tier_limits()`, `record_render_usage()`
 
 3. **Added configuration**:
    - `WORKER_API_KEY` in `config/settings.py`
    - `FLASK_APP_URL` for workers to know where to connect
 
-4. **Registered routes**:
+4. **Created reference implementation**:
+   - `app/tasks/download_clip_api_based.py` - API-based download task
+   - Shows pattern for removing DB dependencies
+
+5. **Registered routes**:
    - Worker endpoints auto-loaded in `app/api/routes.py`
 
-### ⚠️ TODO
+### ⚠️ TODO (Estimated: 2-3 weeks)
 
-1. **Refactor `download_clip_task`** (328 lines, complex):
+1. **Refactor `download_clip_task`** (416 lines, 50+ DB operations, complex):
    - Remove `session = get_db_session()`
    - Replace all `session.query()` calls with `worker_api` calls
    - Remove ProcessingJob DB manipulation, use API instead
+   - Implement deduplication logic server-side or via API
+   - Handle quota checks via API (`get_user_quota()`)
    - See `app/tasks/download_clip_api_based.py` for reference implementation
+   - **Complexity**: URL normalization, Twitch clip key extraction, media reuse logic,
+     checksum-based deduplication, post-download quota validation
 
-2. **Refactor `compile_video_task`**:
+2. **Refactor `compile_video_task`** (800+ lines, 100+ DB operations):
    - Replace project/clip queries with `worker_api.get_project_metadata()`
    - Replace intro/outro media queries with `worker_api.get_media_metadata()`
    - Remove ProcessingJob DB manipulation
+   - Use `create_media_file()` for final compilation
+   - Use `update_project_status()` instead of direct DB updates
+   - Use `record_render_usage()` instead of direct quota updates
+   - **Complexity**: Timeline building, transition handling, tier limits enforcement,
+     watermark application, multi-pass encoding
 
-3. **Handle MediaFile creation**:
-   - Workers currently create MediaFile records directly
-   - Need API endpoint: `POST /api/worker/media` to create MediaFile
-   - Workers return file paths, server creates DB records
+3. **Handle edge cases**:
+   - Media file path resolution across different hosts (`_resolve_media_input_path`)
+   - Thumbnail generation and storage path canonicalization
+   - Temporary file cleanup
+   - Error handling and rollback (no DB transactions in API mode)
 
-4. **Quota checks**:
-   - Move quota validation to server-side API
-   - Workers get quota info via API before starting work
-   - Or: API rejects work assignment if quota exceeded
-
-5. **Update automation tasks** (`app/tasks/automation.py`):
+4. **Update automation tasks** (`app/tasks/automation.py`):
    - `run_compilation_task` uses `download_clip_task.apply()` inline
    - This runs in same worker process, still needs DB access
    - Consider moving automation to server-side or using API
+
+5. **Testing**:
+   - Test workers without DATABASE_URL
+   - Verify all API endpoints handle errors correctly
+   - Test quota enforcement via API
+   - Test media reuse and deduplication
+   - Performance testing (API roundtrips vs direct DB)
+
+## Migration Phases (Recommended)
+
+### Phase 1: Infrastructure (✅ DONE)
+- Worker API endpoints
+- Worker API client library
+- Documentation
+- Reference implementation
+
+### Phase 2: Simple Tasks First (~1 week)
+- Create new API-based task for simple media operations
+- Test in production alongside DB-based tasks
+- Gain confidence with API patterns
+
+### Phase 3: Download Task Migration (~1-2 weeks)
+- Refactor download_clip_task piece by piece
+- Move deduplication logic to server-side helper
+- Keep both versions during transition
+- Feature flag to switch between DB/API mode
+
+### Phase 4: Compile Task Migration (~1-2 weeks)
+- Refactor compile_video_task
+- Handle timeline/transition logic
+- Test with real compilations
+
+### Phase 5: Cleanup (~few days)
+- Remove DATABASE_URL requirement
+- Delete old DB-based code paths
+- Update all documentation
+- Remove `get_db_session()` from workers
 
 ## Configuration Required
 

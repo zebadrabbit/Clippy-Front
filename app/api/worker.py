@@ -299,3 +299,225 @@ def worker_get_project(project_id: int):
     except Exception as e:
         current_app.logger.error(f"Error fetching project {project_id}: {e}")
         return jsonify({"error": "Internal error"}), 500
+
+
+@api_bp.route("/worker/projects/<int:project_id>/status", methods=["PUT"])
+@require_worker_key
+def worker_update_project_status(project_id: int):
+    """Update project status and output information.
+
+    Request body:
+        {
+            "status": str (optional),
+            "output_filename": str (optional),
+            "output_file_size": int (optional),
+            "completed_at": str (optional, ISO format)
+        }
+    """
+    try:
+        project = Project.query.get(project_id)
+        if not project:
+            return jsonify({"error": "Project not found"}), 404
+
+        data = request.get_json() or {}
+
+        if "status" in data:
+            from app.models import ProjectStatus
+
+            project.status = ProjectStatus(data["status"])
+
+        if "output_filename" in data:
+            project.output_filename = data["output_filename"]
+
+        if "output_file_size" in data:
+            project.output_file_size = int(data["output_file_size"])
+
+        if "completed_at" in data:
+            project.completed_at = datetime.fromisoformat(data["completed_at"])
+        elif data.get("status") == "completed":
+            project.completed_at = datetime.utcnow()
+
+        db.session.commit()
+
+        return jsonify({"status": "updated", "project_id": project_id})
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error updating project {project_id}: {e}")
+        return jsonify({"error": "Internal error"}), 500
+
+
+@api_bp.route("/worker/media", methods=["POST"])
+@require_worker_key
+def worker_create_media():
+    """Create a media file record.
+
+    Request body:
+        {
+            "filename": str,
+            "original_filename": str,
+            "file_path": str,
+            "file_size": int,
+            "mime_type": str,
+            "media_type": str,
+            "user_id": int,
+            "project_id": int (optional),
+            "duration": float (optional),
+            "width": int (optional),
+            "height": int (optional),
+            "framerate": float (optional),
+            "thumbnail_path": str (optional),
+            "is_processed": bool (optional)
+        }
+
+    Returns:
+        {"status": "created", "media_id": int}
+    """
+    try:
+        data = request.get_json() or {}
+
+        from app.models import MediaType
+
+        media = MediaFile(
+            filename=data.get("filename"),
+            original_filename=data.get("original_filename"),
+            file_path=data.get("file_path"),
+            file_size=int(data.get("file_size", 0)),
+            mime_type=data.get("mime_type"),
+            media_type=MediaType(data.get("media_type", "video")),
+            user_id=int(data.get("user_id")),
+            project_id=data.get("project_id"),
+            is_processed=data.get("is_processed", True),
+        )
+
+        if "duration" in data:
+            media.duration = float(data["duration"])
+        if "width" in data:
+            media.width = int(data["width"])
+        if "height" in data:
+            media.height = int(data["height"])
+        if "framerate" in data:
+            media.framerate = float(data["framerate"])
+        if "thumbnail_path" in data:
+            media.thumbnail_path = data["thumbnail_path"]
+
+        db.session.add(media)
+        db.session.commit()
+
+        return jsonify({"status": "created", "media_id": media.id})
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error creating media file: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/worker/users/<int:user_id>/quota", methods=["GET"])
+@require_worker_key
+def worker_get_user_quota(user_id: int):
+    """Get user storage quota information.
+
+    Returns:
+        {
+            "remaining_bytes": int,
+            "total_bytes": int,
+            "used_bytes": int
+        }
+    """
+    try:
+        from app.models import User
+        from app.quotas import storage_remaining_bytes
+
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        remaining = storage_remaining_bytes(user)
+
+        # Calculate total and used
+        tier = user.tier or "free"
+        from app.quotas import TIER_LIMITS
+
+        limits = TIER_LIMITS.get(tier, TIER_LIMITS["free"])
+        total_bytes = limits.get("max_storage_bytes", 0)
+        used_bytes = total_bytes - remaining if remaining and total_bytes else 0
+
+        return jsonify(
+            {
+                "remaining_bytes": remaining,
+                "total_bytes": total_bytes,
+                "used_bytes": used_bytes,
+            }
+        )
+    except Exception as e:
+        current_app.logger.error(f"Error fetching quota for user {user_id}: {e}")
+        return jsonify({"error": "Internal error"}), 500
+
+
+@api_bp.route("/worker/users/<int:user_id>/tier-limits", methods=["GET"])
+@require_worker_key
+def worker_get_tier_limits(user_id: int):
+    """Get user tier limits.
+
+    Returns:
+        {
+            "max_clips": int,
+            "max_resolution": str,
+            "max_compilation_minutes": int,
+            "watermark": bool
+        }
+    """
+    try:
+        from app.models import User
+
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        tier = user.tier or "free"
+        from app.quotas import TIER_LIMITS
+
+        limits = TIER_LIMITS.get(tier, TIER_LIMITS["free"])
+
+        return jsonify(
+            {
+                "max_clips": limits.get("max_clips"),
+                "max_resolution": limits.get("max_resolution"),
+                "max_compilation_minutes": limits.get("max_compilation_minutes"),
+                "watermark": limits.get("watermark", False),
+            }
+        )
+    except Exception as e:
+        current_app.logger.error(f"Error fetching tier limits for user {user_id}: {e}")
+        return jsonify({"error": "Internal error"}), 500
+
+
+@api_bp.route("/worker/users/<int:user_id>/record-render", methods=["POST"])
+@require_worker_key
+def worker_record_render_usage(user_id: int):
+    """Record render usage for a user.
+
+    Request body:
+        {
+            "project_id": int,
+            "seconds": float
+        }
+    """
+    try:
+        from app.models import User
+        from app.quotas import record_render_usage
+
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        data = request.get_json() or {}
+        project_id = data.get("project_id")
+        seconds = float(data.get("seconds", 0))
+
+        record_render_usage(user, project_id, seconds)
+
+        return jsonify({"status": "recorded"})
+    except Exception as e:
+        current_app.logger.error(
+            f"Error recording render usage for user {user_id}: {e}"
+        )
+        return jsonify({"error": "Internal error"}), 500

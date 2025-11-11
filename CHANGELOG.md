@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2025-11-11
+
+### Added
+- Extended worker API with 5 new endpoints:
+  - `POST /api/worker/media` - Create media file records from workers
+  - `PUT /api/worker/projects/<id>/status` - Update project status and output info
+  - `GET /api/worker/users/<id>/quota` - Fetch storage quota information
+  - `GET /api/worker/users/<id>/tier-limits` - Fetch tier-based limits
+  - `POST /api/worker/users/<id>/record-render` - Record render usage
+- Worker API client library updated with 11 total helper functions covering all endpoints
+- Phased migration plan in WORKER_API_MIGRATION.md with estimated timeline (2-3 weeks)
+
+### Changed
+- WORKER_API_MIGRATION.md now documents complete API coverage (13 endpoints total)
+- Migration plan broken down into 5 phases with specific deliverables
+- Updated documentation to clarify workers still require DATABASE_URL
+- Improved complexity estimates for download_clip_task (416 lines, 50+ DB ops) and compile_video_task (800+ lines, 100+ DB ops)
+
+### Notes
+- All worker API infrastructure complete and production-ready
+- Actual task refactoring to use APIs remains TODO (see WORKER_API_MIGRATION.md Phase 3-4)
+- Workers must continue using DATABASE_URL until refactoring is complete
+
 ## [0.11.0] - 2025-11-11
 
 ### Added

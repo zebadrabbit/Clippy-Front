@@ -2,8 +2,8 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "0.11.0"
-__version_info__ = (0, 11, 0)
+__version__ = "0.11.1"
+__version_info__ = (0, 11, 1)
 
 # Version history tracking
 VERSION_HISTORY = {
@@ -105,6 +105,14 @@ VERSION_HISTORY = {
         "comprehensive worker setup documentation (WORKER_SETUP.md) and migration plan (WORKER_API_MIGRATION.md); .env.worker.example template; "
         "enhanced clip download API logging; improved error messages for missing DATABASE_URL. Workers currently require database access; "
         "API endpoints ready for gradual migration to eliminate DB dependency."
+    ),
+    "0.11.1": (
+        "Extended worker API with complete endpoint coverage: added 5 new worker API endpoints "
+        "(POST /worker/media for media file creation, PUT /worker/projects/{id}/status, GET /worker/users/{id}/quota, "
+        "GET /worker/users/{id}/tier-limits, POST /worker/users/{id}/record-render); "
+        "updated worker API client library with 11 total helper functions; "
+        "documented phased migration approach in WORKER_API_MIGRATION.md (13 endpoints total, estimated 2-3 weeks for full refactoring). "
+        "Workers still require DATABASE_URL; all API infrastructure complete and ready for gradual task refactoring."
     ),
 }
 

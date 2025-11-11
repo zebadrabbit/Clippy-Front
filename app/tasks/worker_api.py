@@ -211,3 +211,149 @@ def get_project_metadata(project_id: int) -> dict[str, Any]:
         }
     """
     return _make_request("GET", f"/worker/projects/{project_id}")
+
+
+def update_project_status(
+    project_id: int,
+    status: str | None = None,
+    output_filename: str | None = None,
+    output_file_size: int | None = None,
+    completed_at: str | None = None,
+) -> dict[str, Any]:
+    """Update project status and output information.
+
+    Args:
+        project_id: Project ID
+        status: Project status
+        output_filename: Output filename
+        output_file_size: Output file size in bytes
+        completed_at: Completion timestamp (ISO format)
+
+    Returns:
+        {"status": "updated", "project_id": int}
+    """
+    data = {}
+    if status is not None:
+        data["status"] = status
+    if output_filename is not None:
+        data["output_filename"] = output_filename
+    if output_file_size is not None:
+        data["output_file_size"] = output_file_size
+    if completed_at is not None:
+        data["completed_at"] = completed_at
+
+    return _make_request("PUT", f"/worker/projects/{project_id}/status", data)
+
+
+def create_media_file(
+    filename: str,
+    original_filename: str,
+    file_path: str,
+    file_size: int,
+    mime_type: str,
+    media_type: str,
+    user_id: int,
+    project_id: int | None = None,
+    duration: float | None = None,
+    width: int | None = None,
+    height: int | None = None,
+    framerate: float | None = None,
+    thumbnail_path: str | None = None,
+    is_processed: bool = True,
+) -> dict[str, Any]:
+    """Create a media file record.
+
+    Args:
+        filename: Filename
+        original_filename: Original filename
+        file_path: File path (relative to instance)
+        file_size: File size in bytes
+        mime_type: MIME type
+        media_type: Media type (video, intro, outro, etc.)
+        user_id: User ID
+        project_id: Project ID (optional)
+        duration: Duration in seconds
+        width: Video width
+        height: Video height
+        framerate: Framerate
+        thumbnail_path: Thumbnail path
+        is_processed: Whether file is processed
+
+    Returns:
+        {"status": "created", "media_id": int}
+    """
+    data = {
+        "filename": filename,
+        "original_filename": original_filename,
+        "file_path": file_path,
+        "file_size": file_size,
+        "mime_type": mime_type,
+        "media_type": media_type,
+        "user_id": user_id,
+        "is_processed": is_processed,
+    }
+
+    if project_id is not None:
+        data["project_id"] = project_id
+    if duration is not None:
+        data["duration"] = duration
+    if width is not None:
+        data["width"] = width
+    if height is not None:
+        data["height"] = height
+    if framerate is not None:
+        data["framerate"] = framerate
+    if thumbnail_path is not None:
+        data["thumbnail_path"] = thumbnail_path
+
+    return _make_request("POST", "/worker/media", data)
+
+
+def get_user_quota(user_id: int) -> dict[str, Any]:
+    """Get user storage quota information.
+
+    Args:
+        user_id: User ID
+
+    Returns:
+        {
+            "remaining_bytes": int,
+            "total_bytes": int,
+            "used_bytes": int
+        }
+    """
+    return _make_request("GET", f"/worker/users/{user_id}/quota")
+
+
+def get_user_tier_limits(user_id: int) -> dict[str, Any]:
+    """Get user tier limits.
+
+    Args:
+        user_id: User ID
+
+    Returns:
+        {
+            "max_clips": int,
+            "max_resolution": str,
+            "max_compilation_minutes": int,
+            "watermark": bool
+        }
+    """
+    return _make_request("GET", f"/worker/users/{user_id}/tier-limits")
+
+
+def record_render_usage(
+    user_id: int, project_id: int, seconds: float
+) -> dict[str, Any]:
+    """Record render usage for a user.
+
+    Args:
+        user_id: User ID
+        project_id: Project ID
+        seconds: Render duration in seconds
+
+    Returns:
+        {"status": "recorded"}
+    """
+    data = {"project_id": project_id, "seconds": seconds}
+    return _make_request("POST", f"/worker/users/{user_id}/record-render", data)
