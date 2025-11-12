@@ -156,7 +156,7 @@ def _extract_video_metadata_standalone(video_path: str) -> dict[str, Any]:
     return metadata
 
 
-@celery_app.task(bind=True, queue="celery")
+@celery_app.task(bind=True)
 def download_clip_task_v2(self, clip_id: int, source_url: str) -> dict[str, Any]:
     """
     Download a clip from external source using yt-dlp (API-based, no DB access).
