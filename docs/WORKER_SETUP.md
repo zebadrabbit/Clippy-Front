@@ -1,8 +1,8 @@
 # Worker Setup - Quick Start
 
-## Current Architecture (v1 - Database Access Required)
+## Current Architecture (v0.12.0+ - API-Based, DMZ Compliant)
 
-Workers currently need **direct database access** to function. This is a temporary limitation while we migrate to API-based communication.
+Workers now communicate **100% via REST API** - no database credentials required! This enables deployment in untrusted DMZ environments.
 
 ### Required Environment Variables
 
@@ -13,8 +13,9 @@ Create a `.env` file in your worker directory (see `.env.worker.example` for all
 CELERY_BROKER_URL=redis://your-redis:6379/0
 CELERY_RESULT_BACKEND=redis://your-redis:6379/0
 
-# Database (REQUIRED)
-DATABASE_URL=postgresql://clippy_worker:password@db-host:5432/clippy_front
+# Worker API (v0.12.0+)
+FLASK_APP_URL=https://your-flask-server.com
+WORKER_API_KEY=your-secure-worker-api-key
 
 # Storage
 HOST_INSTANCE_PATH=/mnt/clippyfront
@@ -35,6 +36,9 @@ cp .env.worker.example .env
 # Edit .env with your values
 nano .env
 
+# Generate a secure worker API key
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+
 # Pull latest worker image from GHCR
 docker pull ghcr.io/zebadrabbit/clippy-worker:latest
 
@@ -44,27 +48,47 @@ docker compose -f compose.worker.yaml up -d worker artifact-sync
 
 ### Security Considerations
 
-Since workers have database access:
+API-based workers are **DMZ compliant**:
 
-1. **Use a dedicated DB user** with minimal privileges:
-   ```sql
-   CREATE USER clippy_worker WITH PASSWORD 'secure-password';
-   GRANT CONNECT ON DATABASE clippy_front TO clippy_worker;
-   GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO clippy_worker;
-   ```
+1. **No database credentials** - Workers never touch the database
+2. **API key authentication** - All communication secured via `WORKER_API_KEY`
+3. **Isolated deployment** - Can run in completely untrusted environments
+4. **Minimal attack surface** - Workers only have access to:
+   - Redis (for task queue)
+   - Flask app API endpoints (authenticated)
+   - Shared storage volume (read/write for media files)
 
-2. **Restrict network access** via VPN/firewall:
-   - Only allow worker IPs to connect to database
-   - Use SSL for database connections
-   - Monitor worker DB queries
+### API Endpoints Used by Workers
 
-3. **Plan migration** to API-based workers (see `WORKER_API_MIGRATION.md`)
+Workers communicate via these authenticated endpoints (see `docs/WORKER_API_MIGRATION.md` for details):
+
+- `GET /api/worker/clips/<id>` - Fetch clip metadata for downloads
+- `POST /api/worker/clips/<id>/status` - Update download status
+- `POST /api/worker/clips/download` - Batch download validation
+- `GET /api/worker/media/<id>` - Fetch media file metadata
+- `POST /api/worker/media` - Create media file records
+- `POST /api/worker/media/batch` - Batch fetch media files
+- `GET /api/worker/projects/<id>` - Fetch project metadata
+- `GET /api/worker/projects/<id>/compilation-context` - Batch fetch compilation data
+- `PUT /api/worker/projects/<id>/status` - Update project status
+- `POST /api/worker/jobs` - Create processing job
+- `PUT /api/worker/jobs/<id>` - Update job progress
+- `GET /api/worker/jobs/<id>` - Get job metadata
+- `GET /api/worker/users/<id>/quota` - Get user storage quota
+- `GET /api/worker/users/<id>/tier-limits` - Get tier limits
+- `POST /api/worker/users/<id>/record-render` - Record render usage
 
 ### Troubleshooting
 
-**Error: "Could not parse SQLAlchemy URL from string ''"**
-- Missing `DATABASE_URL` in worker `.env`
-- Copy `.env.worker.example` to `.env` and fill in database connection details
+**Error: "Missing WORKER_API_KEY or FLASK_APP_URL"**
+- Missing required API configuration in worker `.env`
+- Copy `.env.worker.example` to `.env` and fill in `FLASK_APP_URL` and `WORKER_API_KEY`
+- Generate API key with: `python -c "import secrets; print(secrets.token_urlsafe(32))"`
+
+**Error: "Worker API authentication failed (401)"**
+- `WORKER_API_KEY` in worker `.env` doesn't match Flask app configuration
+- Verify the same key is set in both Flask app and worker environments
+- Check Flask app logs for authentication errors
 
 **Error: "Downloads not permitted on queue 'celery'"**
 - Worker is listening to wrong queue
@@ -80,23 +104,61 @@ Since workers have database access:
 - Check volume mounts in `compose.worker.yaml`
 - Verify file permissions (worker runs as root by default)
 
-## Future: API-Based Workers (v2)
+**API endpoint errors (404, 500)**
+- Verify `FLASK_APP_URL` is correct and accessible from worker
+- Check Flask app is running and healthy
+- Review Flask app logs for endpoint errors
+- Ensure Flask app is v0.12.0+ (older versions don't have all worker API endpoints)
 
-The long-term plan is to eliminate database dependencies. Workers will communicate via API endpoints:
+## Migration from v0.11.x (Database-Based Workers)
 
-- ✅ API endpoints created (`/api/worker/*`)
-- ✅ Worker API client library created (`app/tasks/worker_api.py`)
-- ⏳ Task refactoring in progress (large effort)
+If upgrading from workers that used `DATABASE_URL`:
 
-See `WORKER_API_MIGRATION.md` for details.
+1. **Update worker image** to v0.12.0+:
+   ```bash
+   docker pull ghcr.io/zebadrabbit/clippy-worker:latest
+   ```
 
-### Benefits of API-Based Approach
+2. **Update `.env`** file:
+   - Remove: `DATABASE_URL`
+   - Add: `FLASK_APP_URL=https://your-flask-server.com`
+   - Add: `WORKER_API_KEY=your-secure-key`
 
-- Workers truly isolated from database (DMZ compliant)
-- No database connection pooling issues
-- Better security (workers can't directly modify sensitive data)
-- Easier to scale workers
-- Can run workers in completely untrusted environments
+3. **Set Flask app environment**:
+   ```bash
+   # In Flask app .env
+   WORKER_API_KEY=same-secure-key-as-workers
+   ```
+
+4. **Restart workers**:
+   ```bash
+   docker compose -f compose.worker.yaml down
+   docker compose -f compose.worker.yaml up -d
+   ```
+
+All tasks now use API-based communication automatically (download_clip_v2, compile_video_v2).
+
+## Architecture Details
+
+## Architecture Details
+
+### Worker API Migration (Completed v0.12.0)
+
+- ✅ Phase 1-2: API infrastructure (19 endpoints, 16 client functions)
+- ✅ Phase 3: Download task migration (download_clip_v2)
+- ✅ Phase 4: Compilation task migration (compile_video_v2)
+- ✅ Phase 5: Production cutover (all tasks use v2)
+
+See `docs/WORKER_API_MIGRATION.md` for complete migration details.
+
+### Benefits of API-Based Architecture
+
+- ✅ Workers truly isolated from database (DMZ compliant)
+- ✅ No database connection pooling issues
+- ✅ Better security (workers can't directly modify sensitive data)
+- ✅ Easier to scale workers horizontally
+- ✅ Can run workers in completely untrusted environments
+- ✅ Simplified worker deployment (fewer credentials to manage)
 
 ## Quick Reference
 
@@ -128,7 +190,8 @@ See `.env.worker.example` for complete list with descriptions.
 **Required:**
 - `CELERY_BROKER_URL`
 - `CELERY_RESULT_BACKEND`
-- `DATABASE_URL`
+- `FLASK_APP_URL` (v0.12.0+)
+- `WORKER_API_KEY` (v0.12.0+)
 - `HOST_INSTANCE_PATH`
 
 **Important:**
