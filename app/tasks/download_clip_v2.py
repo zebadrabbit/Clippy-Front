@@ -22,6 +22,140 @@ from typing import Any
 from app.tasks.celery_app import celery_app
 
 
+def _download_with_ytdlp_standalone(
+    url: str,
+    clip_id: int,
+    clip_title: str,
+    max_bytes: int | None = None,
+    download_dir: str | None = None,
+) -> str:
+    """
+    Standalone yt-dlp download without Flask app dependency.
+
+    Args:
+        url: Source URL to download
+        clip_id: Clip ID for filename
+        clip_title: Clip title for fallback slug
+        max_bytes: Maximum file size in bytes
+        download_dir: Target directory
+
+    Returns:
+        Path to downloaded file
+    """
+    os.makedirs(download_dir, exist_ok=True)
+
+    # Create safe slug from clip_id
+    safe_slug = f"clip_{clip_id}"
+
+    # Get yt-dlp binary path
+    yt_bin = os.environ.get("YT_DLP_BINARY", "yt-dlp")
+
+    # Build output template
+    output_template = os.path.join(download_dir, f"{safe_slug}.%(ext)s")
+
+    # Build command
+    cmd = [
+        yt_bin,
+        "--no-config",
+        "--format",
+        "best[ext=mp4]/best",
+        "--output",
+        output_template,
+        "--no-playlist",
+        url,
+    ]
+
+    # Add filesize limit if specified
+    if max_bytes:
+        cmd.extend(["--max-filesize", str(max_bytes)])
+
+    # Add cookies if available
+    cookies_path = os.environ.get("YT_DLP_COOKIES")
+    if cookies_path and os.path.exists(cookies_path):
+        cmd.extend(["--cookies", cookies_path])
+
+    # Execute download
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+
+    if result.returncode != 0:
+        raise RuntimeError(f"yt-dlp failed: {result.stderr}")
+
+    # Find downloaded file
+    pattern = os.path.join(download_dir, f"{safe_slug}.*")
+    import glob
+
+    matches = glob.glob(pattern)
+
+    if not matches:
+        raise RuntimeError(f"Download succeeded but file not found: {pattern}")
+
+    # Return the first match (should be only one)
+    return matches[0]
+
+
+def _extract_video_metadata_standalone(video_path: str) -> dict[str, Any]:
+    """
+    Extract video metadata using ffprobe without Flask app dependency.
+
+    Returns:
+        Dict with duration, width, height, framerate
+    """
+    ffprobe_bin = os.environ.get("FFPROBE_BINARY", "ffprobe")
+
+    cmd = [
+        ffprobe_bin,
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration:stream=width,height,r_frame_rate,codec_name",
+        "-of",
+        "json",
+        video_path,
+    ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+
+    if result.returncode != 0:
+        return {}
+
+    import json
+
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return {}
+
+    # Extract metadata
+    metadata = {}
+
+    # Duration from format
+    fmt = data.get("format", {})
+    if "duration" in fmt:
+        try:
+            metadata["duration"] = float(fmt["duration"])
+        except (ValueError, TypeError):
+            pass
+
+    # Video stream info
+    streams = data.get("streams", [])
+    video_stream = next((s for s in streams if s.get("codec_type") == "video"), None)
+
+    if video_stream:
+        metadata["width"] = video_stream.get("width")
+        metadata["height"] = video_stream.get("height")
+
+        # Parse framerate (e.g., "30/1" -> 30.0)
+        r_frame_rate = video_stream.get("r_frame_rate", "")
+        if "/" in r_frame_rate:
+            try:
+                num, den = r_frame_rate.split("/")
+                metadata["framerate"] = float(num) / float(den)
+            except (ValueError, ZeroDivisionError):
+                pass
+
+    return metadata
+
+
 @celery_app.task(bind=True, queue="celery")
 def download_clip_task_v2(self, clip_id: int, source_url: str) -> dict[str, Any]:
     """
@@ -38,7 +172,6 @@ def download_clip_task_v2(self, clip_id: int, source_url: str) -> dict[str, Any]
         Dict: Task result with downloaded file information
     """
     from app.tasks import worker_api
-    from app.tasks.video_processing import download_with_yt_dlp, extract_video_metadata
 
     job_id = None
 
@@ -157,17 +290,10 @@ def download_clip_task_v2(self, clip_id: int, source_url: str) -> dict[str, Any]
         worker_api.update_processing_job(job_id, progress=30)
         log("info", "Downloading video", status="downloading")
 
-        # Create minimal clip stub for download_with_yt_dlp
-        class ClipStub:
-            def __init__(self, clip_id, title):
-                self.id = clip_id
-                self.title = title
-
-        clip_stub = ClipStub(clip_id, clip_meta.get("title", f"clip_{clip_id}"))
-
-        output_path = download_with_yt_dlp(
+        output_path = _download_with_ytdlp_standalone(
             source_url,
-            clip_stub,
+            clip_id,
+            clip_meta.get("title", f"clip_{clip_id}"),
             max_bytes=int(rem_bytes) if rem_bytes is not None else None,
             download_dir=dl_dir,
         )
@@ -178,7 +304,7 @@ def download_clip_task_v2(self, clip_id: int, source_url: str) -> dict[str, Any]
         )
         worker_api.update_processing_job(job_id, progress=70)
 
-        metadata = extract_video_metadata(output_path)
+        metadata = _extract_video_metadata_standalone(output_path)
         duration = metadata.get("duration") if metadata else None
         width = metadata.get("width") if metadata else None
         height = metadata.get("height") if metadata else None
