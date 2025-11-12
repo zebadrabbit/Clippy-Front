@@ -159,6 +159,26 @@ def create_processing_job(
     return _make_request("POST", "/worker/jobs", data)
 
 
+def get_processing_job(job_id: int) -> dict[str, Any]:
+    """Get processing job metadata.
+
+    Args:
+        job_id: Job ID
+
+    Returns:
+        {
+            "id": int,
+            "celery_task_id": str,
+            "job_type": str,
+            "status": str,
+            "progress": int,
+            "result_data": dict,
+            "error_message": str | None
+        }
+    """
+    return _make_request("GET", f"/worker/jobs/{job_id}")
+
+
 def update_processing_job(
     job_id: int,
     status: str | None = None,
@@ -245,6 +265,44 @@ def update_project_status(
     return _make_request("PUT", f"/worker/projects/{project_id}/status", data)
 
 
+def find_reusable_media(
+    user_id: int,
+    source_url: str,
+    normalized_url: str | None = None,
+    clip_key: str | None = None,
+) -> dict[str, Any]:
+    """Find reusable media file for a user by URL/key matching.
+
+    Searches for existing media files owned by the user that match
+    the provided source URL (normalized or Twitch clip key).
+
+    Args:
+        user_id: User ID
+        source_url: Original source URL
+        normalized_url: Normalized URL (optional, will be computed if not provided)
+        clip_key: Twitch clip key (optional, will be extracted if not provided)
+
+    Returns:
+        {
+            "found": bool,
+            "media_file_id": int (if found),
+            "file_path": str (if found),
+            "duration": float (if found),
+            "reused_from_clip_id": int (if found)
+        }
+    """
+    data = {
+        "user_id": user_id,
+        "source_url": source_url,
+    }
+    if normalized_url:
+        data["normalized_url"] = normalized_url
+    if clip_key:
+        data["clip_key"] = clip_key
+
+    return _make_request("POST", "/worker/media/find-reusable", data)
+
+
 def create_media_file(
     filename: str,
     original_filename: str,
@@ -259,9 +317,13 @@ def create_media_file(
     height: int | None = None,
     framerate: float | None = None,
     thumbnail_path: str | None = None,
+    checksum: str | None = None,
     is_processed: bool = True,
 ) -> dict[str, Any]:
-    """Create a media file record.
+    """Create a media file record with optional checksum deduplication.
+
+    If checksum is provided and matches an existing file owned by the user,
+    returns the existing media_id instead of creating a new record.
 
     Args:
         filename: Filename
@@ -277,10 +339,15 @@ def create_media_file(
         height: Video height
         framerate: Framerate
         thumbnail_path: Thumbnail path
+        checksum: SHA256 checksum for deduplication
         is_processed: Whether file is processed
 
     Returns:
-        {"status": "created", "media_id": int}
+        {
+            "status": "created" | "reused",
+            "media_id": int,
+            "deduped": bool
+        }
     """
     data = {
         "filename": filename,
@@ -305,6 +372,8 @@ def create_media_file(
         data["framerate"] = framerate
     if thumbnail_path is not None:
         data["thumbnail_path"] = thumbnail_path
+    if checksum is not None:
+        data["checksum"] = checksum
 
     return _make_request("POST", "/worker/media", data)
 
@@ -357,3 +426,75 @@ def record_render_usage(
     """
     data = {"project_id": project_id, "seconds": seconds}
     return _make_request("POST", f"/worker/users/{user_id}/record-render", data)
+
+
+# ============================================================================
+# Phase 4: Batch operations for compile_video_task migration
+# ============================================================================
+
+
+def get_compilation_context(project_id: int) -> dict[str, Any]:
+    """Get all data needed for video compilation in a single call.
+
+    Fetches project metadata, ordered clips with media files, and tier limits
+    in a single batch operation to avoid N+1 queries.
+
+    Args:
+        project_id: Project ID
+
+    Returns:
+        {
+            "project": {
+                "id": int,
+                "user_id": int,
+                "title": str,
+                "output_resolution": str,
+                "output_framerate": int,
+                "max_clip_duration": float | None,
+                ...
+            },
+            "clips": [
+                {
+                    "id": int,
+                    "order_index": int,
+                    "start_time": float | None,
+                    "end_time": float | None,
+                    "creator_name": str | None,
+                    "game_name": str | None,
+                    "media_file": {...}
+                }
+            ],
+            "tier_limits": {
+                "max_res_label": str | None,
+                "max_fps": int | None,
+                "max_clips": int | None
+            }
+        }
+    """
+    return _make_request("GET", f"/worker/projects/{project_id}/compilation-context")
+
+
+def get_media_batch(media_ids: list[int], user_id: int) -> dict[str, Any]:
+    """Get multiple MediaFile records by IDs in a single batch query.
+
+    Used for fetching intro/outro/transitions efficiently.
+
+    Args:
+        media_ids: List of media file IDs
+        user_id: User ID for ownership validation
+
+    Returns:
+        {
+            "media_files": [
+                {
+                    "id": int,
+                    "file_path": str,
+                    "media_type": str,
+                    "duration": float,
+                    ...
+                }
+            ]
+        }
+    """
+    data = {"media_ids": media_ids, "user_id": user_id}
+    return _make_request("POST", "/worker/media/batch", data)

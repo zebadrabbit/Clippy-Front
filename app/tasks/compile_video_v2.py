@@ -1,0 +1,737 @@
+"""
+Video compilation task (v2) - Worker API based implementation.
+
+This is the Phase 4 migration of compile_video_task to use worker API instead
+of direct database access. Workers can run without DATABASE_URL configured.
+
+Key differences from original:
+- Uses worker_api.get_compilation_context() instead of session queries
+- Uses worker_api.get_media_batch() for intro/outro/transitions
+- Uses worker_api for all job/project updates
+- Helper functions no longer take session parameter
+- All tier limits come from API response
+"""
+
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+from datetime import datetime
+from typing import Any
+
+from app import storage as storage_lib
+from app.ffmpeg_config import (
+    audio_args,
+    build_overlay_filter,
+    encoder_args,
+    overlay_enabled,
+    parse_resolution,
+    resolve_fontfile,
+)
+from app.tasks import worker_api
+from app.tasks.celery_app import celery_app
+from app.tasks.video_processing import (
+    _cap_resolution_label,
+    _get_app,
+    _resolve_media_input_path,
+    extract_video_metadata,
+    resolve_binary,
+)
+
+
+def _apply_tier_limits_to_clips(
+    clips: list[dict], tier_limits: dict[str, Any]
+) -> list[dict]:
+    """Apply tier-based clip count limits.
+
+    Args:
+        clips: List of clip dicts from API
+        tier_limits: Tier limits dict with max_clips
+
+    Returns:
+        Clipped list if tier enforces max_clips
+    """
+    max_clips = tier_limits.get("max_clips")
+    if max_clips and isinstance(max_clips, int) and max_clips > 0:
+        if len(clips) > max_clips:
+            return clips[:max_clips]
+    return clips
+
+
+def _process_clip_v2(
+    clip_data: dict, temp_dir: str, project_data: dict, tier_limits: dict
+) -> str:
+    """Process a single clip for compilation (API-based).
+
+    Args:
+        clip_data: Clip dict from API (includes media_file nested dict)
+        temp_dir: Temporary directory for processing
+        project_data: Project dict from API
+        tier_limits: Tier limits dict
+
+    Returns:
+        str: Path to processed clip file
+
+    Raises:
+        ValueError: If clip has no media file or file doesn't exist
+    """
+    media_file = clip_data.get("media_file")
+    if not media_file:
+        raise ValueError(f"Clip {clip_data['id']} has no associated media file")
+
+    # Resolve and repair input path if needed
+    original_path = media_file.get("file_path", "")
+    input_path = _resolve_media_input_path(original_path)
+
+    if not os.path.exists(input_path):
+        raise ValueError(
+            f"Media file not found for clip {clip_data['id']}: {input_path}"
+        )
+
+    output_path = os.path.join(temp_dir, f"clip_{clip_data['id']}_processed.mp4")
+
+    # Build ffmpeg command
+    app = _get_app()
+    ffmpeg_bin = resolve_binary(app, "ffmpeg")
+
+    from app.ffmpeg_config import config_args as _cfg_args
+
+    cmd = [ffmpeg_bin, *_cfg_args(app, "ffmpeg", "encode")]
+
+    # Add clip trimming if specified
+    start_time = clip_data.get("start_time")
+    end_time = clip_data.get("end_time")
+    max_clip_duration = project_data.get("max_clip_duration")
+
+    if start_time is not None and end_time is not None:
+        duration = end_time - start_time
+        cmd.extend(["-ss", str(start_time), "-t", str(duration)])
+    elif max_clip_duration:
+        cmd.extend(["-t", str(max_clip_duration)])
+
+    # Apply tier-based resolution cap
+    eff_label = _cap_resolution_label(
+        project_data.get("output_resolution", "1080p"),
+        tier_limits.get("max_res_label"),
+    )
+    target_res = parse_resolution(
+        None, eff_label or project_data.get("output_resolution", "1080p")
+    )
+    scale_filter = (
+        f"scale={target_res.split('x')[0]}:{target_res.split('x')[1]}:flags=lanczos"
+    )
+
+    # Overlay text (creator + game name)
+    font = resolve_fontfile()
+    creator_name = (clip_data.get("creator_name") or "").strip()
+    game_name = (clip_data.get("game_name") or "").strip()
+
+    # Build filter complex with overlay if enabled
+    if overlay_enabled(app) and (creator_name or game_name):
+        overlay_filter = build_overlay_filter(
+            font_path=font, creator_name=creator_name, game_name=game_name
+        )
+        filter_complex = f"{scale_filter},{overlay_filter}"
+    else:
+        filter_complex = scale_filter
+
+    cmd.extend(["-i", input_path, "-filter_complex", filter_complex])
+
+    # Add encoder args
+    cmd.extend(encoder_args(app))
+
+    # Add audio normalization if configured
+    audio_profile = project_data.get("audio_norm_profile")
+    audio_db = project_data.get("audio_norm_db")
+    if audio_profile or audio_db:
+        cmd.extend(audio_args(app, audio_profile, audio_db))
+
+    # Output
+    cmd.extend(["-y", output_path])
+
+    # Execute
+    subprocess.run(cmd, check=True, capture_output=True)
+
+    return output_path
+
+
+def _process_media_file_v2(
+    media_path: str, output_path: str, project_data: dict, tier_limits: dict
+) -> None:
+    """Process intro/outro/transition media file (API-based).
+
+    Args:
+        media_path: Input media file path
+        output_path: Output processed file path
+        project_data: Project dict from API
+        tier_limits: Tier limits dict
+    """
+    app = _get_app()
+    ffmpeg_bin = resolve_binary(app, "ffmpeg")
+
+    from app.ffmpeg_config import config_args as _cfg_args
+
+    # Apply tier-based resolution cap
+    eff_label = _cap_resolution_label(
+        project_data.get("output_resolution", "1080p"),
+        tier_limits.get("max_res_label"),
+    )
+    target_res = parse_resolution(
+        None, eff_label or project_data.get("output_resolution", "1080p")
+    )
+
+    cmd = [
+        ffmpeg_bin,
+        *_cfg_args(app, "ffmpeg", "encode"),
+        "-i",
+        media_path,
+        "-vf",
+        f"scale={target_res.split('x')[0]}:{target_res.split('x')[1]}:flags=lanczos",
+        *encoder_args(app),
+        "-y",
+        output_path,
+    ]
+
+    subprocess.run(cmd, check=True, capture_output=True)
+
+
+def _build_timeline_with_transitions_v2(
+    project_data: dict,
+    processed_clips: list[str],
+    temp_dir: str,
+    intro_id: int | None,
+    outro_id: int | None,
+    transition_ids: list[int],
+    randomize: bool,
+    tier_limits: dict,
+) -> list[str]:
+    """Build timeline with intro/outro/transitions (API-based).
+
+    Args:
+        project_data: Project dict from API
+        processed_clips: List of processed clip file paths
+        temp_dir: Temporary directory
+        intro_id: Optional intro media file ID
+        outro_id: Optional outro media file ID
+        transition_ids: List of transition media file IDs
+        randomize: Whether to randomize transition selection
+        tier_limits: Tier limits dict
+
+    Returns:
+        List of file paths in final timeline order
+    """
+    user_id = project_data["user_id"]
+
+    # Collect all media IDs to fetch
+    media_ids = []
+    if intro_id:
+        media_ids.append(intro_id)
+    if outro_id:
+        media_ids.append(outro_id)
+    if transition_ids:
+        media_ids.extend(transition_ids)
+
+    # Batch fetch intro/outro/transitions
+    media_files = {}
+    if media_ids:
+        response = worker_api.get_media_batch(media_ids, user_id)
+        for mf in response.get("media_files", []):
+            media_files[mf["id"]] = mf
+
+    # Process intro
+    intro_path = None
+    if intro_id and intro_id in media_files:
+        intro = media_files[intro_id]
+        intro_processed = os.path.join(temp_dir, "intro_processed.mp4")
+        _process_media_file_v2(
+            intro["file_path"], intro_processed, project_data, tier_limits
+        )
+        intro_path = intro_processed
+
+    # Process outro
+    outro_path = None
+    if outro_id and outro_id in media_files:
+        outro = media_files[outro_id]
+        outro_processed = os.path.join(temp_dir, "outro_processed.mp4")
+        _process_media_file_v2(
+            outro["file_path"], outro_processed, project_data, tier_limits
+        )
+        outro_path = outro_processed
+
+    # Process transitions
+    transition_paths = []
+    for tid in transition_ids:
+        if tid in media_files:
+            trans = media_files[tid]
+            trans_processed = os.path.join(temp_dir, f"transition_{tid}_processed.mp4")
+            _process_media_file_v2(
+                trans["file_path"], trans_processed, project_data, tier_limits
+            )
+            transition_paths.append(trans_processed)
+
+    # Build timeline with transitions between segments
+    import random as _random
+
+    def _next_transition(idx: int) -> str | None:
+        if not transition_paths:
+            return None
+        if randomize:
+            return _random.choice(transition_paths)
+        return transition_paths[idx % len(transition_paths)]
+
+    segments = []
+    if intro_path:
+        segments.append(intro_path)
+
+    # Add clips with transitions between them
+    transition_idx = 0
+    for _i, clip_path in enumerate(processed_clips):
+        # Add transition before this clip if not first segment
+        if segments and transition_paths:
+            trans = _next_transition(transition_idx)
+            if trans:
+                segments.append(trans)
+                transition_idx += 1
+        segments.append(clip_path)
+
+    # Add transition before outro if we have an outro
+    if outro_path and segments and transition_paths:
+        trans = _next_transition(transition_idx)
+        if trans:
+            segments.append(trans)
+
+    if outro_path:
+        segments.append(outro_path)
+
+    # Save segment labels for logging
+    labels = []
+    for seg in segments:
+        basename = os.path.basename(seg)
+        if "intro" in basename:
+            labels.append("Intro")
+        elif "outro" in basename:
+            labels.append("Outro")
+        elif "transition" in basename:
+            labels.append("Transition")
+        elif "clip" in basename:
+            labels.append(basename.replace("_processed.mp4", ""))
+        else:
+            labels.append(basename)
+
+    labels_path = os.path.join(temp_dir, "concat_labels.json")
+    with open(labels_path, "w") as f:
+        json.dump(labels, f)
+
+    return segments
+
+
+def _compile_final_video_v2(clips: list[str], temp_dir: str, project_data: dict) -> str:
+    """Compile final video from clips (API-based).
+
+    Args:
+        clips: List of processed clip file paths
+        temp_dir: Temporary directory
+        project_data: Project dict from API
+
+    Returns:
+        Path to compiled output file
+    """
+    app = _get_app()
+    ffmpeg_bin = resolve_binary(app, "ffmpeg")
+
+    output_format = project_data.get("output_format", "mp4")
+    output_path = os.path.join(
+        temp_dir, f"compilation_{project_data['id']}.{output_format}"
+    )
+
+    # Create concat file
+    concat_file = os.path.join(temp_dir, "concat.txt")
+    with open(concat_file, "w") as f:
+        for clip_path in clips:
+            # Escape single quotes in path
+            escaped = clip_path.replace("'", r"'\''")
+            f.write(f"file '{escaped}'\n")
+
+    from app.ffmpeg_config import config_args as _cfg_args
+
+    cmd = [
+        ffmpeg_bin,
+        *_cfg_args(app, "ffmpeg", "concat"),
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        concat_file,
+        "-c",
+        "copy",
+        "-y",
+        output_path,
+    ]
+
+    subprocess.run(cmd, check=True, capture_output=True)
+
+    return output_path
+
+
+def _save_final_video_v2(temp_path: str, project_data: dict, user_id: int) -> str:
+    """Save final video to persistent storage (API-based).
+
+    Args:
+        temp_path: Temporary output file path
+        project_data: Project dict from API
+        user_id: User ID (passed separately since we don't have user object)
+
+    Returns:
+        Final persistent file path
+    """
+    app = _get_app()
+
+    with app.app_context():
+        # Build output directory using user ID
+        # Use simplified path: <data_root>/user_<id>/compilations/
+        data_root = storage_lib.data_root()
+        output_dir = os.path.join(data_root, f"user_{user_id}", "compilations")
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Generate filename
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        output_format = project_data.get("output_format", "mp4")
+        project_name = project_data.get("name", f"project_{project_data['id']}")
+        # Sanitize project name for filename
+        safe_name = "".join(
+            c for c in project_name if c.isalnum() or c in (" ", "_", "-")
+        )
+        safe_name = safe_name.replace(" ", "_")
+        filename = f"{safe_name}_{timestamp}.{output_format}"
+
+        final_path = os.path.join(output_dir, filename)
+        shutil.move(temp_path, final_path)
+
+        return final_path
+
+
+@celery_app.task(bind=True, name="tasks.compile_video_v2")
+def compile_video_task_v2(
+    self,
+    project_id: int,
+    intro_id: int | None = None,
+    outro_id: int | None = None,
+    transition_ids: list[int] | None = None,
+    randomize_transitions: bool = False,
+    clip_ids: list[int] | None = None,
+) -> dict[str, Any]:
+    """Compile video clips into final compilation (Worker API version).
+
+    This version uses worker API instead of direct database access,
+    allowing workers to run in DMZ without DATABASE_URL.
+
+    Args:
+        project_id: ID of the project to compile
+        intro_id: Optional intro media file ID
+        outro_id: Optional outro media file ID
+        transition_ids: Optional list of transition media file IDs
+        randomize_transitions: Whether to randomize transition selection
+        clip_ids: Optional explicit timeline subset
+
+    Returns:
+        Dict with compilation results
+    """
+    try:
+        # Update task status
+        self.update_state(
+            state="PROGRESS", meta={"progress": 0, "status": "Starting compilation"}
+        )
+
+        # Fetch all compilation context in one API call
+        context = worker_api.get_compilation_context(project_id)
+        project_data = context["project"]
+        all_clips = context["clips"]
+        tier_limits = context["tier_limits"]
+
+        # Create processing job
+        job_response = worker_api.create_processing_job(
+            celery_task_id=self.request.id,
+            job_type="compile_video",
+            project_id=project_id,
+            user_id=project_data["user_id"],
+        )
+        job_id = job_response["job_id"]
+
+        # Helper to log to job result_data
+        def log(level: str, message: str, status: str | None = None):
+            try:
+                # Fetch current job to get existing logs
+                job_data = worker_api.get_processing_job(job_id)
+                result_data = job_data.get("result_data") or {}
+                logs = result_data.get("logs") or []
+                logs.append(
+                    {
+                        "ts": datetime.utcnow().isoformat(),
+                        "level": level,
+                        "message": message,
+                        "status": status,
+                    }
+                )
+                result_data["logs"] = logs
+                worker_api.update_processing_job(job_id, result_data=result_data)
+            except Exception:
+                pass  # Don't fail compilation if logging fails
+
+        # Filter clips if explicit timeline provided
+        if clip_ids:
+            clip_map = {c["id"]: c for c in all_clips}
+            clips = [clip_map[cid] for cid in clip_ids if cid in clip_map]
+        else:
+            clips = all_clips
+
+        # Apply tier limits
+        original_count = len(clips)
+        clips = _apply_tier_limits_to_clips(clips, tier_limits)
+        if len(clips) < original_count:
+            max_clips = tier_limits.get("max_clips", 0)
+            log(
+                "info",
+                f"Tier limit: using first {max_clips} clip(s) out of {original_count}",
+                status="limits",
+            )
+
+        if not clips:
+            raise ValueError("No clips found for compilation")
+
+        self.update_state(
+            state="PROGRESS", meta={"progress": 10, "status": "Preparing clips"}
+        )
+        log("info", "Preparing clips", status="preparing")
+        worker_api.update_processing_job(job_id, progress=10)
+
+        # Process clips in temporary directory
+        with tempfile.TemporaryDirectory() as temp_dir:
+            processed_clips = []
+            used_clip_ids = []
+
+            for i, clip in enumerate(clips):
+                progress = 10 + (i / len(clips)) * 60  # 10-70%
+                self.update_state(
+                    state="PROGRESS",
+                    meta={
+                        "progress": progress,
+                        "status": f"Processing clip {i+1}/{len(clips)}",
+                    },
+                )
+                log("info", f"Processing clip {i+1}/{len(clips)}")
+                worker_api.update_processing_job(job_id, progress=int(progress))
+
+                try:
+                    clip_path = _process_clip_v2(
+                        clip, temp_dir, project_data, tier_limits
+                    )
+                    if clip_path:
+                        processed_clips.append(clip_path)
+                        used_clip_ids.append(clip["id"])
+                except Exception as e:
+                    log("warning", f"Failed to process clip {clip['id']}: {str(e)}")
+                    continue
+
+            if not processed_clips:
+                raise ValueError("No clips could be processed")
+
+            self.update_state(
+                state="PROGRESS", meta={"progress": 70, "status": "Adding intro/outro"}
+            )
+            log("info", "Adding intro/outro")
+            worker_api.update_processing_job(job_id, progress=70)
+
+            # Build timeline with transitions
+            final_clips = _build_timeline_with_transitions_v2(
+                project_data=project_data,
+                processed_clips=processed_clips,
+                temp_dir=temp_dir,
+                intro_id=intro_id,
+                outro_id=outro_id,
+                transition_ids=transition_ids or [],
+                randomize=randomize_transitions,
+                tier_limits=tier_limits,
+            )
+
+            self.update_state(
+                state="PROGRESS",
+                meta={"progress": 80, "status": "Compiling final video"},
+            )
+            log("info", "Compiling final video", status="compiling")
+            worker_api.update_processing_job(job_id, progress=80)
+
+            # Log concat items
+            labels_path = os.path.join(temp_dir, "concat_labels.json")
+            try:
+                if os.path.exists(labels_path):
+                    with open(labels_path) as f:
+                        labels = json.load(f) or []
+                        for idx, label in enumerate(labels):
+                            log(
+                                "info",
+                                f"Concatenating: {label} ({idx+1} of {len(labels)})",
+                                status="concatenating",
+                            )
+            except Exception:
+                pass
+
+            # Compile final video
+            output_path = _compile_final_video_v2(final_clips, temp_dir, project_data)
+
+            self.update_state(
+                state="PROGRESS", meta={"progress": 90, "status": "Saving output"}
+            )
+            log("info", "Saving output", status="saving")
+            worker_api.update_processing_job(job_id, progress=90)
+
+            # Save to persistent storage
+            final_output_path = _save_final_video_v2(
+                output_path, project_data, project_data["user_id"]
+            )
+
+            # Create MediaFile record for compilation
+            try:
+                file_size = os.path.getsize(final_output_path)
+                canonical_path = (
+                    storage_lib.instance_canonicalize(final_output_path)
+                    or final_output_path
+                )
+
+                media_data = {
+                    "filename": os.path.basename(final_output_path),
+                    "original_filename": os.path.basename(final_output_path),
+                    "file_path": canonical_path,
+                    "file_size": file_size,
+                    "mime_type": "video/mp4",
+                    "media_type": "compilation",
+                    "user_id": project_data["user_id"],
+                    "project_id": project_id,
+                    "is_processed": True,
+                }
+
+                # Extract metadata
+                meta = extract_video_metadata(final_output_path)
+                if meta:
+                    media_data["duration"] = meta.get("duration")
+                    media_data["width"] = meta.get("width")
+                    media_data["height"] = meta.get("height")
+                    media_data["framerate"] = meta.get("framerate")
+
+                # Generate thumbnail
+                try:
+                    app = _get_app()
+                    with app.app_context():
+                        # Use simplified thumbnail path under user directory
+                        data_root = storage_lib.data_root()
+                        thumbs_dir = os.path.join(
+                            data_root, f"user_{project_data['user_id']}", "thumbnails"
+                        )
+                        os.makedirs(thumbs_dir, exist_ok=True)
+
+                    stem = os.path.splitext(os.path.basename(final_output_path))[0]
+                    thumb_path = os.path.join(thumbs_dir, f"{stem}.jpg")
+
+                    if not os.path.exists(thumb_path):
+                        ffmpeg_bin = resolve_binary(app, "ffmpeg")
+                        ts = str(app.config.get("THUMBNAIL_TIMESTAMP_SECONDS", 1))
+                        w = int(app.config.get("THUMBNAIL_WIDTH", 480))
+
+                        from app.ffmpeg_config import config_args as _cfg_args
+
+                        subprocess.run(
+                            [
+                                ffmpeg_bin,
+                                *_cfg_args(app, "ffmpeg", "thumbnail"),
+                                "-y",
+                                "-ss",
+                                ts,
+                                "-i",
+                                final_output_path,
+                                "-frames:v",
+                                "1",
+                                "-vf",
+                                f"scale={w}:-1",
+                                thumb_path,
+                            ],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            check=True,
+                        )
+
+                    media_data["thumbnail_path"] = (
+                        storage_lib.instance_canonicalize(thumb_path) or thumb_path
+                    )
+                except Exception:
+                    pass
+
+                worker_api.create_media_file(**media_data)
+            except Exception:
+                pass  # Don't fail if media record creation fails
+
+            # Update project status
+            worker_api.update_project_status(
+                project_id=project_id,
+                status="completed",
+                output_filename=os.path.basename(final_output_path),
+                output_file_size=os.path.getsize(final_output_path),
+            )
+
+            # Record render usage
+            try:
+                if meta and meta.get("duration"):
+                    seconds = int(float(meta["duration"]))
+                    if seconds > 0:
+                        worker_api.record_render_usage(
+                            user_id=project_data["user_id"],
+                            project_id=project_id,
+                            seconds=seconds,
+                        )
+            except Exception:
+                pass
+
+            # Update job status
+            result_data = {
+                "output_file": storage_lib.instance_canonicalize(final_output_path)
+                or final_output_path,
+                "clips_processed": len(processed_clips),
+                "used_clip_ids": used_clip_ids,
+            }
+
+            worker_api.update_processing_job(
+                job_id,
+                status="success",
+                progress=100,
+                result_data=result_data,
+            )
+
+            log("success", "Compilation completed", status="completed")
+
+            return {
+                "status": "completed",
+                "output_file": storage_lib.instance_canonicalize(final_output_path)
+                or final_output_path,
+                "clips_processed": len(processed_clips),
+                "project_id": project_id,
+                "used_clip_ids": used_clip_ids,
+            }
+
+    except Exception as e:
+        # Update project and job on error
+        try:
+            worker_api.update_project_status(
+                project_id=project_id, status="failed", processing_log=str(e)
+            )
+        except Exception:
+            pass
+
+        if "job_id" in locals():
+            try:
+                worker_api.update_processing_job(
+                    job_id, status="failure", error_message=str(e)
+                )
+            except Exception:
+                pass
+
+        raise

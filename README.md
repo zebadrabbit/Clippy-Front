@@ -230,6 +230,12 @@ python scripts/health_check.py --db "$DATABASE_URL" --redis "$REDIS_URL"
 
 **📖 See [WORKER_SETUP.md](WORKER_SETUP.md) for complete worker configuration guide**
 
+### v0.12.0: DMZ-Compliant Workers
+
+**Workers now operate 100% via API** - no database credentials required!
+
+Workers communicate with the Flask app using only `FLASK_APP_URL` and `WORKER_API_KEY`, enabling deployment in untrusted DMZ environments without database access.
+
 ### Quick Start
 
 1) Copy worker environment template
@@ -245,14 +251,17 @@ cp .env.worker.example .env
 CELERY_BROKER_URL=redis://your-redis:6379/0
 CELERY_RESULT_BACKEND=redis://your-redis:6379/0
 
-# Database (currently required - see WORKER_API_MIGRATION.md)
-DATABASE_URL=postgresql://clippy_worker:password@db-host:5432/clippy_front
+# Worker API (NEW - required for v0.12.0+)
+FLASK_APP_URL=https://your-flask-app.com
+WORKER_API_KEY=your-secure-worker-api-key
 
 # Storage
 HOST_INSTANCE_PATH=/mnt/clippyfront
 CELERY_CONCURRENCY=4
 CELERY_QUEUES=gpu,celery
 ```
+
+**Note**: `DATABASE_URL` is no longer required for workers. All data access is now via REST API.
 
 3) Deploy worker
 

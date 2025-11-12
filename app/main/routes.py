@@ -817,7 +817,9 @@ def compile_project(project_id):
 
     try:
         # Import here to avoid circular import
-        from app.tasks.video_processing import compile_video_task
+        from app.tasks.compile_video_v2 import (
+            compile_video_task_v2 as compile_video_task,
+        )
 
         # Update project status
         project.status = ProjectStatus.PROCESSING

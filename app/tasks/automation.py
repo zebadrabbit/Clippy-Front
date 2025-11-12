@@ -333,7 +333,9 @@ def run_compilation_task(self, task_id: int) -> dict[str, Any]:
         session.commit()
 
         # Create clips and download (reuse when possible); call the existing download task synchronously
-        from app.tasks.video_processing import download_clip_task
+        from app.tasks.download_clip_v2 import (
+            download_clip_task_v2 as download_clip_task,
+        )
 
         items: list[dict] = []
         seen = set()
@@ -421,7 +423,9 @@ def run_compilation_task(self, task_id: int) -> dict[str, Any]:
         session.commit()
 
         # Enqueue compile
-        from app.tasks.video_processing import compile_video_task
+        from app.tasks.compile_video_v2 import (
+            compile_video_task_v2 as compile_video_task,
+        )
 
         intro_id = p.get("intro_id")
         outro_id = p.get("outro_id")

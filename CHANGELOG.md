@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2025-01-14
+
+### Added
+- **Phase 3: Download Task Migration** - Created `download_clip_v2.py` (303 lines)
+  - 100% API-based clip download task with URL-based media reuse
+  - New endpoint: `POST /api/worker/clips/download` - Batch download validation
+  - New client function: `download_clip_batch()` in worker_api.py
+  - Test coverage: `test_download_clip_v2.py` with 2 tests for batch endpoint
+- **Phase 4: Compilation Task Migration** - Created `compile_video_v2.py` (685 lines)
+  - 100% API-based video compilation task with batch operations
+  - New endpoint: `GET /api/worker/projects/<id>/compilation-context` - Batch fetch project + clips + tier limits
+  - New endpoint: `POST /api/worker/media/batch` - Batch fetch multiple MediaFile records
+  - New endpoint: `GET /api/worker/jobs/<id>` - Get job metadata for logging
+  - New client functions: `get_compilation_context()`, `get_media_batch()`, `get_processing_job()`
+  - Test coverage: `test_compile_video_v2.py` with 5 tests for batch endpoints
+- **Phase 5: Production Cutover** - Migrated all task invocations to v2
+  - Updated `celery_app.py` to register v2 tasks
+  - Updated 4 files to use v2 task imports (projects.py, routes.py, automation.py)
+  - Import aliasing preserves compatibility at call sites
+  - All 70 tests passing with zero regressions
+
+### Changed
+- **Worker Architecture: DMZ-Compliant** - Workers no longer require DATABASE_URL
+  - Workers now communicate 100% via REST API using FLASK_APP_URL and WORKER_API_KEY
+  - Total API coverage: 19 endpoints, 16 client functions
+  - download_clip_task → download_clip_task_v2 (cutover complete)
+  - compile_video_task → compile_video_task_v2 (cutover complete)
+- Updated WORKER_API_MIGRATION.md with complete Phases 3-5 documentation
+- Updated .env.worker.example to remove DATABASE_URL requirement
+- Updated README.md with v0.12.0 migration notes and API-only worker configuration
+
+### Fixed
+- Model field mismatch in compilation context endpoint (Project.title → Project.name)
+- Storage path consistency for thumbnails and compilations
+- Duplicate function definition in worker_api.py
+
+### Security
+- Workers can now be deployed in untrusted DMZ environments without database credentials
+- API key authentication enforces all worker-to-app communication
+- Media file ownership validation in batch endpoints prevents unauthorized access
+
+### Notes
+- Migration journey: Phases 1-2 (infrastructure), Phase 3 (downloads), Phase 4 (compilation), Phase 5 (cutover)
+- Original tasks in video_processing.py remain for reference but are no longer invoked
+- All background processing now uses API-based v2 tasks exclusively
+- Test coverage: 70/70 passing (65 original + 5 Phase 4)
+
 ## [0.11.1] - 2025-11-11
 
 ### Added

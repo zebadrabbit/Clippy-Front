@@ -24,6 +24,8 @@ def make_celery(app_name=__name__):
     # Conditionally register task modules
     celery_includes = [
         "app.tasks.video_processing",
+        "app.tasks.download_clip_v2",  # Phase 3: API-based download
+        "app.tasks.compile_video_v2",  # Phase 4: API-based compilation
         "app.tasks.media_maintenance",
         "app.tasks.automation",
     ]
@@ -50,7 +52,7 @@ def make_celery(app_name=__name__):
         task_routes=(
             lambda name, args, kwargs, options, task=None: (
                 {"queue": "gpu"}
-                if name == "app.tasks.video_processing.compile_video_task"
+                if name == "tasks.compile_video_v2"  # Updated to v2 task
                 and config.USE_GPU_QUEUE
                 else None
             )

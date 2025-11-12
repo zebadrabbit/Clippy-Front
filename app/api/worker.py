@@ -12,13 +12,14 @@ Endpoints:
 - PUT /worker/jobs/<job_id> - Update processing job status/progress
 """
 
+import os
 from datetime import datetime
 from functools import wraps
 
 from flask import current_app, jsonify, request
 
 from app.api import api_bp
-from app.models import Clip, MediaFile, ProcessingJob, Project, db
+from app.models import Clip, MediaFile, MediaType, ProcessingJob, Project, db
 
 
 def require_worker_key(f):
@@ -80,7 +81,7 @@ def worker_get_clip(clip_id: int):
                 "source_id": clip.source_id,
                 "project_id": clip.project_id,
                 "user_id": clip.project.user_id,
-                "username": clip.project.user.username,
+                "username": clip.project.owner.username,
                 "project_name": clip.project.name,
             }
         )
@@ -164,6 +165,202 @@ def worker_get_media(media_id: int):
         return jsonify({"error": "Internal error"}), 500
 
 
+@api_bp.route("/worker/media/find-reusable", methods=["POST"])
+@require_worker_key
+def worker_find_reusable_media():
+    """Find reusable media for a user by URL/key matching.
+
+    Searches for existing media files owned by the user that match
+    the provided source URL (normalized or Twitch clip key).
+
+    Request body:
+        {
+            "user_id": int,
+            "source_url": str,
+            "normalized_url": str (optional),
+            "clip_key": str (optional - for Twitch clips)
+        }
+
+    Returns:
+        {
+            "found": bool,
+            "media_file_id": int (if found),
+            "file_path": str (if found),
+            "duration": float (if found)
+        }
+    """
+    try:
+        data = request.get_json() or {}
+        user_id = data.get("user_id")
+        source_url = (data.get("source_url") or "").strip()
+        normalized_url = (data.get("normalized_url") or "").strip()
+        clip_key = (data.get("clip_key") or "").strip()
+
+        if not user_id or not source_url:
+            return jsonify({"error": "user_id and source_url required"}), 400
+
+        # Helper functions (same as in download_clip_task)
+        def _normalize_url(u: str) -> str:
+            try:
+                s = (u or "").strip()
+                if not s:
+                    return ""
+                base = s.split("?")[0].split("#")[0]
+                return base[:-1] if base.endswith("/") else base
+            except Exception:
+                return (u or "").strip()
+
+        def _extract_clip_key(u: str) -> str:
+            try:
+                s = _normalize_url(u)
+                if not s:
+                    return ""
+                low = s.lower()
+                if ("twitch.tv" in low and "/clip/" in low) or (
+                    "clips.twitch.tv" in low
+                ):
+                    try:
+                        if "clips.twitch.tv" in low:
+                            slug = low.split("clips.twitch.tv", 1)[1].lstrip("/")
+                        else:
+                            slug = low.split("/clip/", 1)[1]
+                        slug = slug.split("/")[0]
+                        return slug
+                    except Exception:
+                        return s
+                return s
+            except Exception:
+                return _normalize_url(u)
+
+        # Use provided values or compute them
+        key = clip_key or _extract_clip_key(source_url)
+        norm = normalized_url or _normalize_url(source_url)
+
+        # Look for matching clips with media files
+        from app.models import Clip, Project
+
+        candidates = (
+            db.session.query(Clip)
+            .join(Project, Project.id == Clip.project_id)
+            .filter(
+                Project.user_id == user_id,
+                Clip.media_file_id.isnot(None),
+            )
+            .order_by(Clip.created_at.desc())
+            .limit(500)
+            .all()
+        )
+
+        for prev in candidates:
+            try:
+                # Skip if clip has no source_url
+                if not prev.source_url:
+                    continue
+
+                pv_key = _extract_clip_key(prev.source_url)
+                pv_norm = _normalize_url(prev.source_url)
+            except Exception:
+                continue
+
+            if (pv_key and key and pv_key == key) or (pv_norm and pv_norm == norm):
+                if prev.media_file_id:
+                    mf = db.session.get(MediaFile, prev.media_file_id)
+                    if not mf or not mf.file_path:
+                        continue
+
+                    # Check if file exists (using canonical path resolution)
+                    from app.tasks.video_processing import _resolve_media_input_path
+
+                    try:
+                        file_path = _resolve_media_input_path(mf.file_path)
+                        if file_path and os.path.exists(file_path):
+                            return jsonify(
+                                {
+                                    "found": True,
+                                    "media_file_id": mf.id,
+                                    "file_path": mf.file_path,
+                                    "duration": mf.duration,
+                                    "reused_from_clip_id": prev.id,
+                                }
+                            )
+                    except Exception:
+                        # File path couldn't be resolved, continue searching
+                        continue
+
+        return jsonify({"found": False})
+
+    except Exception as e:
+        current_app.logger.error(f"Error finding reusable media: {e}")
+        return jsonify({"error": "Internal error"}), 500
+
+
+@api_bp.route("/worker/media", methods=["POST"])
+@require_worker_key
+def worker_create_media_file():
+    """Create a media file record.
+
+    Request body:
+        {
+            "filename": str,
+            "original_filename": str,
+            "file_path": str,
+            "file_size": int,
+            "mime_type": str,
+            "media_type": str,
+            "user_id": int,
+            "project_id": int (optional),
+            "duration": float (optional),
+            "width": int (optional),
+            "height": int (optional),
+            "framerate": float (optional),
+            "thumbnail_path": str (optional)
+        }
+
+    Returns:
+        {
+            "status": "created",
+            "media_id": int
+        }
+    """
+    try:
+        data = request.get_json() or {}
+        user_id = data.get("user_id")
+
+        # Create new media file
+        media = MediaFile(
+            filename=data.get("filename"),
+            original_filename=data.get("original_filename"),
+            file_path=data.get("file_path"),
+            file_size=data.get("file_size"),
+            mime_type=data.get("mime_type"),
+            media_type=MediaType[data.get("media_type").upper()]
+            if data.get("media_type")
+            else MediaType.CLIP,
+            user_id=user_id,
+            project_id=data.get("project_id"),
+            duration=data.get("duration"),
+            width=data.get("width"),
+            height=data.get("height"),
+            framerate=data.get("framerate"),
+            thumbnail_path=data.get("thumbnail_path"),
+        )
+
+        db.session.add(media)
+        db.session.commit()
+
+        return jsonify(
+            {
+                "status": "created",
+                "media_id": media.id,
+            }
+        )
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error creating media file: {e}")
+        return jsonify({"error": "Internal error"}), 500
+
+
 @api_bp.route("/worker/jobs", methods=["POST"])
 @require_worker_key
 def worker_create_job():
@@ -199,6 +396,43 @@ def worker_create_job():
         return jsonify({"error": "Internal error"}), 500
 
 
+@api_bp.route("/worker/jobs/<int:job_id>", methods=["GET"])
+@require_worker_key
+def worker_get_job(job_id: int):
+    """Get processing job metadata.
+
+    Returns:
+        {
+            "id": int,
+            "celery_task_id": str,
+            "job_type": str,
+            "status": str,
+            "progress": int,
+            "result_data": dict,
+            "error_message": str | None
+        }
+    """
+    try:
+        job = ProcessingJob.query.get(job_id)
+        if not job:
+            return jsonify({"error": "Job not found"}), 404
+
+        return jsonify(
+            {
+                "id": job.id,
+                "celery_task_id": job.celery_task_id,
+                "job_type": job.job_type,
+                "status": job.status,
+                "progress": job.progress or 0,
+                "result_data": job.result_data or {},
+                "error_message": job.error_message,
+            }
+        )
+    except Exception as e:
+        current_app.logger.error(f"Error fetching job {job_id}: {e}")
+        return jsonify({"error": "Internal error"}), 500
+
+
 @api_bp.route("/worker/jobs/<int:job_id>", methods=["PUT"])
 @require_worker_key
 def worker_update_job(job_id: int):
@@ -221,7 +455,7 @@ def worker_update_job(job_id: int):
 
         if "status" in data:
             job.status = data["status"]
-            if data["status"] in ("completed", "failed"):
+            if data["status"] in ("completed", "success", "failed", "failure"):
                 job.completed_at = datetime.utcnow()
 
         if "progress" in data:
@@ -229,9 +463,14 @@ def worker_update_job(job_id: int):
 
         if "result_data" in data:
             # Merge with existing result_data
+            # SQLAlchemy JSON columns need explicit flagging for mutations
             existing = job.result_data or {}
             existing.update(data["result_data"])
             job.result_data = existing
+            # Force SQLAlchemy to detect the change
+            from sqlalchemy.orm.attributes import flag_modified
+
+            flag_modified(job, "result_data")
 
         if "error_message" in data:
             job.error_message = data["error_message"]
@@ -288,7 +527,7 @@ def worker_get_project(project_id: int):
                 "id": project.id,
                 "name": project.name,
                 "user_id": project.user_id,
-                "username": project.user.username,
+                "username": project.owner.username,
                 "max_clip_duration": project.max_clip_duration,
                 "output_resolution": project.output_resolution,
                 "output_format": project.output_format,
@@ -424,25 +663,30 @@ def worker_get_user_quota(user_id: int):
     """
     try:
         from app.models import User
-        from app.quotas import storage_remaining_bytes
+        from app.quotas import get_effective_tier, storage_used_bytes
 
         user = User.query.get(user_id)
         if not user:
             return jsonify({"error": "User not found"}), 404
 
-        remaining = storage_remaining_bytes(user)
+        tier = get_effective_tier(user)
+        if not tier:
+            # No tier assigned, return defaults
+            return jsonify(
+                {
+                    "remaining_bytes": 0,
+                    "total_bytes": 0,
+                    "used_bytes": 0,
+                }
+            )
 
-        # Calculate total and used
-        tier = user.tier or "free"
-        from app.quotas import TIER_LIMITS
-
-        limits = TIER_LIMITS.get(tier, TIER_LIMITS["free"])
-        total_bytes = limits.get("max_storage_bytes", 0)
-        used_bytes = total_bytes - remaining if remaining and total_bytes else 0
+        used_bytes = storage_used_bytes(user.id)
+        total_bytes = tier.storage_limit_bytes if tier else 0
+        remaining_bytes = max(0, total_bytes - used_bytes) if total_bytes else None
 
         return jsonify(
             {
-                "remaining_bytes": remaining,
+                "remaining_bytes": remaining_bytes,
                 "total_bytes": total_bytes,
                 "used_bytes": used_bytes,
             }
@@ -459,30 +703,38 @@ def worker_get_tier_limits(user_id: int):
 
     Returns:
         {
-            "max_clips": int,
-            "max_resolution": str,
-            "max_compilation_minutes": int,
-            "watermark": bool
+            "storage_limit_bytes": int,
+            "render_time_limit_seconds": int,
+            "apply_watermark": bool,
+            "is_unlimited": bool
         }
     """
     try:
         from app.models import User
+        from app.quotas import get_effective_tier, should_apply_watermark
 
         user = User.query.get(user_id)
         if not user:
             return jsonify({"error": "User not found"}), 404
 
-        tier = user.tier or "free"
-        from app.quotas import TIER_LIMITS
-
-        limits = TIER_LIMITS.get(tier, TIER_LIMITS["free"])
+        tier = get_effective_tier(user)
+        if not tier:
+            # Return sensible defaults if no tier
+            return jsonify(
+                {
+                    "storage_limit_bytes": 0,
+                    "render_time_limit_seconds": 0,
+                    "apply_watermark": True,
+                    "is_unlimited": False,
+                }
+            )
 
         return jsonify(
             {
-                "max_clips": limits.get("max_clips"),
-                "max_resolution": limits.get("max_resolution"),
-                "max_compilation_minutes": limits.get("max_compilation_minutes"),
-                "watermark": limits.get("watermark", False),
+                "storage_limit_bytes": tier.storage_limit_bytes or 0,
+                "render_time_limit_seconds": tier.render_time_limit_seconds or 0,
+                "apply_watermark": should_apply_watermark(user),
+                "is_unlimited": tier.is_unlimited,
             }
         )
     except Exception as e:
@@ -520,4 +772,198 @@ def worker_record_render_usage(user_id: int):
         current_app.logger.error(
             f"Error recording render usage for user {user_id}: {e}"
         )
+        return jsonify({"error": "Internal error"}), 500
+
+
+# ============================================================================
+# Phase 4: Batch endpoints for compile_video_task migration
+# ============================================================================
+
+
+@api_bp.route("/worker/projects/<int:project_id>/compilation-context", methods=["GET"])
+@require_worker_key
+def worker_get_compilation_context(project_id: int):
+    """Get all data needed for video compilation in a single call.
+
+    Returns project metadata, ordered clips with media files, and tier limits.
+    Avoids N+1 queries by fetching everything in one batch.
+
+    Response:
+        {
+            "project": {
+                "id": int,
+                "user_id": int,
+                "name": str,
+                "output_resolution": str,
+                "output_format": str,
+                "max_clip_duration": float | None,
+                ...
+            },
+            "clips": [
+                {
+                    "id": int,
+                    "order_index": int,
+                    "start_time": float | None,
+                    "end_time": float | None,
+                    "creator_name": str | None,
+                    "game_name": str | None,
+                    "media_file": {
+                        "id": int,
+                        "file_path": str,
+                        "duration": float,
+                        ...
+                    }
+                }
+            ],
+            "tier_limits": {
+                "max_res_label": str | None,
+                "max_fps": int | None,
+                "max_clips": int | None
+            }
+        }
+    """
+    try:
+        project = Project.query.get(project_id)
+        if not project:
+            return jsonify({"error": "Project not found"}), 404
+
+        # Get ordered clips with eager-loaded media files
+        clips = (
+            Clip.query.filter_by(project_id=project_id)
+            .order_by(Clip.order_index, Clip.id)
+            .all()
+        )
+
+        # Get tier limits
+        from app.models import User
+
+        user = User.query.get(project.user_id)
+        tier_limits = {"max_res_label": None, "max_fps": None, "max_clips": None}
+
+        if user and hasattr(user, "tier") and user.tier:
+            if not user.tier.is_unlimited:
+                tier_limits = {
+                    "max_res_label": user.tier.max_output_resolution,
+                    "max_fps": user.tier.max_fps,
+                    "max_clips": user.tier.max_clips_per_project,
+                }
+
+        # Serialize response
+        return jsonify(
+            {
+                "project": {
+                    "id": project.id,
+                    "user_id": project.user_id,
+                    "name": project.name or "",
+                    "output_resolution": project.output_resolution or "1920x1080",
+                    "output_format": project.output_format or "mp4",
+                    "max_clip_duration": project.max_clip_duration,
+                },
+                "clips": [
+                    {
+                        "id": clip.id,
+                        "order_index": clip.order_index or 0,
+                        "start_time": clip.start_time,
+                        "end_time": clip.end_time,
+                        "creator_name": clip.creator_name,
+                        "game_name": clip.game_name,
+                        "media_file": (
+                            {
+                                "id": clip.media_file.id,
+                                "file_path": clip.media_file.file_path or "",
+                                "duration": clip.media_file.duration,
+                                "width": clip.media_file.width,
+                                "height": clip.media_file.height,
+                                "framerate": clip.media_file.framerate,
+                            }
+                            if clip.media_file
+                            else None
+                        ),
+                    }
+                    for clip in clips
+                ],
+                "tier_limits": tier_limits,
+            }
+        )
+    except Exception as e:
+        current_app.logger.error(
+            f"Error fetching compilation context for project {project_id}: {e}"
+        )
+        return jsonify({"error": "Internal error"}), 500
+
+
+@api_bp.route("/worker/media/batch", methods=["POST"])
+@require_worker_key
+def worker_get_media_batch():
+    """Get multiple MediaFile records by IDs in a single query.
+
+    Used for fetching intro/outro/transitions efficiently.
+
+    Request body:
+        {
+            "media_ids": [int, ...],
+            "user_id": int  # For ownership validation
+        }
+
+    Response:
+        {
+            "media_files": [
+                {
+                    "id": int,
+                    "file_path": str,
+                    "media_type": str,
+                    "duration": float,
+                    ...
+                }
+            ]
+        }
+    """
+    try:
+        data = request.get_json() or {}
+        media_ids = data.get("media_ids", [])
+        user_id = data.get("user_id")
+
+        if not isinstance(media_ids, list):
+            return jsonify({"error": "media_ids must be a list"}), 400
+
+        if not user_id:
+            return jsonify({"error": "user_id required"}), 400
+
+        # Batch fetch with ownership validation
+        media_files = (
+            MediaFile.query.filter(
+                MediaFile.id.in_(media_ids), MediaFile.user_id == user_id
+            ).all()
+            if media_ids
+            else []
+        )
+
+        # Verify all files exist on disk
+        existing_media = []
+        for mf in media_files:
+            if mf.file_path and os.path.exists(mf.file_path):
+                existing_media.append(mf)
+            else:
+                current_app.logger.warning(
+                    f"Media file {mf.id} not found on disk: {mf.file_path}"
+                )
+
+        return jsonify(
+            {
+                "media_files": [
+                    {
+                        "id": mf.id,
+                        "file_path": mf.file_path or "",
+                        "media_type": mf.media_type.value if mf.media_type else None,
+                        "duration": mf.duration,
+                        "width": mf.width,
+                        "height": mf.height,
+                        "framerate": mf.framerate,
+                    }
+                    for mf in existing_media
+                ]
+            }
+        )
+    except Exception as e:
+        current_app.logger.error(f"Error fetching media batch: {e}")
         return jsonify({"error": "Internal error"}), 500

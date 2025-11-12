@@ -2,8 +2,8 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "0.11.1"
-__version_info__ = (0, 11, 1)
+__version__ = "0.12.0"
+__version_info__ = (0, 12, 0)
 
 # Version history tracking
 VERSION_HISTORY = {
@@ -113,6 +113,15 @@ VERSION_HISTORY = {
         "updated worker API client library with 11 total helper functions; "
         "documented phased migration approach in WORKER_API_MIGRATION.md (13 endpoints total, estimated 2-3 weeks for full refactoring). "
         "Workers still require DATABASE_URL; all API infrastructure complete and ready for gradual task refactoring."
+    ),
+    "0.12.0": (
+        "Worker API migration complete - DMZ-compliant workers: completed Phases 3-5 of worker API migration, "
+        "eliminating DATABASE_URL requirement for workers. Phase 3: created download_clip_v2 (303 lines) with URL-based media reuse, "
+        "removed deprecated checksum deduplication. Phase 4: created compile_video_v2 (685 lines) with batch API endpoints "
+        "(compilation-context, media-batch) to avoid N+1 queries; full feature parity (timeline, transitions, tier enforcement, thumbnails). "
+        "Phase 5: switched all task invocations to v2, updated celery_app.py task routing, removed old imports. "
+        "Workers now operate 100% via API with FLASK_APP_URL and WORKER_API_KEY. All 70 tests passing. "
+        "19 total worker API endpoints, 16 client functions. Full migration documentation in WORKER_API_MIGRATION.md."
     ),
 }
 

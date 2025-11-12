@@ -143,7 +143,7 @@ def create_and_download_clips_api(project_id: int):
     )
     effective_limit = max(1, min(effective_limit, max_batch))
 
-    from app.tasks.video_processing import download_clip_task
+    from app.tasks.download_clip_v2 import download_clip_task_v2 as download_clip_task
 
     download_queue: str | None = None
     try:
@@ -460,7 +460,9 @@ def compile_project_api(project_id: int):
         from sqlalchemy import func
 
         from app.quotas import check_render_quota
-        from app.tasks.video_processing import compile_video_task
+        from app.tasks.compile_video_v2 import (
+            compile_video_task_v2 as compile_video_task,
+        )
 
         intro_id = data.get("intro_id")
         outro_id = data.get("outro_id")
