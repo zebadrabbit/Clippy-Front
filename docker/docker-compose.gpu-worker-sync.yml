@@ -11,7 +11,9 @@ services:
       - USE_GPU_QUEUE=true
       - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://host.docker.internal:6379/0}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://host.docker.internal:6379/0}
-      - DATABASE_URL=${DATABASE_URL}
+      # Worker API (v0.12.0+)
+      - FLASK_APP_URL=${FLASK_APP_URL}
+      - WORKER_API_KEY=${WORKER_API_KEY}
       - CLIPPY_INSTANCE_PATH=/app/instance
       - REQUIRE_INSTANCE_MOUNT=${REQUIRE_INSTANCE_MOUNT:-1}
       - TMPDIR=/app/instance/tmp
