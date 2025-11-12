@@ -399,7 +399,7 @@ docker compose -f compose.worker.yaml --profile local up -d --build worker-local
 
 This brings up:
 
-- `worker-local`: the Celery worker built locally from `docker/worker.Dockerfile` (tag `clippyfront-worker:local`) that writes artifacts into `/artifacts`.
+- `worker-local`: the Celery worker built locally from `docker/celery-worker.Dockerfile` (tag `clippyfront-worker:local`) that writes artifacts into `/artifacts`.
 - `artifact-sync`: a tiny container that runs `scripts/worker/clippy-scan.sh` and `clippy-push.sh` to detect `.READY` directories and push them via rsync/SSH.
 
 The named volume `artifacts` is shared between both containers. SSH credentials are mounted as Docker secrets: `rsync_key` and `known_hosts`.
@@ -434,7 +434,7 @@ docker compose -f compose.worker.yaml up -d --build worker artifact-sync
 WORKER_IMAGE=clippyfront-worker:local docker compose -f compose.worker.yaml up -d --build worker artifact-sync
 ```
 
-The local worker build uses `docker/worker.Dockerfile` in this repo and writes artifacts to the shared named volume at `/artifacts` the same way.
+The local worker build uses `docker/celery-worker.Dockerfile` in this repo and writes artifacts to the shared named volume at `/artifacts` the same way.
 
 For a full GPU worker deployment guide with recommended environment variables, examples, and troubleshooting, see `docs/gpu-worker.md`. For broader worker patterns (native, Docker, storage, networking), see `docs/workers.md`.
 
@@ -711,7 +711,7 @@ Consolidated instructions live in `docs/workers.md` (Linux, Windows/WSL2, Docker
 - GPU worker in Docker (Windows/WSL2):
 
 ```bash
-docker build -f docker/worker.Dockerfile -t clippyfront-gpu-worker:latest .
+docker build -f docker/celery-worker.Dockerfile -t clippyfront-gpu-worker:latest .
 docker run --rm --gpus all \
 	-e CELERY_BROKER_URL=redis://host.docker.internal:6379/0 \
 	-e CELERY_RESULT_BACKEND=redis://host.docker.internal:6379/0 \

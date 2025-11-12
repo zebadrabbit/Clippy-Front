@@ -89,7 +89,7 @@ Windows/WSL2 (host.docker.internal works):
 
 ```bash
 # From repo root (after docker build)
-# docker build -f docker/worker.Dockerfile -t clippyfront-gpu-worker:latest .
+# docker build -f docker/celery-worker.Dockerfile -t clippyfront-gpu-worker:latest .
 
 docker run --rm --gpus all \
   -e CELERY_BROKER_URL=redis://host.docker.internal:6379/0 \

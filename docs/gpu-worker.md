@@ -117,7 +117,7 @@ Artifacts mount location (Compose)
 ## Build
 ```
 # From repo root
-docker build -f docker/worker.Dockerfile -t clippyfront-gpu-worker:latest .
+docker build -f docker/celery-worker.Dockerfile -t clippyfront-gpu-worker:latest .
 ```
 
 ## Run (simple)

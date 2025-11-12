@@ -152,7 +152,8 @@ Local secrets for the worker sync stack (Docker secrets source).
 - app/static/css/: Base styles (two files): `base.css`, `wizard.css`.
 - instance/: Runtime data root (outside of git in production). Includes `assets/` (e.g., `static.mp4`, avatars), `data/`, `uploads/`, `logs/`, `tmp/`. See `instance/data-structure.md`.
 - compose.worker.yaml: Compose stack for worker + artifact sync (named volume `artifacts` and Docker secrets for SSH).
-- Dockerfile.worker: Sidecar image for artifact scanning and pushing.
+- docker/celery-worker.Dockerfile: Celery GPU worker image with CUDA support.
+- docker/artifact-sync.Dockerfile: Sidecar image for artifact scanning and pushing.
 - README.md: Project overview and Worker Setup.
 
 ## See also

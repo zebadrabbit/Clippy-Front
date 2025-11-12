@@ -32,7 +32,7 @@ services:
     profiles: ["local"]
     build:
       context: .
-      dockerfile: docker/worker.Dockerfile
+      dockerfile: docker/celery-worker.Dockerfile
     image: clippyfront-worker:local
     restart: unless-stopped
     env_file:
@@ -45,7 +45,7 @@ services:
   artifact-sync:
     build:
       context: .
-      dockerfile: Dockerfile.worker
+      dockerfile: docker/artifact-sync.Dockerfile
     image: ${SYNC_IMAGE:-clippyfront-artifact-sync:latest}
     restart: unless-stopped
     depends_on:

@@ -126,7 +126,7 @@ Requirements:
   - include executable permissions and `#!/usr/bin/env bash` shebang
 - Ensure scripts use env vars:
   `WORKER_ID`, `INGEST_HOST`, `INGEST_USER`, `INGEST_PATH`, `INGEST_PORT`, `PUSH_INTERVAL`
-- Add a `Dockerfile.worker` that installs `rsync`, `openssh-client`, `supervisor`, and copies those scripts.
+- Add a `docker/artifact-sync.Dockerfile` that installs `rsync`, `openssh-client`, `supervisor`, and copies those scripts.
 - Update project README under **Deployment → Worker Setup** with:
   1. Generate SSH keypair
   2. Add public key to ingest host
