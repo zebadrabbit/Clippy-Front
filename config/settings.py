@@ -70,7 +70,7 @@ class Config:
     ALLOWED_VIDEO_EXTENSIONS = {"mp4", "avi", "mov", "mkv", "webm"}
     ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
     # Thumbnails
-    THUMBNAIL_TIMESTAMP_SECONDS = int(os.environ.get("THUMBNAIL_TIMESTAMP_SECONDS", 1))
+    THUMBNAIL_TIMESTAMP_SECONDS = int(os.environ.get("THUMBNAIL_TIMESTAMP_SECONDS", 3))
     THUMBNAIL_WIDTH = int(os.environ.get("THUMBNAIL_WIDTH", 480))
 
     # External API Configuration

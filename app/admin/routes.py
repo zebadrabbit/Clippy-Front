@@ -1581,11 +1581,15 @@ def _purge_all_user_data():
 @login_required
 @admin_required
 def workers():
-    """Show Celery worker nodes and queues.
+    """Show Celery worker nodes and queues with version checking.
 
     Uses Celery's inspect API to display connected workers, their active queues,
-    and basic runtime statistics. Useful when running remote GPU workers.
+    version compatibility, and basic runtime statistics. Useful when running
+    remote GPU workers and detecting stale/old worker containers.
     """
+    from app.version import __version__
+    from app.worker_version_check import parse_worker_version
+
     info = {
         "stats": {},
         "active": {},
@@ -1616,10 +1620,21 @@ def workers():
     ):
         if isinstance(d, dict):
             keys.update(d.keys())
+
+    incompatible_count = 0
     for name in sorted(keys):
+        # Parse worker version from name
+        base_name, worker_version = parse_worker_version(name)
+        compatible = True
+        if worker_version is not None and worker_version != __version__:
+            compatible = False
+            incompatible_count += 1
+
         workers_list.append(
             {
                 "name": name,
+                "version": worker_version,
+                "compatible": compatible,
                 "stats": (info["stats"] or {}).get(name) or {},
                 "active": (info["active"] or {}).get(name) or [],
                 "registered": (info["registered"] or {}).get(name) or [],
@@ -1633,6 +1648,8 @@ def workers():
         title="Workers",
         workers=workers_list,
         raw=info,
+        server_version=__version__,
+        incompatible_count=incompatible_count,
     )
 
 

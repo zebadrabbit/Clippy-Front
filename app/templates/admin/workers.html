@@ -8,12 +8,21 @@
       {% include 'admin/_includes/sidebar.html' with context %}
     </div>
     <div class="col-12 col-lg-9">
+      <!-- Server Version Info -->
+      <div class="alert alert-info mb-3">
+        <strong>Server Version:</strong> <code>{{ server_version }}</code>
+        {% if incompatible_count > 0 %}
+        <span class="badge bg-warning text-dark ms-2">{{ incompatible_count }} version mismatch(es)</span>
+        {% endif %}
+      </div>
+
       {% if workers and workers|length > 0 %}
       <div class="table-responsive">
         <table class="table table-sm table-striped align-middle">
           <thead>
             <tr>
               <th>Worker</th>
+              <th>Version</th>
               <th>Queues</th>
               <th>Active Tasks</th>
               <th>Registered Tasks</th>
@@ -22,11 +31,30 @@
           </thead>
           <tbody>
             {% for w in workers %}
-            <tr>
-              <td><code>{{ w.name }}</code></td>
+            <tr {% if not w.compatible %}class="table-warning"{% endif %}>
+              <td>
+                <code>{{ w.name }}</code>
+                {% if not w.compatible %}
+                <span class="badge bg-warning text-dark ms-1">⚠️</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if w.version %}
+                  {% if w.compatible %}
+                    <span class="badge bg-success">{{ w.version }}</span>
+                  {% else %}
+                    <span class="badge bg-warning text-dark">{{ w.version }}</span>
+                    <small class="text-muted d-block">expected: {{ server_version }}</small>
+                  {% endif %}
+                {% else %}
+                  <span class="badge bg-danger">unknown</span>
+                  <small class="text-danger d-block"><strong>⚠️ NO VERSION TAG</strong></small>
+                  <small class="text-muted d-block">May be stale/hidden worker</small>
+                {% endif %}
+              </td>
               <td>
                 {% for q in w.queues %}
-                  <span class="badge bg-primary me-1">{{ q.name }}</span>
+                  <span class="badge bg-primary me-1">{{ q.name if q.name is defined else q }}</span>
                 {% else %}
                   <span class="text-muted">(none)</span>
                 {% endfor %}

@@ -6,10 +6,13 @@ This module registers routes on the shared `api_bp` blueprint exported by
 import issues during app startup.
 """
 
+import structlog
 from flask import current_app, jsonify, request, url_for
 from flask_login import current_user, login_required
 
 from app.api import api_bp
+
+logger = structlog.get_logger(__name__)
 
 
 @api_bp.route("/projects", methods=["POST"])
@@ -289,12 +292,30 @@ def create_and_download_clips_api(project_id: int):
                         args=(clip.id, url_s), queue=download_queue
                     )
                     task_id = task.id
-                    current_app.logger.info(
-                        f"Queued download task {task_id} for clip {clip.id}: {url_s}"
-                    )
+                    try:
+                        logger.info(
+                            "download_queued",
+                            task_id=task_id,
+                            clip_id=clip.id,
+                            url=url_s,
+                            queue=download_queue,
+                            project_id=project.id,
+                        )
+                    except Exception:
+                        # Fallback if structlog not working
+                        current_app.logger.info(
+                            f"Queued download task {task_id} for clip {clip.id}: {url_s} [queue={download_queue}]"
+                        )
                 except Exception as task_err:
+                    logger.error(
+                        "download_queue_failed",
+                        clip_id=clip.id,
+                        error=str(task_err),
+                        error_type=type(task_err).__name__,
+                    )
+                    # Fallback error logging
                     current_app.logger.error(
-                        f"Failed to queue download task for clip {clip.id}: {task_err}"
+                        f"Failed to queue download for clip {clip.id}: {task_err}"
                     )
                     task_id = None
 
@@ -350,8 +371,22 @@ def create_and_download_clips_api(project_id: int):
                         args=(clip.id, url_s), queue=download_queue
                     )
                     task_id = task.id
-                except Exception:
+                    logger.info(
+                        "download_queued",
+                        task_id=task_id,
+                        clip_id=clip.id,
+                        url=url_s,
+                        queue=download_queue,
+                        project_id=project.id,
+                    )
+                except Exception as task_err:
                     task_id = None
+                    logger.error(
+                        "download_queue_failed",
+                        clip_id=clip.id,
+                        error=str(task_err),
+                        error_type=type(task_err).__name__,
+                    )
                 items.append(
                     {
                         "clip_id": clip.id,
@@ -380,6 +415,14 @@ def create_and_download_clips_api(project_id: int):
                     continue
                 task = download_clip_task.apply_async(
                     args=(clip.id, url_s), queue=download_queue
+                )
+                logger.info(
+                    "download_queued",
+                    task_id=task.id,
+                    clip_id=clip.id,
+                    url=url_s,
+                    queue=download_queue,
+                    project_id=project.id,
                 )
                 items.append({"clip_id": clip.id, "task_id": task.id, "url": url_s})
                 idx += 1
@@ -454,6 +497,17 @@ def compile_project_api(project_id: int):
     if (clip_ids is not None and len(clip_ids) == 0) or (
         clip_ids is None and project.clips.count() == 0
     ):
+        # Add debug info to help diagnose
+        debug_msg = "Project has no clips to compile. "
+        if clip_ids is not None:
+            debug_msg += f"Requested {len(raw_clip_ids)} clip IDs, {len(clip_ids)} valid after filtering. "
+            if len(raw_clip_ids) > 0 and len(clip_ids) == 0:
+                debug_msg += (
+                    f"None of the requested clips belong to project {project_id}."
+                )
+        else:
+            debug_msg += f"Project has {project.clips.count()} clips total."
+        current_app.logger.warning(debug_msg)
         return jsonify({"error": "Project has no clips to compile"}), 400
 
     try:
@@ -592,10 +646,14 @@ def compile_project_api(project_id: int):
         pass
 
     try:
-        queue_name = "celery"
+        # Determine render queue - NEVER use 'celery' queue for rendering
+        # Default to gpu, or cpu if USE_GPU_QUEUE is false
+        queue_name = "gpu" if bool(current_app.config.get("USE_GPU_QUEUE")) else "cpu"
+
         try:
             from app.tasks.celery_app import celery_app as _celery
 
+            # Check for active workers and prefer available queues
             i = _celery.control.inspect(timeout=1.0)
             active_queues = set()
             if i:
@@ -605,16 +663,24 @@ def compile_project_api(project_id: int):
                         qname = q.get("name") if isinstance(q, dict) else None
                         if qname:
                             active_queues.add(qname)
-            if "gpu" in active_queues:
-                queue_name = "gpu"
-            elif "cpu" in active_queues:
-                queue_name = "cpu"
-            else:
-                if bool(current_app.config.get("USE_GPU_QUEUE")):
-                    queue_name = "gpu"
-        except Exception:
+
+            # Prefer gpu if available and configured, otherwise cpu
             if bool(current_app.config.get("USE_GPU_QUEUE")):
-                queue_name = "gpu"
+                if "gpu" in active_queues:
+                    queue_name = "gpu"
+                elif "cpu" in active_queues:
+                    queue_name = "cpu"  # Fallback to CPU if GPU not available
+                # else keep default "gpu" - task will wait for worker
+            else:
+                # CPU mode - prefer cpu queue if available
+                if "cpu" in active_queues:
+                    queue_name = "cpu"
+                elif "gpu" in active_queues:
+                    queue_name = "gpu"  # GPU can do CPU work
+                # else keep default "cpu" - task will wait for worker
+        except Exception:
+            # On error, use configured default (never 'celery')
+            pass
 
         task = compile_video_task.apply_async(
             args=(project_id,),
@@ -675,11 +741,13 @@ def list_project_clips_api(project_id: int):
                         "filename": media.filename,
                         "duration": media.duration,
                         "thumbnail_url": url_for(
-                            "main.media_thumbnail", media_id=media.id
+                            "main.media_thumbnail", media_id=media.id, _external=True
                         )
                         if media
                         else None,
-                        "preview_url": url_for("main.media_preview", media_id=media.id)
+                        "preview_url": url_for(
+                            "main.media_preview", media_id=media.id, _external=True
+                        )
                         if media
                         else None,
                     }
@@ -730,66 +798,8 @@ def reorder_project_clips_api(project_id: int):
         return jsonify({"error": "Failed to update order"}), 500
 
 
-@api_bp.route("/projects/<int:project_id>/ingest/raw", methods=["POST"])
-@login_required
-def ingest_raw_clips_api(project_id: int):
-    from app.models import Project
-
-    project = Project.query.filter_by(id=project_id, user_id=current_user.id).first()
-    if not project:
-        return jsonify({"error": "Project not found"}), 404
-
-    data = request.get_json(silent=True) or {}
-    worker_id = (data.get("worker_id") or "").strip() or None
-    action = (data.get("action") or "copy").strip().lower()
-    if action not in {"copy", "move", "link"}:
-        action = "copy"
-    regen_thumbnails = bool(data.get("regen_thumbnails") or False)
-
-    try:
-        from app.tasks.media_maintenance import (
-            ingest_raw_clips_for_project as ingest_task,
-        )
-
-        queue_name = "celery"
-        try:
-            from app.tasks.celery_app import celery_app as _celery
-
-            i = _celery.control.inspect(timeout=1.0)
-            active_queues = set()
-            if i:
-                aq = i.active_queues() or {}
-                for _worker, queues in aq.items():
-                    for q in queues or []:
-                        qname = q.get("name") if isinstance(q, dict) else None
-                        if qname:
-                            active_queues.add(qname)
-            if "celery" in active_queues:
-                queue_name = "celery"
-            elif "gpu" in active_queues:
-                queue_name = "gpu"
-            elif "cpu" in active_queues:
-                queue_name = "cpu"
-            else:
-                if bool(current_app.config.get("USE_GPU_QUEUE")):
-                    queue_name = "gpu"
-        except Exception:
-            if bool(current_app.config.get("USE_GPU_QUEUE")):
-                queue_name = "gpu"
-
-        task = ingest_task.apply_async(
-            args=(project_id,),
-            kwargs={
-                "worker_id": worker_id,
-                "action": action,
-                "regen_thumbnails": regen_thumbnails,
-            },
-            queue=queue_name,
-        )
-        return jsonify({"task_id": task.id, "status": "started"}), 202
-    except Exception as e:
-        current_app.logger.error(f"API ingest raw clips failed: {e}")
-        return jsonify({"error": "Failed to start ingest"}), 500
+# Note: /ingest/raw endpoint removed - clips now uploaded directly via HTTP
+# during download (see worker_upload_clip in app/api/worker.py)
 
 
 @api_bp.route("/projects/<int:project_id>/ingest/compiled", methods=["POST"])
@@ -839,6 +849,77 @@ def ingest_compiled_api(project_id: int):
         return jsonify({"task_id": t.id, "status": "started"}), 202
     except Exception as e:
         current_app.logger.error(f"API ingest compiled failed: {e}")
+        return jsonify({"error": "Failed to start ingest"}), 500
+
+
+@api_bp.route("/projects/<int:project_id>/ingest-downloads", methods=["POST"])
+@login_required
+def ingest_downloads_api(project_id: int):
+    """Import downloaded clips from the ingest directory into a project.
+
+    Expects JSON body:
+    {
+        "worker_id": "gpu-worker-01",
+        "action": "copy|move|link",  // optional, default: copy
+        "pattern": "*.mp4"           // optional, default: downloads_*/*.mp4
+    }
+
+    Queues a background task to scan /srv/ingest/<worker_id>/downloads_*
+    and import matching files into the project's clips directory.
+    """
+    from flask import request
+    from flask_login import current_user
+
+    from app.models import Project
+
+    project = Project.query.filter_by(id=project_id, user_id=current_user.id).first()
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+
+    data = request.get_json() or {}
+    worker_id = (data.get("worker_id") or "").strip()
+    if not worker_id:
+        return jsonify({"error": "worker_id required"}), 400
+
+    action = (data.get("action") or "copy").strip().lower()
+    if action not in {"copy", "move", "link"}:
+        action = "copy"
+
+    pattern = (data.get("pattern") or "downloads_*/*.mp4").strip()
+
+    try:
+        from app.tasks.media_maintenance import ingest_downloads_for_project as task
+
+        queue_name = "celery"
+        try:
+            from app.tasks.celery_app import celery_app as _celery
+
+            i = _celery.control.inspect(timeout=1.0)
+            active_queues = set()
+            if i:
+                aq = i.active_queues() or {}
+                for _worker, queues in aq.items():
+                    for q in queues or []:
+                        qname = q.get("name") if isinstance(q, dict) else None
+                        if qname:
+                            active_queues.add(qname)
+            if "celery" in active_queues:
+                queue_name = "celery"
+            elif "gpu" in active_queues:
+                queue_name = "gpu"
+            elif "cpu" in active_queues:
+                queue_name = "cpu"
+        except Exception:
+            pass
+
+        t = task.apply_async(
+            args=(project_id,),
+            kwargs={"worker_id": worker_id, "action": action, "pattern": pattern},
+            queue=queue_name,
+        )
+        return jsonify({"task_id": t.id, "status": "started"}), 202
+    except Exception as e:
+        current_app.logger.error(f"API ingest downloads failed: {e}")
         return jsonify({"error": "Failed to start ingest"}), 500
 
 

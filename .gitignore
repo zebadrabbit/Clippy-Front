@@ -98,6 +98,8 @@ logs/
 # Local development
 .local/
 local_settings.py
+# Local env file for developer secrets (not committed)
+.env.local
 
 # Flask instance folder and runtime uploads
 instance/
@@ -122,3 +124,6 @@ compilations/
 # Backup files
 *.bak
 *.backup
+
+# Temporary directories
+tmp/

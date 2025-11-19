@@ -70,11 +70,13 @@ def _extract_key(u: str) -> str:
 def _resolve_queue() -> str:
     """Pick an appropriate queue based on active queues and config.
 
-    Fallback order: gpu -> cpu -> celery. Honors USE_GPU_QUEUE when inspection fails.
+    For render/compile tasks: gpu or cpu only (never celery).
+    Fallback order: gpu -> cpu, defaulting to gpu if USE_GPU_QUEUE is set.
     """
     from flask import current_app
 
-    queue_name = "celery"
+    # Default to gpu or cpu based on config - NEVER use 'celery' for rendering
+    queue_name = "gpu" if bool(current_app.config.get("USE_GPU_QUEUE")) else "cpu"
     try:
         i = celery_app.control.inspect(timeout=1.0)
         active_queues = set()
@@ -85,20 +87,23 @@ def _resolve_queue() -> str:
                     qname = q.get("name") if isinstance(q, dict) else None
                     if qname:
                         active_queues.add(qname)
-        if "gpu" in active_queues:
-            return "gpu"
-        if "cpu" in active_queues:
-            return "cpu"
-        if bool(current_app.config.get("USE_GPU_QUEUE")):
-            return "gpu"
-    except Exception:
-        try:
-            from flask import current_app as _app
 
-            if bool(_app.config.get("USE_GPU_QUEUE")):
+        # Prefer gpu if configured and available, otherwise cpu
+        if bool(current_app.config.get("USE_GPU_QUEUE")):
+            if "gpu" in active_queues:
                 return "gpu"
-        except Exception:
-            pass
+            if "cpu" in active_queues:
+                return "cpu"  # Fallback to CPU if GPU not available
+            # else return default "gpu" - task will wait for worker
+        else:
+            # CPU mode
+            if "cpu" in active_queues:
+                return "cpu"
+            if "gpu" in active_queues:
+                return "gpu"  # GPU can do CPU work
+            # else return default "cpu" - task will wait for worker
+    except Exception:
+        pass  # Use configured default on error
     return queue_name
 
 

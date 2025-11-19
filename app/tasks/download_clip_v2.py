@@ -22,9 +22,122 @@ from typing import Any
 from app.tasks.celery_app import celery_app
 
 
+def _extract_slug_from_url(url: str) -> str:
+    """
+    Extract Twitch clip slug from URL.
+
+    Examples:
+        https://www.twitch.tv/user/clip/FastInexpensiveCurry-5_abc → fastinexpensivecurry-5_abc
+        https://clips.twitch.tv/FastInexpensiveCurry-5_abc → fastinexpensivecurry-5_abc
+    """
+    import re
+
+    # Match Twitch clip URLs
+    match = re.search(r"(?:clips?\.twitch\.tv/|twitch\.tv/.+/clip/)([^/?&#]+)", url)
+    if match:
+        return match.group(1).lower()
+
+    # Fallback: extract last path segment
+    parts = url.rstrip("/").split("/")
+    return parts[-1].lower() if parts else "unknown"
+
+
+def _upload_clip_to_server(
+    output_path: str,
+    thumb_path: str | None,
+    clip_id: int,
+    project_id: int,
+    clip_meta: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Upload downloaded clip to server via HTTP API.
+
+    Returns API response with media_id and paths.
+    """
+    import requests
+
+    api_url = os.environ.get("SERVER_API_URL", "http://10.8.0.1:5000")
+    api_key = os.environ.get("WORKER_API_KEY")
+
+    if not api_key:
+        raise ValueError("WORKER_API_KEY not configured")
+
+    # Extract metadata
+    metadata = {
+        "source_id": clip_meta.get("source_id")
+        or clip_meta.get("slug")
+        or clip_meta.get("id"),
+        "duration": clip_meta.get("duration"),
+        "file_size": os.path.getsize(output_path),
+    }
+
+    # Get video dimensions if available
+    try:
+        import json
+
+        probe_cmd = [
+            "ffprobe",
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
+            "-show_streams",
+            output_path,
+        ]
+        result = subprocess.run(probe_cmd, capture_output=True, text=True, check=True)
+        probe_data = json.loads(result.stdout)
+        for stream in probe_data.get("streams", []):
+            if stream.get("codec_type") == "video":
+                metadata["width"] = stream.get("width")
+                metadata["height"] = stream.get("height")
+                if "r_frame_rate" in stream:
+                    num, den = stream["r_frame_rate"].split("/")
+                    metadata["framerate"] = (
+                        float(num) / float(den) if float(den) > 0 else None
+                    )
+                break
+    except Exception as e:
+        print(f"Could not probe video metadata: {e}")
+
+    # Prepare multipart upload
+    files = {
+        "video": (os.path.basename(output_path), open(output_path, "rb"), "video/mp4")
+    }
+
+    if thumb_path and os.path.isfile(thumb_path):
+        files["thumbnail"] = (
+            os.path.basename(thumb_path),
+            open(thumb_path, "rb"),
+            "image/jpeg",
+        )
+
+    import json as json_module
+
+    form_data = {"metadata": json_module.dumps(metadata)}
+
+    headers = {"Authorization": f"Bearer {api_key}"}
+
+    upload_url = f"{api_url}/api/worker/projects/{project_id}/clips/{clip_id}/upload"
+
+    print(f"Uploading clip {clip_id} to {upload_url}")
+    response = requests.post(
+        upload_url, files=files, data=form_data, headers=headers, timeout=300
+    )
+
+    # Close file handles
+    for f in files.values():
+        if hasattr(f[1], "close"):
+            f[1].close()
+
+    if response.status_code != 200:
+        raise Exception(f"Upload failed: {response.status_code} - {response.text}")
+
+    return response.json()
+
+
 def _download_with_ytdlp_standalone(
     url: str,
-    clip_id: int,
+    source_id: str,
     clip_title: str,
     max_bytes: int | None = None,
     download_dir: str | None = None,
@@ -34,7 +147,7 @@ def _download_with_ytdlp_standalone(
 
     Args:
         url: Source URL to download
-        clip_id: Clip ID for filename
+        source_id: Source identifier (Twitch slug) for filename
         clip_title: Clip title for fallback slug
         max_bytes: Maximum file size in bytes
         download_dir: Target directory
@@ -44,8 +157,8 @@ def _download_with_ytdlp_standalone(
     """
     os.makedirs(download_dir, exist_ok=True)
 
-    # Create safe slug from clip_id
-    safe_slug = f"clip_{clip_id}"
+    # Use source_id (Twitch slug) for filename
+    safe_slug = source_id if source_id else clip_title.replace(" ", "_")[:50]
 
     # Get yt-dlp binary path
     yt_bin = os.environ.get("YT_DLP_BINARY", "yt-dlp")
@@ -206,6 +319,7 @@ def download_clip_task_v2(self, clip_id: int, source_url: str) -> dict[str, Any]
         project_id = clip_meta["project_id"]
         username = clip_meta["username"]
         project_name = clip_meta["project_name"]
+        source_id = clip_meta.get("source_id") or f"clip_{clip_id}"
 
         # Create processing job
         self.update_state(
@@ -292,7 +406,7 @@ def download_clip_task_v2(self, clip_id: int, source_url: str) -> dict[str, Any]
 
         output_path = _download_with_ytdlp_standalone(
             source_url,
-            clip_id,
+            source_id,
             clip_meta.get("title", f"clip_{clip_id}"),
             max_bytes=int(rem_bytes) if rem_bytes is not None else None,
             download_dir=dl_dir,
@@ -306,9 +420,6 @@ def download_clip_task_v2(self, clip_id: int, source_url: str) -> dict[str, Any]
 
         metadata = _extract_video_metadata_standalone(output_path)
         duration = metadata.get("duration") if metadata else None
-        width = metadata.get("width") if metadata else None
-        height = metadata.get("height") if metadata else None
-        framerate = metadata.get("framerate") if metadata else None
 
         # Generate thumbnail
         self.update_state(
@@ -325,19 +436,21 @@ def download_clip_task_v2(self, clip_id: int, source_url: str) -> dict[str, Any]
 
             if not os.path.exists(thumb_path):
                 ffmpeg_bin = os.environ.get("FFMPEG_BINARY", "ffmpeg")
+                ts = os.environ.get("THUMBNAIL_TIMESTAMP_SECONDS", "3")
+                w = int(os.environ.get("THUMBNAIL_WIDTH", "480"))
 
                 subprocess.run(
                     [
                         ffmpeg_bin,
                         "-y",
                         "-ss",
-                        "1",
+                        str(ts),
                         "-i",
                         output_path,
                         "-frames:v",
                         "1",
                         "-vf",
-                        "scale=480:-1",
+                        f"scale={w}:-1",
                         "-q:v",
                         "5",
                         thumb_path,
@@ -350,48 +463,28 @@ def download_clip_task_v2(self, clip_id: int, source_url: str) -> dict[str, Any]
             print(f"Thumbnail generation failed: {thumb_err}")
             thumb_path = None
 
-        # Create MediaFile record
+        # Create MediaFile record and upload to server
         self.update_state(
-            state="PROGRESS", meta={"progress": 90, "status": "Creating media record"}
+            state="PROGRESS", meta={"progress": 90, "status": "Uploading to server"}
         )
         worker_api.update_processing_job(job_id, progress=90)
-        log("info", "Creating media file record")
+        log("info", "Uploading clip to server via HTTP")
 
-        # Normalize path for database (relative to instance)
-        db_file_path = output_path.replace(f"{instance_path}/", "")
-        db_thumb_path = (
-            thumb_path.replace(f"{instance_path}/", "") if thumb_path else None
-        )
-
-        media_response = worker_api.create_media_file(
-            filename=os.path.basename(output_path),
-            original_filename=f"downloaded_{clip_meta.get('title', 'clip')}",
-            file_path=db_file_path,
-            file_size=os.path.getsize(output_path),
-            mime_type="video/mp4",
-            media_type="CLIP",
-            user_id=user_id,
+        # Upload via HTTP API (replaces rsync workflow)
+        upload_response = _upload_clip_to_server(
+            output_path=output_path,
+            thumb_path=thumb_path,
+            clip_id=clip_id,
             project_id=project_id,
-            duration=duration,
-            width=width,
-            height=height,
-            framerate=framerate,
-            thumbnail_path=db_thumb_path,
+            clip_meta=clip_meta,
         )
 
-        media_id = media_response["media_id"]
-
-        # Update clip status
-        worker_api.update_clip_status(
-            clip_id,
-            is_downloaded=True,
-            media_file_id=media_id,
-            duration=duration,
-        )
+        media_id = upload_response.get("media_id")
+        log("success", f"Upload completed, MediaFile ID: {media_id}")
 
         # Complete job
         result_data = {
-            "downloaded_file": db_file_path,
+            "downloaded_file": upload_response.get("file_path"),
             "media_file_id": media_id,
         }
 
@@ -406,7 +499,7 @@ def download_clip_task_v2(self, clip_id: int, source_url: str) -> dict[str, Any]
 
         return {
             "status": "completed",
-            "downloaded_file": db_file_path,
+            "downloaded_file": upload_response.get("file_path"),
             "media_file_id": media_id,
             "clip_id": clip_id,
         }

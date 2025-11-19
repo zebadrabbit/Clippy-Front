@@ -47,6 +47,18 @@
   function gotoStep(n){
     const stepStr = String(n);
     steps.forEach(s => s.classList.toggle('d-none', s.dataset.step !== stepStr));
+
+    // Debug: log step 5 HTML immediately after toggle
+    if (stepStr === '5') {
+      const step5 = document.querySelector('.wizard-step[data-step="5"]');
+      console.log('Step 5 after toggle:', {
+        exists: !!step5,
+        hasClass: step5?.classList.contains('d-none'),
+        readyElement: !!document.getElementById('export-ready'),
+        innerHTML: step5?.innerHTML.substring(0, 1000)
+      });
+    }
+
     markWizardChevron(stepStr);
     if (stepStr === '3') {
       // Require explicit confirmation on Arrange each time user enters step 3
@@ -83,9 +95,12 @@
     }
     if (stepStr === '5') {
       if (wizard.projectId) {
-        refreshExportInfo().catch((e) => {
-          console.error('Failed to refresh export info:', e);
-        });
+        // Delay to ensure DOM is fully rendered and visible after d-none toggle
+        setTimeout(() => {
+          refreshExportInfo().catch((e) => {
+            console.error('Failed to refresh export info:', e);
+          });
+        }, 300);
       } else {
         console.warn('Cannot load export info: No project ID available');
       }
@@ -165,7 +180,10 @@
 
   const USER_HAS_TWITCH = (document.getElementById('wizard-data')?.dataset.userHasTwitch === '1');
   async function api(path, opts={}){
-    const res = await fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts));
+    const res = await fetch(path, Object.assign({
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include'
+    }, opts));
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   }
@@ -224,6 +242,39 @@
     const fd = new FormData(form);
     const maxClips = parseInt(fd.get('max_clips') || '20', 10);
     const audioNormEnabled = !!document.getElementById('audio-norm-enabled')?.checked;
+
+    // If project already exists (loaded from URL), verify it exists before skipping
+    if (wizard.projectId) {
+      console.log('Project already loaded, verifying:', wizard.projectId);
+      try {
+        // Check if project still exists
+        const checkResponse = await fetch(`/api/projects/${wizard.projectId}/clips`, {
+          credentials: 'include'
+        });
+        console.log('Verification response status:', checkResponse.status);
+        if (checkResponse.ok) {
+          // Project exists, skip to step 2
+          console.log('Project verified, loading clips');
+          wizard.route = route;
+          wizard.maxClips = Math.max(1, Math.min(100, isNaN(maxClips) ? 20 : maxClips));
+          gotoStep(2);
+          // Populate clips grid for existing project
+          await populateClipsGrid();
+          document.getElementById('next-2').disabled = false;
+          return;
+        } else {
+          // Project doesn't exist, clear the ID and create new one
+          console.warn('Project', wizard.projectId, 'not found, creating new project');
+          wizard.projectId = null;
+          localStorage.removeItem('wizard_project_id');
+        }
+      } catch (e) {
+        console.error('Failed to verify project:', e);
+        wizard.projectId = null;
+        localStorage.removeItem('wizard_project_id');
+      }
+    }
+
     const payload = {
       name: (fd.get('name') || '').toString(),
       description: (fd.get('description') || '').toString(),
@@ -298,13 +349,34 @@
             setGcFill(40);
             await startDownloadPolling();
           } else {
-            // No tasks to poll (shouldn't happen but handle gracefully)
+            // No tasks to poll - all clips were reused from existing media
             setGcDone('download');
-            setGcActive('done');
-            setGcDone('done');
-            setGcStatus('Ready.');
-            setGcFill(100);
-            document.getElementById('next-2').disabled = false;
+            setGcActive('import');
+            setGcStatus('Importing artifacts from workers…');
+            setGcFill(80);
+
+            // Run ingest even if no downloads (clips might be from rsync)
+            try {
+              await runRawIngest({ shallow: false, regenThumbnails: true });
+            } catch(e) {
+              console.error('Ingest failed:', e);
+            }
+            setGcDone('import');
+
+            // Verify all clips are ready before enabling Next
+            setGcStatus('Verifying all clips are ready…');
+            const verify = await verifyAllClipsReady();
+            if (verify.ready && verify.total > 0) {
+              setGcActive('done');
+              setGcDone('done');
+              setGcStatus('Ready.');
+              setGcFill(100);
+              document.getElementById('next-2').disabled = false;
+            } else {
+              setGcError('import');
+              setGcStatus(`⚠ ${verify.missing || 0} clip(s) failed to import.`);
+              setGcFill(95);
+            }
             try { await populateClipsGrid(); } catch (_) {}
           }
         }
@@ -488,14 +560,15 @@
         setGcStatus('Verifying all clips are ready…');
         let retries = 0;
         const maxRetries = 3;
+        let finalVerify = null;
         while (retries < maxRetries) {
-          const verify = await verifyAllClipsReady();
-          if (verify.ready && verify.total > 0) {
+          finalVerify = await verifyAllClipsReady();
+          if (finalVerify.ready && finalVerify.total > 0) {
             break;
           }
-          if (verify.missing > 0) {
-            console.log(`Verification attempt ${retries + 1}/${maxRetries}: ${verify.missing} clips still missing`);
-            setGcStatus(`Waiting for ${verify.missing} clip(s) to finish processing... (${retries + 1}/${maxRetries})`);
+          if (finalVerify.missing > 0) {
+            console.log(`Verification attempt ${retries + 1}/${maxRetries}: ${finalVerify.missing} clips still missing`);
+            setGcStatus(`Waiting for ${finalVerify.missing} clip(s) to finish processing... (${retries + 1}/${maxRetries})`);
             // Wait longer and retry ingest to pick up any late arrivals
             await new Promise(r => setTimeout(r, 3000));
             if (retries < maxRetries - 1) {
@@ -505,12 +578,29 @@
           retries++;
         }
 
-        setGcActive('done');
-        setGcDone('done');
-        setGcStatus('Ready.');
-        setGcFill(100);
-        document.getElementById('next-2').disabled = false;
-        try { await populateClipsGrid(); } catch (_) {}
+        // Only enable Next button if all clips are verified ready
+        if (finalVerify && finalVerify.ready && finalVerify.total > 0) {
+          setGcActive('done');
+          setGcDone('done');
+          setGcStatus('Ready.');
+          setGcFill(100);
+          document.getElementById('next-2').disabled = false;
+          try { await populateClipsGrid(); } catch (_) {}
+        } else if (finalVerify && finalVerify.missing > 0) {
+          // Verification failed after max retries
+          setGcError('import');
+          setGcStatus(`⚠ ${finalVerify.missing} clip(s) failed to import. Check worker logs or retry.`);
+          setGcFill(95);
+          console.error('Verification failed after max retries:', finalVerify);
+          // Keep Next button disabled
+        } else {
+          // No clips found (edge case)
+          setGcError('done');
+          setGcStatus('⚠ No clips were imported. Please check your filters and try again.');
+          setGcFill(100);
+          console.warn('No clips found after verification');
+          // Keep Next button disabled
+        }
         return;
       }
     }
@@ -528,56 +618,35 @@
   function setGcFill(pct){ const el = document.getElementById('gc-fill'); if (el){ const v = Math.max(0, Math.min(100, Math.floor(pct||0))); el.style.width = v + '%'; el.setAttribute('aria-valuenow', String(v)); } }
   function getGcStepEl(key){ return document.querySelector(`#gc-steps li[data-key="${key}"]`); }
 
-  // On-demand raw ingest helper: POST /api/projects/<id>/ingest/raw and poll until done
+  // Verify clips are ready after downloads complete (HTTP upload workflow)
   async function runRawIngest(opts={}){
     if (!wizard.projectId) return;
-    const shallow = !!opts.shallow; // when true, don't block long if endpoint is busy
-    const regen = !!opts.regenThumbnails;
-    // Reflect import stage in chevrons if present
+    // Since HTTP upload happens automatically during download,
+    // we just need to verify clips are ready
     setGcActive('import');
-    setGcStatus('Importing rsynced raw clips…');
+    setGcStatus('Verifying clips are ready…');
     try {
-      const resp = await fetch(`/api/projects/${wizard.projectId}/ingest/raw`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(CSRF ? { 'X-CSRFToken': CSRF } : {}) },
-        body: JSON.stringify({ action: 'copy', regen_thumbnails: regen })
-      });
-      if (!resp.ok) { try{ const j = await resp.json(); if (j && j.error) throw new Error(j.error); }catch(e){}; throw new Error('ingest start failed'); }
-      const j = await resp.json();
-      const taskId = j.task_id;
-      if (!taskId) return;
-      const started = Date.now();
-      async function poll(){
-        const s = await api(`/api/tasks/${taskId}`);
-        const st = String((s && (s.state || s.status)) || '').toUpperCase();
-        if (st === 'SUCCESS') {
-          // After ingest completes, verify all clips have been properly imported
-          try {
-            const verifyResult = await verifyAllClipsReady();
-            if (!verifyResult.ready) {
-              console.warn('Some clips still not ready after ingest:', verifyResult);
-              setGcStatus(`Waiting for ${verifyResult.missing} more clip(s)...`);
-              await new Promise(r => setTimeout(r, 2000));
-              return poll(); // Re-run ingest
-            }
-          } catch (e) {
-            console.error('Verification error:', e);
-          }
-          return 'ok';
+      const verifyResult = await verifyAllClipsReady();
+      if (!verifyResult.ready) {
+        console.warn('Some clips still not ready:', verifyResult);
+        setGcStatus(`Waiting for ${verifyResult.missing} more clip(s)...`);
+        // Wait a bit and check again
+        await new Promise(r => setTimeout(r, 2000));
+        const retryResult = await verifyAllClipsReady();
+        if (!retryResult.ready) {
+          setGcError('import');
+          setGcStatus(`${retryResult.missing} clip(s) still not ready.`);
+          return 'pending';
         }
-        if (st === 'FAILURE') throw new Error('ingest failed');
-        if (shallow && (Date.now() - started) > 3000) return 'later';
-        await new Promise(r => setTimeout(r, 800));
-        return poll();
       }
-      await poll();
       setGcDone('import');
-      setGcStatus('Imported rsynced raw clips.');
+      setGcStatus('All clips ready.');
+      return 'ok';
     } catch (e) {
-      // Non-fatal; UI already shows downloaded/reused clips
-      console.error('Ingest error:', e);
+      console.error('Verification error:', e);
       setGcError('import');
-      setGcStatus('Import step skipped.');
+      setGcStatus('Verification failed.');
+      return 'error';
     }
   }
 
@@ -1129,7 +1198,7 @@
     setTimeout(renderCompileSummary, 0);
   });
 
-  async function refreshExportInfo(){
+  async function refreshExportInfo(retryCount = 0){
     if (!wizard.projectId) {
       console.warn('refreshExportInfo: No project ID set');
       return;
@@ -1153,17 +1222,41 @@
       const video = document.getElementById('export-video');
       const list = document.getElementById('export-details');
 
+      // Debug: log what we found
+      console.log('DOM elements check:', {
+        dl: !!dl,
+        ready: !!ready,
+        video: !!video,
+        list: !!list,
+        step5Visible: document.querySelector('.wizard-step[data-step="5"]')?.classList.contains('d-none')
+      });
+
+      // Guard: ensure elements exist (with retry limit)
+      if (!dl || !ready || !video || !list) {
+        if (retryCount < 3) {
+          console.warn('Export DOM elements not found, retrying...', retryCount + 1);
+          setTimeout(() => refreshExportInfo(retryCount + 1).catch(console.error), 200);
+        } else {
+          console.error('Export DOM elements not found after retries. Check if step 5 is visible.');
+          // Try to show what's actually in the DOM
+          const step5 = document.querySelector('.wizard-step[data-step="5"]');
+          console.error('Step 5 element:', step5);
+          console.error('Step 5 HTML:', step5?.innerHTML.substring(0, 500));
+        }
+        return;
+      }
+
       if (details && (details.download_url || details.preview_url)) {
         // Enable download button
-        dl.classList.remove('disabled');
-        dl.removeAttribute('aria-disabled');
-        if (details.download_url) dl.href = details.download_url;
+        if (dl) {
+          dl.classList.remove('disabled');
+          dl.removeAttribute('aria-disabled');
+          if (details.download_url) dl.href = details.download_url;
+          dl.innerHTML = `<i class="bi bi-download"></i> Download Video${details.output_filename ? ` (${details.output_filename})` : ''}`;
+        }
 
         // Show success banner
-        ready.classList.remove('d-none');
-
-        // Update button text
-        dl.innerHTML = `<i class="bi bi-download"></i> Download Video${details.output_filename ? ` (${details.output_filename})` : ''}`;
+        if (ready) ready.classList.remove('d-none');
 
         // Load video player
         if (video && details.preview_url) {

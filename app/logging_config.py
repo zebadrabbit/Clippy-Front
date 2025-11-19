@@ -101,6 +101,12 @@ def configure_logging(app, role: str = "web") -> dict:
             # Celery's own logger will also add handlers; we add one more for unified file.
             root.addHandler(_build_file_handler(worker_log_path, level))
 
+            # Silence noisy Werkzeug request logs unless we're in DEBUG mode
+            # These GET /api/* polling requests overwhelm INFO logs
+            werkzeug_logger = logging.getLogger("werkzeug")
+            if level > logging.DEBUG:
+                werkzeug_logger.setLevel(logging.WARNING)
+
             _LOGGING_CONFIGURED = True
         except Exception:
             # If file handler cannot be created, keep default stderr logging

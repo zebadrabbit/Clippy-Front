@@ -3,7 +3,6 @@ Celery application configuration.
 """
 # ruff: noqa: I001
 
-import logging
 from celery import Celery
 from celery.signals import after_setup_logger, after_setup_task_logger, task_postrun
 from kombu import Queue
@@ -100,7 +99,7 @@ def make_celery(app_name=__name__):
 celery_app = make_celery()
 
 
-# Attach rotating file handlers for Celery loggers, using instance/logs/
+# Attach structlog for Celery loggers
 @after_setup_logger.connect
 def _setup_celery_logger(logger, *args, **kwargs):  # pragma: no cover - logging init
     try:
@@ -115,18 +114,9 @@ def _setup_celery_logger(logger, *args, **kwargs):  # pragma: no cover - logging
             repo_root, "instance"
         )
 
-        from app.logging_config import (
-            attach_celery_file_logging as _attach,
-            attach_named_file_logging as _attach_named,
-        )
+        from app.structured_logging import configure_structlog_celery
 
-        _attach(logger, instance_path)
-        # Also attach a dedicated beat.log for Celery Beat (if present)
-        try:
-            beat_logger = logging.getLogger("celery.beat")
-            _attach_named(beat_logger, instance_path, "beat.log")
-        except Exception:
-            pass
+        configure_structlog_celery(instance_path)
     except Exception:
         # Non-fatal; fallback to stderr
         pass
@@ -146,9 +136,9 @@ def _setup_celery_task_logger(
             repo_root, "instance"
         )
 
-        from app.logging_config import attach_celery_file_logging as _attach
+        from app.structured_logging import configure_structlog_celery
 
-        _attach(logger, instance_path)
+        configure_structlog_celery(instance_path)
     except Exception:
         pass
 

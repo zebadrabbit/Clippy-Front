@@ -2,7 +2,7 @@
 
 {% block content %}
 <div class="container py-4">
-  <div class="d-flex justify-content-between align-items-center mb-3">
+  <div class="d-flex justify-content-between align-items-center mb-4">
     <h2 class="mb-0"><i class="bi bi-folder2-open"></i> My Projects</h2>
     <div class="d-flex gap-2">
       <a href="{{ url_for('main.project_wizard') }}" class="btn btn-primary btn-glow"><i class="bi bi-magic"></i> New Project (Wizard)</a>
@@ -10,39 +10,190 @@
   </div>
 
   {% if projects %}
-  <div class="list-group">
-    {% for p in projects %}
-      <div class="list-group-item d-flex justify-content-between align-items-center">
-  <a class="text-decoration-none flex-grow-1" href="{{ url_for('main.project_details_by_public', public_id=p.public_id) if p.public_id else url_for('main.project_details', project_id=p.id) }}">
-          <div class="fw-semibold">{{ p.name }}</div>
-          <small class="text-muted">Status: {{ p.status.value if p.status else 'draft' }} · {{ p.clips|safe_count }} clips · {{ p.media_files|safe_count }} media</small>
-        </a>
-        <div class="d-flex align-items-center gap-2">
-          <small class="text-muted">{{ p.updated_at.strftime('%Y-%m-%d') if p.updated_at else '' }}</small>
-          <form method="POST" action="{{ url_for('main.delete_project', project_id=p.id) }}" onsubmit="return confirm('Delete project {{ p.name }}? This cannot be undone.');">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
-          </form>
-        </div>
+  <div class="card">
+    <div class="card-header card-header--primary d-flex justify-content-between align-items-center">
+      <h5 class="mb-0"><i class="bi bi-collection"></i> All Projects</h5>
+      <span class="badge bg-light text-dark">{{ projects|length }} project{{ 's' if projects|length != 1 else '' }}</span>
+    </div>
+    <div class="card-body">
+      <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xl-4 g-3">
+        {% for p in projects %}
+          <div class="col">
+            <div class="card h-100 project-card position-relative">
+              <a class="text-decoration-none stretched-link" href="{{ url_for('main.project_details_by_public', public_id=p.public_id) if p.public_id else url_for('main.project_details', project_id=p.id) }}">
+                <div class="project-media position-relative">
+                  {% set thumb_url = None %}
+                  {% set preview_url = None %}
+                  {% set duration = None %}
+                  {% set download_url = None %}
+
+                  {# Check if compilation exists and set download URL #}
+                  {% if p.output_filename %}
+                    {% if p.public_id %}
+                      {% set download_url = url_for('main.download_compiled_output_by_public', public_id=p.public_id) %}
+                    {% else %}
+                      {% set download_url = url_for('main.download_compiled_output', project_id=p.id) %}
+                    {% endif %}
+                  {% endif %}
+
+                  {# Try to get compilation thumbnail first #}
+                  {% if p.status and p.status.value == 'completed' and p.output_filename %}
+                    {% set compilation_media = p.media_files.filter_by(media_type=MediaType.COMPILATION).first() %}
+                    {% if compilation_media and compilation_media.thumbnail_path %}
+                      {% set thumb_url = url_for('main.media_thumbnail', media_id=compilation_media.id) %}
+                      {% set preview_url = url_for('main.media_preview', media_id=compilation_media.id) %}
+                      {% set duration = compilation_media.duration %}
+                    {% endif %}
+                  {% endif %}
+
+                  {# Fallback to first clip thumbnail #}
+                  {% if not thumb_url %}
+                    {% set first_clip = p.clips.filter(Clip.media_file_id.isnot(None)).first() %}
+                    {% if first_clip and first_clip.media_file_id %}
+                      {% set thumb_url = url_for('main.media_thumbnail', media_id=first_clip.media_file_id) %}
+                      {% if first_clip.media_file and first_clip.media_file.duration %}
+                        {% set duration = first_clip.media_file.duration %}
+                      {% endif %}
+                    {% endif %}
+                  {% endif %}
+
+                  {% if thumb_url %}
+                    <img class="w-100 h-100 project-thumb" src="{{ thumb_url }}" alt="{{ p.name }}">
+                    {% if preview_url %}
+                      <video class="position-absolute top-0 start-0 w-100 h-100 project-preview d-none" muted loop playsinline preload="metadata" src="{{ preview_url }}"></video>
+                    {% endif %}
+                  {% else %}
+                    <div class="d-flex align-items-center justify-content-center w-100 h-100" style="min-height:160px; background: var(--bs-card-bg);">
+                      <i class="bi bi-film" style="font-size:2rem; opacity:0.75;"></i>
+                    </div>
+                  {% endif %}
+
+                  {# Status badge #}
+                  {% if p.status %}
+                    {% set status_class = {
+                      'draft': 'bg-secondary',
+                      'downloading': 'bg-info',
+                      'ready': 'bg-primary',
+                      'compiling': 'bg-warning text-dark',
+                      'completed': 'bg-success',
+                      'failed': 'bg-danger'
+                    } %}
+                    <span class="badge {{ status_class.get(p.status.value, 'bg-secondary') }} position-absolute top-0 start-0 m-2" style="opacity:0.9;">
+                      {{ p.status.value|title }}
+                    </span>
+                  {% endif %}
+
+                  {# Duration badge #}
+                  {% if duration %}
+                    {% set mins = (duration // 60)|int %}
+                    {% set secs = (duration % 60)|int %}
+                    <span class="badge bg-dark position-absolute bottom-0 end-0 m-2" style="opacity:0.9;">
+                      <i class="bi bi-clock me-1"></i>{{ '%d:%02d' | format(mins, secs) }}
+                    </span>
+                  {% endif %}
+                </div>
+                <div class="card-body">
+                  <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div class="fw-semibold text-truncate flex-grow-1" title="{{ p.name }}">{{ p.name }}</div>
+                  </div>
+                  <div class="small text-muted">
+                    <i class="bi bi-collection-play me-1"></i>{{ p.clips|safe_count }} clips
+                    <span class="mx-1">·</span>
+                    <i class="bi bi-images me-1"></i>{{ p.media_files|safe_count }} media
+                  </div>
+                  <div class="small text-muted mt-1">
+                    <i class="bi bi-calendar me-1"></i>{{ p.updated_at.strftime('%b %d, %Y') if p.updated_at else 'No date' }}
+                  </div>
+                </div>
+              </a>
+              <div class="card-footer bg-transparent border-top position-relative" style="z-index: 10;">
+                <div class="d-flex gap-2">
+                  {% if download_url %}
+                    <a href="{{ download_url }}" class="btn btn-sm btn-success flex-grow-1" onclick="event.stopPropagation();" title="Download compilation">
+                      <i class="bi bi-download"></i> Download
+                    </a>
+                  {% else %}
+                    <span class="btn btn-sm btn-outline-secondary flex-grow-1 disabled">No export yet</span>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+          </div>
+        {% endfor %}
       </div>
-    {% endfor %}
+    </div>
   </div>
   {% else %}
-    <p class="text-muted">No projects yet. Create your first project.</p>
+    <div class="card">
+      <div class="card-body text-center py-5">
+        <i class="bi bi-folder2-open" style="font-size: 4rem; opacity: 0.3;"></i>
+        <p class="text-muted mt-3 mb-0">No projects yet. Create your first project to get started.</p>
+      </div>
+    </div>
   {% endif %}
 
   {% if pagination and pagination.pages > 1 %}
-  <nav class="mt-3">
-    <ul class="pagination">
+  <nav class="mt-4">
+    <ul class="pagination justify-content-center">
       {% if pagination.has_prev %}
       <li class="page-item"><a class="page-link" href="{{ url_for('main.projects', page=pagination.prev_num) }}">Previous</a></li>
+      {% else %}
+      <li class="page-item disabled"><span class="page-link">Previous</span></li>
       {% endif %}
-      <li class="page-item disabled"><span class="page-link">Page {{ pagination.page }} of {{ pagination.pages }}</span></li>
+
+      {% for page_num in range(1, pagination.pages + 1) %}
+        {% if page_num == pagination.page %}
+          <li class="page-item active"><span class="page-link">{{ page_num }}</span></li>
+        {% elif page_num in range(max(1, pagination.page - 2), min(pagination.pages + 1, pagination.page + 3)) %}
+          <li class="page-item"><a class="page-link" href="{{ url_for('main.projects', page=page_num) }}">{{ page_num }}</a></li>
+        {% elif page_num == 1 or page_num == pagination.pages %}
+          <li class="page-item"><a class="page-link" href="{{ url_for('main.projects', page=page_num) }}">{{ page_num }}</a></li>
+        {% elif page_num == pagination.page - 3 or page_num == pagination.page + 3 %}
+          <li class="page-item disabled"><span class="page-link">...</span></li>
+        {% endif %}
+      {% endfor %}
+
       {% if pagination.has_next %}
       <li class="page-item"><a class="page-link" href="{{ url_for('main.projects', page=pagination.next_num) }}">Next</a></li>
+      {% else %}
+      <li class="page-item disabled"><span class="page-link">Next</span></li>
       {% endif %}
     </ul>
   </nav>
   {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script>
+    (function(){
+      const cards = document.querySelectorAll('.project-card');
+      cards.forEach(function(card){
+        const video = card.querySelector('video.project-preview');
+        const img = card.querySelector('img.project-thumb');
+        if (!video) return;
+
+        function showPreview(){
+          try {
+            if (img) img.classList.add('d-none');
+            video.classList.remove('d-none');
+            video.play().catch(function(_){});
+          } catch (_) {}
+        }
+
+        function hidePreview(){
+          try {
+            video.pause();
+            video.currentTime = 0;
+            video.classList.add('d-none');
+            if (img) img.classList.remove('d-none');
+          } catch (_) {}
+        }
+
+        card.addEventListener('mouseenter', showPreview);
+        card.addEventListener('mouseleave', hidePreview);
+      });
+    })();
+  </script>
 {% endblock %}

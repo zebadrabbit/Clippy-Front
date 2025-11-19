@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# Quick commands for managing remote GPU worker
+#
+# Usage:
+#   scripts/worker/remote COMMAND [user@]host[:port]
+#
+# Examples:
+#   scripts/worker/remote status user@192.168.1.20:2222
+#   scripts/worker/remote sync 192.168.1.20:2222
+#   REMOTE_HOST=192.168.1.20 REMOTE_PORT=2222 scripts/worker/remote logs
+
+# Parse connection info from last argument if it looks like user@host or host:port
+LAST_ARG="${!#}"
+if [[ "$LAST_ARG" =~ @ ]] || [[ "$LAST_ARG" =~ : ]] && [[ "$LAST_ARG" != "${1:-}" ]]; then
+  # Last arg is connection info, extract command from first arg
+  COMMAND="${1:-help}"
+  if [[ "$LAST_ARG" =~ ^([^@]+)@([^:]+):([0-9]+)$ ]]; then
+    REMOTE_USER="${BASH_REMATCH[1]}"
+    REMOTE_HOST="${BASH_REMATCH[2]}"
+    REMOTE_PORT="${BASH_REMATCH[3]}"
+  elif [[ "$LAST_ARG" =~ ^([^@]+)@([^:]+)$ ]]; then
+    REMOTE_USER="${BASH_REMATCH[1]}"
+    REMOTE_HOST="${BASH_REMATCH[2]}"
+    REMOTE_PORT="${REMOTE_PORT:-22}"
+  elif [[ "$LAST_ARG" =~ ^([^:]+):([0-9]+)$ ]]; then
+    REMOTE_HOST="${BASH_REMATCH[1]}"
+    REMOTE_PORT="${BASH_REMATCH[2]}"
+    REMOTE_USER="${REMOTE_USER:-${USER}}"
+  else
+    REMOTE_HOST="$LAST_ARG"
+    REMOTE_USER="${REMOTE_USER:-${USER}}"
+    REMOTE_PORT="${REMOTE_PORT:-22}"
+  fi
+else
+  COMMAND="${1:-help}"
+  REMOTE_USER="${REMOTE_USER:-${USER}}"
+  REMOTE_HOST="${REMOTE_HOST:-}"
+  REMOTE_PORT="${REMOTE_PORT:-22}"
+fi
+
+REMOTE_PATH="${REMOTE_PATH:-~/ClippyFront}"
+
+# Validate we have a host
+if [[ -z "$REMOTE_HOST" ]] && [[ "$COMMAND" != "help" ]]; then
+  echo "Error: No remote host specified" >&2
+  echo "" >&2
+  echo "Usage: $0 COMMAND [user@]host[:port]" >&2
+  echo "" >&2
+  echo "Examples:" >&2
+  echo "  $0 status winter@192.168.1.20:2222" >&2
+  echo "  $0 sync 192.168.1.20:2222" >&2
+  echo "  REMOTE_HOST=192.168.1.20 REMOTE_PORT=2222 $0 logs" >&2
+  echo "" >&2
+  echo "Or set environment variables:" >&2
+  echo "  export REMOTE_HOST=192.168.1.20" >&2
+  echo "  export REMOTE_USER=user" >&2
+  echo "  export REMOTE_PORT=2222" >&2
+  exit 1
+fi
+
+case "${COMMAND}" in
+  sync)
+    echo "Syncing code to ${REMOTE_HOST}..."
+    "$(dirname "${BASH_SOURCE[0]}")/sync-to-remote.sh" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PORT" "$REMOTE_PATH"
+    ;;
+  start)
+    echo "Starting worker on ${REMOTE_HOST}..."
+    ssh -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} bash << 'ENDSSH'
+cd ~/ClippyFront
+source venv/bin/activate
+nohup celery -A app.tasks.celery_app worker -n tundra-worker-01-v0.12.0@tundra -Q gpu,cpu -c 3 --loglevel=info >> worker.log 2>&1 &
+sleep 1
+ps aux | grep celery | grep -v grep | head -2
+ENDSSH
+    ;;
+  stop)
+    echo "Stopping worker on ${REMOTE_HOST}..."
+    ssh -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} bash << 'ENDSSH'
+pkill -f 'celery.*worker' && echo 'Worker stopped' || echo 'Worker not running'
+exit 0
+ENDSSH
+    ;;
+  restart)
+    echo "Restarting worker on ${REMOTE_HOST}..."
+    ssh -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} bash << 'ENDSSH'
+pkill -f 'celery.*worker' || true
+sleep 2
+cd ~/ClippyFront
+source venv/bin/activate
+nohup celery -A app.tasks.celery_app worker -n tundra-worker-01-v0.12.0@tundra -Q gpu,cpu -c 3 --loglevel=info >> worker.log 2>&1 &
+sleep 1
+ps aux | grep celery | grep -v grep | head -2
+ENDSSH
+    ;;
+  logs)
+    echo "Tailing worker logs on ${REMOTE_HOST}..."
+    ssh -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} bash << 'ENDSSH'
+tail -f ~/ClippyFront/worker.log 2>/dev/null || tail -f /mnt/clippyfront/logs/worker.json 2>/dev/null || echo 'No logs found'
+ENDSSH
+    ;;
+  status)
+    echo "Checking worker status on ${REMOTE_HOST}..."
+    ssh -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} bash << 'ENDSSH'
+ps aux | grep celery | grep -v grep && echo '' && echo 'Worker is running' || echo 'Worker is not running'
+ENDSSH
+    ;;
+  shell)
+    echo "Opening SSH session to ${REMOTE_HOST}..."
+    ssh -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST}
+    ;;
+  inspect)
+    echo "Inspecting Celery worker queues..."
+    ssh -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} bash << 'ENDSSH'
+cd ~/ClippyFront
+source venv/bin/activate
+celery -A app.tasks.celery_app inspect active_queues
+ENDSSH
+    ;;
+  gpu)
+    echo "Checking GPU status on ${REMOTE_HOST}..."
+    ssh -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} bash << 'ENDSSH'
+nvidia-smi || echo 'nvidia-smi not found'
+ENDSSH
+    ;;
+  help|*)
+    echo "Usage: $0 COMMAND [user@]host[:port]"
+    echo
+    echo "Commands:"
+    echo "  sync     - Rsync code to remote worker"
+    echo "  start    - Start Celery worker"
+    echo "  stop     - Stop Celery worker"
+    echo "  restart  - Restart Celery worker"
+    echo "  logs     - Tail worker logs"
+    echo "  status   - Check if worker is running"
+    echo "  shell    - Open SSH session"
+    echo "  inspect  - Show active queues"
+    echo "  gpu      - Check GPU status"
+    echo
+    echo "Connection:"
+    echo "  Specify connection as: [user@]host[:port]"
+    echo
+    echo "Examples:"
+    echo "  $0 status user@192.168.1.20:2222"
+    echo "  $0 sync 192.168.1.20:2222"
+    echo
+    echo "Environment Variables:"
+    echo "  REMOTE_HOST=hostname    (required if not in command)"
+    echo "  REMOTE_USER=username    (default: \$USER)"
+    echo "  REMOTE_PORT=port        (default: 22)"
+    echo "  REMOTE_PATH=path        (default: ~/ClippyFront)"
+    [[ "$COMMAND" == "help" ]] && exit 0 || exit 1
+    ;;
+esac

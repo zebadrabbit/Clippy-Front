@@ -104,14 +104,11 @@ Notes:
 - Methods: POST
 - Brief: Reorder clips. Body: {"clip_ids": [int,...]}
 
-- Path: POST /api/projects/<project_id>/ingest/raw
+- Path: POST /api/worker/projects/<project_id>/clips/<clip_id>/upload
 - Methods: POST
-- Brief: Trigger ingest of raw clips from worker ingest roots into this project.
-- Parameters (JSON): {"worker_id": "...", "action": "copy|move|link", "regen_thumbnails": bool}
-
-- Path: POST /api/projects/<project_id>/ingest/compiled
-- Methods: POST
-- Brief: Trigger ingest of compiled artifacts for a project.
+- Brief: Worker endpoint to upload downloaded clip and thumbnail directly.
+- Parameters: multipart/form-data with video file, thumbnail file, and JSON metadata.
+- Auth: Requires WORKER_API_KEY bearer token.
 
 - Path: GET /api/twitch/clips
 - Methods: GET

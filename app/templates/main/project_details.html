@@ -159,5 +159,26 @@
       </div>
     </div>
   </div>
+
+  <!-- Danger Zone -->
+  <div class="card border-danger mt-4">
+    <div class="card-header bg-danger bg-opacity-10 border-danger">
+      <h5 class="mb-0 text-danger"><i class="bi bi-exclamation-triangle"></i> Danger Zone</h5>
+    </div>
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center">
+        <div>
+          <h6 class="mb-1">Delete this project</h6>
+          <p class="text-muted small mb-0">Once you delete a project, there is no going back. This will delete all clips, media files, and compilation outputs associated with this project.</p>
+        </div>
+        <form method="POST" action="{{ url_for('main.delete_project', project_id=project.id) }}" onsubmit="return confirm('Are you sure you want to delete {{ project.name }}? This action cannot be undone.');" class="ms-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-danger">
+            <i class="bi bi-trash"></i> Delete Project
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}

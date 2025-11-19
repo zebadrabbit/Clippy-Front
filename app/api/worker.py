@@ -12,11 +12,12 @@ Endpoints:
 - PUT /worker/jobs/<job_id> - Update processing job status/progress
 """
 
+import mimetypes
 import os
 from datetime import datetime
 from functools import wraps
 
-from flask import current_app, jsonify, request
+from flask import current_app, jsonify, request, send_file
 
 from app.api import api_bp
 from app.models import Clip, MediaFile, MediaType, ProcessingJob, Project, db
@@ -775,6 +776,296 @@ def worker_record_render_usage(user_id: int):
         return jsonify({"error": "Internal error"}), 500
 
 
+@api_bp.route(
+    "/worker/projects/<int:project_id>/clips/<int:clip_id>/upload", methods=["POST"]
+)
+@require_worker_key
+def worker_upload_clip(project_id: int, clip_id: int):
+    """Upload clip video and thumbnail from worker after download.
+
+    Multipart form data:
+        - video: video file
+        - thumbnail: thumbnail image (optional)
+        - metadata: JSON string with {duration, width, height, framerate, file_size, source_id}
+
+    Returns:
+        {
+            "status": "uploaded",
+            "media_id": int,
+            "clip_id": int,
+            "file_path": str,
+            "thumbnail_path": str
+        }
+    """
+    try:
+        # Verify project and clip exist
+        project = Project.query.get(project_id)
+        if not project:
+            return jsonify({"error": "Project not found"}), 404
+
+        clip = Clip.query.get(clip_id)
+        if not clip or clip.project_id != project_id:
+            return jsonify({"error": "Clip not found or wrong project"}), 404
+
+        # Get files from request
+        if "video" not in request.files:
+            return jsonify({"error": "No video file provided"}), 400
+
+        video_file = request.files["video"]
+        thumbnail_file = request.files.get("thumbnail")
+
+        # Get metadata
+        metadata_str = request.form.get("metadata", "{}")
+        try:
+            import json
+
+            metadata = json.loads(metadata_str)
+        except Exception:
+            metadata = {}
+
+        # Build storage path using storage.clips_dir()
+        from app.storage import clips_dir as get_clips_dir
+
+        clips_dir = get_clips_dir(project.owner, project.name)
+        os.makedirs(clips_dir, exist_ok=True)
+
+        # Use source_id for filename if available
+        source_id = metadata.get("source_id") or clip.source_id or f"clip_{clip_id}"
+        video_filename = f"{source_id}.mp4"
+        thumbnail_filename = f"{source_id}.jpg"
+
+        video_path = os.path.join(clips_dir, video_filename)
+        thumbnail_path = (
+            os.path.join(clips_dir, thumbnail_filename) if thumbnail_file else None
+        )
+
+        # Save video file
+        video_file.save(video_path)
+        current_app.logger.info(f"Saved clip video to {video_path}")
+
+        # Save thumbnail if provided
+        if thumbnail_file and thumbnail_path:
+            thumbnail_file.save(thumbnail_path)
+            current_app.logger.info(f"Saved thumbnail to {thumbnail_path}")
+
+        # Create MediaFile record
+        media = MediaFile(
+            filename=video_filename,
+            original_filename=video_file.filename,
+            file_path=video_path,
+            file_size=metadata.get("file_size", os.path.getsize(video_path)),
+            mime_type="video/mp4",
+            media_type=MediaType.CLIP,
+            user_id=project.user_id,
+            project_id=project_id,
+            duration=metadata.get("duration"),
+            width=metadata.get("width"),
+            height=metadata.get("height"),
+            framerate=metadata.get("framerate"),
+            thumbnail_path=thumbnail_path,
+            is_processed=True,
+        )
+        db.session.add(media)
+        db.session.flush()
+
+        # Link MediaFile to Clip
+        clip.media_file_id = media.id
+        clip.is_downloaded = True
+        if metadata.get("duration"):
+            clip.duration = metadata["duration"]
+
+        # Download creator avatar if we have creator info and no avatar yet
+        if clip.creator_id and clip.creator_name and not clip.creator_avatar_path:
+            try:
+                import requests as _requests
+
+                from app.integrations.twitch import get_user_profile_image_url
+
+                avatar_url = get_user_profile_image_url(clip.creator_id)
+                if avatar_url:
+                    # Sanitize creator name for filename
+                    import re
+
+                    safe_name = re.sub(
+                        r"[^a-z0-9_-]+", "_", clip.creator_name.strip().lower()
+                    )
+
+                    # Prepare avatars directory
+                    avatars_dir = os.path.join(
+                        current_app.instance_path, "assets", "avatars"
+                    )
+                    os.makedirs(avatars_dir, exist_ok=True)
+
+                    # Generate unique filename with random suffix
+                    import secrets
+
+                    ext = os.path.splitext(avatar_url.split("?")[0])[1] or ".jpg"
+                    avatar_filename = f"{safe_name}_{secrets.token_hex(4)}{ext}"
+                    avatar_path = os.path.join(avatars_dir, avatar_filename)
+
+                    # Download avatar
+                    r = _requests.get(avatar_url, timeout=10)
+                    r.raise_for_status()
+                    with open(avatar_path, "wb") as f:
+                        f.write(r.content)
+
+                    clip.creator_avatar_path = avatar_path
+                    current_app.logger.info(
+                        f"Downloaded avatar for {clip.creator_name} to {avatar_path}"
+                    )
+            except Exception as avatar_err:
+                current_app.logger.warning(
+                    f"Failed to download avatar for clip {clip_id}: {avatar_err}"
+                )
+
+        db.session.commit()
+
+        current_app.logger.info(
+            f"Worker uploaded clip {clip_id} -> MediaFile {media.id} for project {project_id}"
+        )
+
+        return jsonify(
+            {
+                "status": "uploaded",
+                "media_id": media.id,
+                "clip_id": clip_id,
+                "file_path": video_path,
+                "thumbnail_path": thumbnail_path,
+            }
+        )
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error uploading clip {clip_id}: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/worker/projects/<int:project_id>/compilation/upload", methods=["POST"])
+@require_worker_key
+def worker_upload_compilation(project_id: int):
+    """Upload compiled video and thumbnail from worker after rendering.
+
+    Multipart form data:
+        - video: compiled video file
+        - thumbnail: thumbnail image (optional)
+        - metadata: JSON string with {duration, width, height, framerate, file_size, filename}
+
+    Returns:
+        {
+            "status": "uploaded",
+            "media_id": int,
+            "project_id": int,
+            "file_path": str,
+            "thumbnail_path": str
+        }
+    """
+    try:
+        # Verify project exists
+        project = Project.query.get(project_id)
+        if not project:
+            return jsonify({"error": "Project not found"}), 404
+
+        # Get files from request
+        if "video" not in request.files:
+            return jsonify({"error": "No video file provided"}), 400
+
+        video_file = request.files["video"]
+        thumbnail_file = request.files.get("thumbnail")
+
+        # Get metadata
+        metadata_str = request.form.get("metadata", "{}")
+        try:
+            import json
+
+            metadata = json.loads(metadata_str)
+        except Exception:
+            metadata = {}
+
+        # Build storage path using storage.compilations_dir()
+        from app.storage import compilations_dir as get_compilations_dir
+
+        compilations_dir = get_compilations_dir(project.owner, project.name)
+        os.makedirs(compilations_dir, exist_ok=True)
+
+        # Use filename from metadata or generate one
+        video_filename = metadata.get("filename") or f"compilation_{project_id}.mp4"
+        # Strip path components if any
+        video_filename = os.path.basename(video_filename)
+
+        video_path = os.path.join(compilations_dir, video_filename)
+
+        # Generate thumbnail filename
+        stem = os.path.splitext(video_filename)[0]
+        thumbnail_filename = f"{stem}.jpg"
+        thumbnail_path = (
+            os.path.join(compilations_dir, thumbnail_filename)
+            if thumbnail_file
+            else None
+        )
+
+        # Save video file
+        video_file.save(video_path)
+        current_app.logger.info(f"Saved compilation video to {video_path}")
+
+        # Save thumbnail if provided
+        if thumbnail_file and thumbnail_path:
+            thumbnail_file.save(thumbnail_path)
+            current_app.logger.info(f"Saved compilation thumbnail to {thumbnail_path}")
+
+        # Create MediaFile record
+        media = MediaFile(
+            filename=video_filename,
+            original_filename=video_file.filename,
+            file_path=video_path,
+            file_size=metadata.get("file_size", os.path.getsize(video_path)),
+            mime_type="video/mp4",
+            media_type=MediaType.COMPILATION,
+            user_id=project.user_id,
+            project_id=project_id,
+            duration=metadata.get("duration"),
+            width=metadata.get("width"),
+            height=metadata.get("height"),
+            framerate=metadata.get("framerate"),
+            thumbnail_path=thumbnail_path,
+            is_processed=True,
+        )
+        db.session.add(media)
+        db.session.flush()
+
+        # Update project with output file info
+        project.output_filename = video_filename
+        project.output_file_size = os.path.getsize(video_path)
+
+        db.session.commit()
+
+        current_app.logger.info(
+            f"Worker uploaded compilation -> MediaFile {media.id} for project {project_id}"
+        )
+
+        return jsonify(
+            {
+                "status": "uploaded",
+                "media_id": media.id,
+                "project_id": project_id,
+                "file_path": video_path,
+                "thumbnail_path": thumbnail_path,
+            }
+        )
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(
+            f"Error uploading compilation for project {project_id}: {e}"
+        )
+        import traceback
+
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
 # ============================================================================
 # Phase 4: Batch endpoints for compile_video_task migration
 # ============================================================================
@@ -828,8 +1119,11 @@ def worker_get_compilation_context(project_id: int):
             return jsonify({"error": "Project not found"}), 404
 
         # Get ordered clips with eager-loaded media files
+        from sqlalchemy.orm import joinedload
+
         clips = (
             Clip.query.filter_by(project_id=project_id)
+            .options(joinedload(Clip.media_file))
             .order_by(Clip.order_index, Clip.id)
             .all()
         )
@@ -839,14 +1133,18 @@ def worker_get_compilation_context(project_id: int):
 
         user = User.query.get(project.user_id)
         tier_limits = {"max_res_label": None, "max_fps": None, "max_clips": None}
+        username = None
 
         if user and hasattr(user, "tier") and user.tier:
+            username = user.username
             if not user.tier.is_unlimited:
                 tier_limits = {
                     "max_res_label": user.tier.max_output_resolution,
                     "max_fps": user.tier.max_fps,
                     "max_clips": user.tier.max_clips_per_project,
                 }
+        elif user:
+            username = user.username
 
         # Serialize response
         return jsonify(
@@ -854,6 +1152,7 @@ def worker_get_compilation_context(project_id: int):
                 "project": {
                     "id": project.id,
                     "user_id": project.user_id,
+                    "username": username,
                     "name": project.name or "",
                     "output_resolution": project.output_resolution or "1920x1080",
                     "output_format": project.output_format or "mp4",
@@ -966,4 +1265,65 @@ def worker_get_media_batch():
         )
     except Exception as e:
         current_app.logger.error(f"Error fetching media batch: {e}")
+        return jsonify({"error": "Internal error"}), 500
+
+
+@api_bp.route("/worker/media/<int:media_id>/download", methods=["GET"])
+@require_worker_key
+def worker_download_media(media_id):
+    """Download a media file by ID.
+
+    Remote workers use this to download clips, intros, outros, and transitions
+    needed for compilation when they don't have shared filesystem access.
+
+    Query params:
+        user_id: int - Required for ownership validation
+
+    Response:
+        - 200: File content with proper Content-Type and Content-Disposition headers
+        - 404: File not found or doesn't exist on disk
+        - 401: Unauthorized (wrong/missing user_id)
+    """
+    try:
+        user_id = request.args.get("user_id", type=int)
+        if not user_id:
+            return jsonify({"error": "user_id required"}), 400
+
+        # Fetch media file with ownership validation
+        media_file = MediaFile.query.filter_by(id=media_id, user_id=user_id).first()
+        if not media_file:
+            current_app.logger.warning(
+                f"Media file {media_id} not found or not owned by user {user_id}"
+            )
+            return jsonify({"error": "Media file not found"}), 404
+
+        # Check if file exists on disk
+        if not media_file.file_path or not os.path.exists(media_file.file_path):
+            current_app.logger.error(
+                f"Media file {media_id} path not found on disk: {media_file.file_path}"
+            )
+            return jsonify({"error": "File not found on disk"}), 404
+
+        # Determine MIME type
+        mimetype = (
+            mimetypes.guess_type(media_file.file_path)[0] or "application/octet-stream"
+        )
+
+        # Get filename from path
+        filename = os.path.basename(media_file.file_path)
+
+        current_app.logger.info(
+            f"Worker downloading media {media_id} ({filename}) for user {user_id}"
+        )
+
+        # Send file with proper headers
+        return send_file(
+            media_file.file_path,
+            mimetype=mimetype,
+            as_attachment=True,
+            download_name=filename,
+        )
+
+    except Exception as e:
+        current_app.logger.error(f"Error downloading media {media_id}: {e}")
         return jsonify({"error": "Internal error"}), 500

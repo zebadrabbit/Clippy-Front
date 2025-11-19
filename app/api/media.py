@@ -329,10 +329,14 @@ def list_user_media_api():
                     "media_type": mf.media_type.value
                     if hasattr(mf.media_type, "value")
                     else str(mf.media_type),
-                    "thumbnail_url": url_for("main.media_thumbnail", media_id=mf.id)
+                    "thumbnail_url": url_for(
+                        "main.media_thumbnail", media_id=mf.id, _external=True
+                    )
                     if mf.thumbnail_path
                     else None,
-                    "preview_url": url_for("main.media_preview", media_id=mf.id),
+                    "preview_url": url_for(
+                        "main.media_preview", media_id=mf.id, _external=True
+                    ),
                 }
             )
 
@@ -388,10 +392,14 @@ def list_project_media_api(project_id: int):
                     "media_type": mf.media_type.value
                     if hasattr(mf.media_type, "value")
                     else str(mf.media_type),
-                    "thumbnail_url": url_for("main.media_thumbnail", media_id=mf.id)
+                    "thumbnail_url": url_for(
+                        "main.media_thumbnail", media_id=mf.id, _external=True
+                    )
                     if mf.thumbnail_path
                     else None,
-                    "preview_url": url_for("main.media_preview", media_id=mf.id),
+                    "preview_url": url_for(
+                        "main.media_preview", media_id=mf.id, _external=True
+                    ),
                 }
             )
 

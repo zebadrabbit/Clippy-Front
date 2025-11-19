@@ -40,6 +40,60 @@ from app.tasks.video_processing import (
 )
 
 
+def _download_media_file(media_id: int, user_id: int, cache_dir: str) -> str:
+    """Download a media file from the main server via worker API.
+
+    Remote workers use this to fetch clips, intros, outros, and transitions
+    when they don't have shared filesystem access.
+
+    Args:
+        media_id: MediaFile ID to download
+        user_id: User ID for ownership validation
+        cache_dir: Directory to save downloaded file
+
+    Returns:
+        str: Path to downloaded file
+
+    Raises:
+        RuntimeError: If download fails
+    """
+    import requests
+
+    app = _get_app()
+    api_base = app.config.get("MEDIA_BASE_URL", "").rstrip("/")
+    api_key = app.config.get("WORKER_API_KEY", "")
+
+    if not api_base or not api_key:
+        raise RuntimeError("MEDIA_BASE_URL or WORKER_API_KEY not configured")
+
+    # Check if already cached
+    cached_path = os.path.join(cache_dir, f"media_{media_id}.mp4")
+    if os.path.exists(cached_path):
+        app.logger.info(f"Using cached media file {media_id}: {cached_path}")
+        return cached_path
+
+    # Download from API
+    url = f"{api_base}/api/worker/media/{media_id}/download?user_id={user_id}"
+    headers = {"Authorization": f"Bearer {api_key}"}
+
+    try:
+        app.logger.info(f"Downloading media {media_id} from {url}")
+        response = requests.get(url, headers=headers, stream=True, timeout=300)
+        response.raise_for_status()
+
+        # Save to cache
+        os.makedirs(cache_dir, exist_ok=True)
+        with open(cached_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+        app.logger.info(f"Downloaded media {media_id} to {cached_path}")
+        return cached_path
+
+    except Exception as e:
+        raise RuntimeError(f"Failed to download media {media_id}: {e}") from e
+
+
 def _apply_tier_limits_to_clips(
     clips: list[dict], tier_limits: dict[str, Any]
 ) -> list[dict]:
@@ -84,10 +138,40 @@ def _process_clip_v2(
     original_path = media_file.get("file_path", "")
     input_path = _resolve_media_input_path(original_path)
 
+    # If file doesn't exist locally, download it from main server
     if not os.path.exists(input_path):
-        raise ValueError(
-            f"Media file not found for clip {clip_data['id']}: {input_path}"
+        app = _get_app()
+        app.logger.warning(
+            f"Media file not found locally: {input_path}. Attempting download..."
         )
+
+        # Create cache directory
+        cache_dir = os.path.join(tempfile.gettempdir(), "clippy-worker-cache")
+
+        try:
+            # Download the file
+            media_id = media_file.get("id")
+            user_id = project_data.get("user_id")
+
+            if not media_id or not user_id:
+                raise ValueError(
+                    f"Missing media_id or user_id for clip {clip_data['id']}"
+                )
+
+            app.logger.info(
+                f"Attempting to download media_id={media_id}, user_id={user_id}"
+            )
+            input_path = _download_media_file(media_id, user_id, cache_dir)
+            app.logger.info(f"Successfully downloaded media {media_id} to {input_path}")
+
+        except Exception as e:
+            app.logger.error(
+                f"Download failed for clip {clip_data['id']}: {e}", exc_info=True
+            )
+            raise ValueError(
+                f"Media file not found for clip {clip_data['id']} "
+                f"and download failed: {e}"
+            ) from e
 
     output_path = os.path.join(temp_dir, f"clip_{clip_data['id']}_processed.mp4")
 
@@ -118,9 +202,6 @@ def _process_clip_v2(
     target_res = parse_resolution(
         None, eff_label or project_data.get("output_resolution", "1080p")
     )
-    scale_filter = (
-        f"scale={target_res.split('x')[0]}:{target_res.split('x')[1]}:flags=lanczos"
-    )
 
     # Overlay text (creator + game name)
     font = resolve_fontfile()
@@ -128,15 +209,22 @@ def _process_clip_v2(
     game_name = (clip_data.get("game_name") or "").strip()
 
     # Build filter complex with overlay if enabled
-    if overlay_enabled(app) and (creator_name or game_name):
+    if overlay_enabled() and (creator_name or game_name):
+        # build_overlay_filter returns [0:v]drawbox...drawtext...[v]
+        # We need to insert the scale before the drawbox
         overlay_filter = build_overlay_filter(
-            font_path=font, creator_name=creator_name, game_name=game_name
+            author=creator_name, game=game_name, fontfile=font
         )
-        filter_complex = f"{scale_filter},{overlay_filter}"
+        # Replace [0:v] with [0:v]scale...,
+        scale_part = f"[0:v]scale={target_res.split('x')[0]}:{target_res.split('x')[1]}:flags=lanczos,"
+        filter_complex = overlay_filter.replace("[0:v]", scale_part)
     else:
-        filter_complex = scale_filter
+        filter_complex = f"[0:v]scale={target_res.split('x')[0]}:{target_res.split('x')[1]}:flags=lanczos[v]"
 
     cmd.extend(["-i", input_path, "-filter_complex", filter_complex])
+
+    # Map the filtered video output
+    cmd.extend(["-map", "[v]"])
 
     # Add encoder args
     cmd.extend(encoder_args(app))
@@ -146,29 +234,75 @@ def _process_clip_v2(
     audio_db = project_data.get("audio_norm_db")
     if audio_profile or audio_db:
         cmd.extend(audio_args(app, audio_profile, audio_db))
+    else:
+        # Map audio stream from input (0:a means first audio stream from input 0)
+        cmd.extend(["-map", "0:a"])
 
     # Output
     cmd.extend(["-y", output_path])
 
     # Execute
-    subprocess.run(cmd, check=True, capture_output=True)
+    app.logger.info(
+        f"Running ffmpeg for clip {clip_data['id']}: {' '.join(cmd[:10])}..."
+    )
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)
+    except subprocess.CalledProcessError as e:
+        # Log stderr to see what ffmpeg is complaining about
+        stderr_output = (
+            e.stderr.decode("utf-8", errors="replace") if e.stderr else "No stderr"
+        )
+        app.logger.error(
+            f"ffmpeg failed for clip {clip_data['id']} with exit code {e.returncode}"
+        )
+        app.logger.error(f"ffmpeg stderr: {stderr_output}")
+        raise
 
     return output_path
 
 
 def _process_media_file_v2(
-    media_path: str, output_path: str, project_data: dict, tier_limits: dict
+    media_data: dict, output_path: str, project_data: dict, tier_limits: dict
 ) -> None:
     """Process intro/outro/transition media file (API-based).
 
     Args:
-        media_path: Input media file path
+        media_data: Media file dict with id, file_path, etc.
         output_path: Output processed file path
         project_data: Project dict from API
         tier_limits: Tier limits dict
     """
     app = _get_app()
     ffmpeg_bin = resolve_binary(app, "ffmpeg")
+
+    # Resolve and repair input path if needed
+    original_path = media_data.get("file_path", "")
+    media_path = _resolve_media_input_path(original_path)
+
+    # If file doesn't exist locally, download it from main server
+    if not os.path.exists(media_path):
+        app.logger.warning(
+            f"Media file not found locally: {media_path}. Attempting download..."
+        )
+
+        # Create cache directory
+        cache_dir = os.path.join(tempfile.gettempdir(), "clippy-worker-cache")
+
+        try:
+            # Download the file
+            media_id = media_data.get("id")
+            user_id = project_data.get("user_id")
+
+            if not media_id or not user_id:
+                raise ValueError(
+                    f"Missing media_id or user_id for media file {media_data}"
+                )
+
+            media_path = _download_media_file(media_id, user_id, cache_dir)
+            app.logger.info(f"Successfully downloaded media {media_id} to {media_path}")
+
+        except Exception as e:
+            raise ValueError(f"Media file not found and download failed: {e}") from e
 
     from app.ffmpeg_config import config_args as _cfg_args
 
@@ -244,9 +378,7 @@ def _build_timeline_with_transitions_v2(
     if intro_id and intro_id in media_files:
         intro = media_files[intro_id]
         intro_processed = os.path.join(temp_dir, "intro_processed.mp4")
-        _process_media_file_v2(
-            intro["file_path"], intro_processed, project_data, tier_limits
-        )
+        _process_media_file_v2(intro, intro_processed, project_data, tier_limits)
         intro_path = intro_processed
 
     # Process outro
@@ -254,9 +386,7 @@ def _build_timeline_with_transitions_v2(
     if outro_id and outro_id in media_files:
         outro = media_files[outro_id]
         outro_processed = os.path.join(temp_dir, "outro_processed.mp4")
-        _process_media_file_v2(
-            outro["file_path"], outro_processed, project_data, tier_limits
-        )
+        _process_media_file_v2(outro, outro_processed, project_data, tier_limits)
         outro_path = outro_processed
 
     # Process transitions
@@ -265,10 +395,26 @@ def _build_timeline_with_transitions_v2(
         if tid in media_files:
             trans = media_files[tid]
             trans_processed = os.path.join(temp_dir, f"transition_{tid}_processed.mp4")
-            _process_media_file_v2(
-                trans["file_path"], trans_processed, project_data, tier_limits
-            )
+            _process_media_file_v2(trans, trans_processed, project_data, tier_limits)
             transition_paths.append(trans_processed)
+
+    # Get static bumper path
+    app = _get_app()
+    static_bumper_path = None
+
+    # Check configured path first
+    configured_static = app.config.get("STATIC_BUMPER_PATH")
+    if configured_static and os.path.exists(configured_static):
+        static_bumper_path = configured_static
+    else:
+        # Try instance/assets/static.mp4
+        with app.app_context():
+            from app.storage import data_root
+
+            instance_static = os.path.join(data_root(), "..", "assets", "static.mp4")
+            instance_static = os.path.normpath(instance_static)
+            if os.path.exists(instance_static):
+                static_bumper_path = instance_static
 
     # Build timeline with transitions between segments
     import random as _random
@@ -281,26 +427,37 @@ def _build_timeline_with_transitions_v2(
         return transition_paths[idx % len(transition_paths)]
 
     segments = []
+
+    # Intro
     if intro_path:
         segments.append(intro_path)
 
-    # Add clips with transitions between them
+    # Static after intro
+    if intro_path and static_bumper_path:
+        segments.append(static_bumper_path)
+
+    # Add clips with transitions and static bumpers
     transition_idx = 0
-    for _i, clip_path in enumerate(processed_clips):
-        # Add transition before this clip if not first segment
-        if segments and transition_paths:
+    for i, clip_path in enumerate(processed_clips):
+        # Add transition before this clip (not before first clip)
+        if i > 0 and transition_paths:
             trans = _next_transition(transition_idx)
             if trans:
                 segments.append(trans)
                 transition_idx += 1
+
+        # Static before clip (after transition, or at start if no intro)
+        if static_bumper_path:
+            segments.append(static_bumper_path)
+
+        # The clip itself
         segments.append(clip_path)
 
-    # Add transition before outro if we have an outro
-    if outro_path and segments and transition_paths:
-        trans = _next_transition(transition_idx)
-        if trans:
-            segments.append(trans)
+        # Static after clip
+        if static_bumper_path:
+            segments.append(static_bumper_path)
 
+    # Outro
     if outro_path:
         segments.append(outro_path)
 
@@ -389,10 +546,15 @@ def _save_final_video_v2(temp_path: str, project_data: dict, user_id: int) -> st
     app = _get_app()
 
     with app.app_context():
-        # Build output directory using user ID
-        # Use simplified path: <data_root>/user_<id>/compilations/
-        data_root = storage_lib.data_root()
-        output_dir = os.path.join(data_root, f"user_{user_id}", "compilations")
+        # Build output directory using storage helper for project-based layout
+        from app.models import User
+
+        user = User.query.get(user_id)
+        if not user:
+            raise ValueError(f"User {user_id} not found")
+
+        project_name = project_data.get("name", f"project_{project_data['id']}")
+        output_dir = storage_lib.compilations_dir(user, project_name)
         os.makedirs(output_dir, exist_ok=True)
 
         # Generate filename
@@ -531,7 +693,10 @@ def compile_video_task_v2(
                         processed_clips.append(clip_path)
                         used_clip_ids.append(clip["id"])
                 except Exception as e:
-                    log("warning", f"Failed to process clip {clip['id']}: {str(e)}")
+                    _get_app().logger.error(
+                        f"Failed to process clip {clip['id']}: {str(e)}", exc_info=True
+                    )
+                    log("error", f"Failed to process clip {clip['id']}: {str(e)}")
                     continue
 
             if not processed_clips:
@@ -581,101 +746,108 @@ def compile_video_task_v2(
             output_path = _compile_final_video_v2(final_clips, temp_dir, project_data)
 
             self.update_state(
-                state="PROGRESS", meta={"progress": 90, "status": "Saving output"}
+                state="PROGRESS",
+                meta={"progress": 90, "status": "Uploading compilation"},
             )
-            log("info", "Saving output", status="saving")
+            log("info", "Uploading compilation", status="uploading")
             worker_api.update_processing_job(job_id, progress=90)
 
-            # Save to persistent storage
-            final_output_path = _save_final_video_v2(
-                output_path, project_data, project_data["user_id"]
-            )
+            # Extract metadata before upload
+            meta = extract_video_metadata(output_path)
+            file_size = os.path.getsize(output_path)
 
-            # Create MediaFile record for compilation
+            # Generate thumbnail
+            thumb_path = None
             try:
-                file_size = os.path.getsize(final_output_path)
-                canonical_path = (
-                    storage_lib.instance_canonicalize(final_output_path)
-                    or final_output_path
+                app = _get_app()
+                thumb_dir = tempfile.mkdtemp(prefix="thumb_")
+                stem = os.path.splitext(os.path.basename(output_path))[0]
+                thumb_path = os.path.join(thumb_dir, f"{stem}.jpg")
+
+                ffmpeg_bin = resolve_binary(app, "ffmpeg")
+                ts = str(app.config.get("THUMBNAIL_TIMESTAMP_SECONDS", 1))
+                w = int(app.config.get("THUMBNAIL_WIDTH", 480))
+
+                from app.ffmpeg_config import config_args as _cfg_args
+
+                subprocess.run(
+                    [
+                        ffmpeg_bin,
+                        *_cfg_args(app, "ffmpeg", "thumbnail"),
+                        "-y",
+                        "-ss",
+                        ts,
+                        "-i",
+                        output_path,
+                        "-frames:v",
+                        "1",
+                        "-vf",
+                        f"scale={w}:-1",
+                        thumb_path,
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=True,
+                )
+            except Exception as e:
+                log("warning", f"Failed to generate thumbnail: {e}")
+                thumb_path = None
+
+            # Upload compilation to server
+            try:
+                # Generate filename with timestamp
+                timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                output_format = project_data.get("output_format", "mp4")
+                project_name = project_data.get("name", f"project_{project_data['id']}")
+                safe_name = "".join(
+                    c for c in project_name if c.isalnum() or c in (" ", "_", "-")
+                )
+                safe_name = safe_name.replace(" ", "_")
+                filename = f"{safe_name}_{timestamp}.{output_format}"
+
+                upload_metadata = {
+                    "filename": filename,
+                    "file_size": file_size,
+                }
+                if meta:
+                    upload_metadata.update(
+                        {
+                            "duration": meta.get("duration"),
+                            "width": meta.get("width"),
+                            "height": meta.get("height"),
+                            "framerate": meta.get("framerate"),
+                        }
+                    )
+
+                upload_result = worker_api.upload_compilation(
+                    project_id=project_id,
+                    video_path=output_path,
+                    thumbnail_path=thumb_path,
+                    metadata=upload_metadata,
                 )
 
-                media_data = {
-                    "filename": os.path.basename(final_output_path),
-                    "original_filename": os.path.basename(final_output_path),
-                    "file_path": canonical_path,
-                    "file_size": file_size,
-                    "mime_type": "video/mp4",
-                    "media_type": "compilation",
-                    "user_id": project_data["user_id"],
-                    "project_id": project_id,
-                    "is_processed": True,
-                }
+                log(
+                    "success",
+                    f"Uploaded compilation: {upload_result.get('media_id')}",
+                    status="uploaded",
+                )
+                final_output_path = upload_result.get("file_path", output_path)
 
-                # Extract metadata
-                meta = extract_video_metadata(final_output_path)
-                if meta:
-                    media_data["duration"] = meta.get("duration")
-                    media_data["width"] = meta.get("width")
-                    media_data["height"] = meta.get("height")
-                    media_data["framerate"] = meta.get("framerate")
-
-                # Generate thumbnail
-                try:
-                    app = _get_app()
-                    with app.app_context():
-                        # Use simplified thumbnail path under user directory
-                        data_root = storage_lib.data_root()
-                        thumbs_dir = os.path.join(
-                            data_root, f"user_{project_data['user_id']}", "thumbnails"
-                        )
-                        os.makedirs(thumbs_dir, exist_ok=True)
-
-                    stem = os.path.splitext(os.path.basename(final_output_path))[0]
-                    thumb_path = os.path.join(thumbs_dir, f"{stem}.jpg")
-
-                    if not os.path.exists(thumb_path):
-                        ffmpeg_bin = resolve_binary(app, "ffmpeg")
-                        ts = str(app.config.get("THUMBNAIL_TIMESTAMP_SECONDS", 1))
-                        w = int(app.config.get("THUMBNAIL_WIDTH", 480))
-
-                        from app.ffmpeg_config import config_args as _cfg_args
-
-                        subprocess.run(
-                            [
-                                ffmpeg_bin,
-                                *_cfg_args(app, "ffmpeg", "thumbnail"),
-                                "-y",
-                                "-ss",
-                                ts,
-                                "-i",
-                                final_output_path,
-                                "-frames:v",
-                                "1",
-                                "-vf",
-                                f"scale={w}:-1",
-                                thumb_path,
-                            ],
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                            check=True,
-                        )
-
-                    media_data["thumbnail_path"] = (
-                        storage_lib.instance_canonicalize(thumb_path) or thumb_path
-                    )
-                except Exception:
-                    pass
-
-                worker_api.create_media_file(**media_data)
-            except Exception:
-                pass  # Don't fail if media record creation fails
+            except Exception as e:
+                log("error", f"Failed to upload compilation: {e}")
+                # Fall back to local path if upload fails
+                final_output_path = output_path
+                # Still try to save locally
+                final_output_path = _save_final_video_v2(
+                    output_path, project_data, project_data["user_id"]
+                )
 
             # Update project status
             worker_api.update_project_status(
                 project_id=project_id,
                 status="completed",
                 output_filename=os.path.basename(final_output_path),
-                output_file_size=os.path.getsize(final_output_path),
+                output_file_size=file_size,
             )
 
             # Record render usage

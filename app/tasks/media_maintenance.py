@@ -661,15 +661,35 @@ def ingest_raw_clips_for_project(
     action: str = "copy",
     regen_thumbnails: bool = True,
 ) -> dict:
-    """On-demand importer: pull rsynced raw clips into the target project's clips folder.
+    """DEPRECATED: Legacy rsync-based importer for raw clips.
 
-    - Scans Config.INGEST_ROOT[/<worker_id>] for artifact directories (e.g., clip_<id>_...)
-    - For each artifact dir, choose the hinted filename from manifest.json or the largest file
-    - Import into the project's clips directory using the chosen action (copy/move/link)
-    - Run reindex to backfill DB rows (and optionally regenerate thumbnails)
+    This task is no longer used in the HTTP upload workflow.
+    Clips are now uploaded directly via POST /api/worker/projects/<id>/clips/<id>/upload
+    during the download task (see app/tasks/download_clip_v2.py and app/api/worker.py).
 
-    Returns summary counts and destination path.
+    Keeping this task for backwards compatibility with any existing queued jobs,
+    but it will skip execution if no ingest directory exists.
+
+    Historical behavior:
+    - Scanned /srv/ingest[/<worker_id>] for artifact directories
+    - Imported rsynced files into project's clips folder
+    - Ran reindex to backfill DB rows
+
+    Returns summary indicating skipped status.
     """
+    # Check if ingest root exists (it won't in new HTTP-only deployments)
+    import os
+
+    from config.settings import Config
+
+    ingest_root = getattr(Config, "INGEST_ROOT", "/srv/ingest")
+    if not os.path.exists(ingest_root) or not os.path.isdir(ingest_root):
+        return {
+            "status": "skipped",
+            "reason": f"No ingest root: {ingest_root} (exists={os.path.exists(ingest_root)}, is_dir={os.path.isdir(ingest_root) if os.path.exists(ingest_root) else False})",
+        }
+
+    # Legacy implementation below (kept for backwards compatibility)
     # Lazy imports to avoid app initialization in module import time
     import json as _json
 
@@ -717,14 +737,23 @@ def ingest_raw_clips_for_project(
     # Validate ingest root exists and is accessible
     try:
         root_is_dir = ingest_root.is_dir()
-    except PermissionError:
+    except PermissionError as e:
         return {
             "status": "skipped",
-            "reason": f"Permission denied accessing ingest root: {ingest_root}",
+            "reason": f"Permission denied accessing ingest root: {ingest_root}: {e}",
+            "ingest_root": str(ingest_root),
+        }
+    except Exception as e:
+        return {
+            "status": "skipped",
+            "reason": f"Error checking ingest root: {ingest_root}: {e}",
             "ingest_root": str(ingest_root),
         }
     if not root_is_dir:
-        return {"status": "skipped", "reason": f"No ingest root: {ingest_root}"}
+        return {
+            "status": "skipped",
+            "reason": f"No ingest root: {ingest_root} (exists={ingest_root.exists()}, is_dir={root_is_dir})",
+        }
 
     app = create_app()
     with app.app_context():
@@ -772,8 +801,11 @@ def ingest_raw_clips_for_project(
         clips_dir = Path(storage_lib.clips_dir(owner, project.name))
         try:
             clips_dir.mkdir(parents=True, exist_ok=True)
-        except Exception:
-            pass
+        except Exception as e:
+            return {
+                "status": "error",
+                "reason": f"Failed to create clips directory {clips_dir}: {e}",
+            }
 
         imported = 0
         examined = 0
@@ -813,22 +845,40 @@ def ingest_raw_clips_for_project(
                     mtype = (mf.get("type") or "").strip().lower()
                 except Exception:
                     mtype = ""
-                try:
-                    pid = int(mf.get("project_id") or 0)
-                except Exception:
-                    pid = 0
                 clip_id = mf.get("clip_id")
+                slug = mf.get("slug") or d.name  # Use directory name as fallback slug
+
                 if mtype and mtype != "raw_clip":
+                    self.app.log.get_default_logger().debug(
+                        f"Skipping {d.name}: wrong type '{mtype}'"
+                    )
                     continue
-                if not clip_id:
-                    # If no clip_id, treat as non-raw artifact; skip
+
+                # Match by source_id (slug) instead of clip_id to support clip reuse across projects
+                from app.models import Clip as _ClipCheck
+
+                matching_clip = _ClipCheck.query.filter_by(
+                    project_id=project.id, source_id=slug
+                ).first()
+
+                if not matching_clip:
+                    self.app.log.get_default_logger().debug(
+                        f"Skipping {d.name}: no clip with source_id={slug} in project {project.id}"
+                    )
                     continue
-                if pid and pid != int(project.id):
-                    continue
+
+                # Use the matched clip's ID for linking
+                clip_id = matching_clip.id
                 filename = (mf.get("filename") or "").strip() or None
                 src = _find_clip_file(d, filename)
                 if not src:
+                    self.app.log.get_default_logger().debug(
+                        f"Skipping {d.name}: no source file found (hint={filename})"
+                    )
                     continue
+                self.app.log.get_default_logger().info(
+                    f"Processing artifact {d.name}: clip_id={clip_id}, src={src.name}"
+                )
                 dst = clips_dir / src.name
                 if dst.exists():
                     # Skip file copy but still mark as imported to allow cleanup
@@ -842,6 +892,10 @@ def ingest_raw_clips_for_project(
                         pass
                     continue
                 try:
+                    self.update_state(
+                        state="PROGRESS",
+                        meta={"status": f"Importing {src.name}", "clip_id": clip_id},
+                    )
                     if action == "move":
                         src.replace(dst)
                     elif action == "link":
@@ -851,17 +905,94 @@ def ingest_raw_clips_for_project(
 
                         _copy2(str(src), str(dst))
                     imported += 1
+                    self.update_state(
+                        state="PROGRESS",
+                        meta={
+                            "status": f"Imported {src.name}",
+                            "clip_id": clip_id,
+                            "imported": imported,
+                        },
+                    )
 
-                    # Create MediaFile record immediately
+                    # Create or update MediaFile record immediately
                     try:
+                        from app.models import Clip as _Clip
                         from app.models import MediaFile, MediaType
 
-                        # Check if already exists
+                        # Check if this clip already has a MediaFile (might be old worker-created one)
+                        clip_record = None
+                        old_media = None
+                        if clip_id:
+                            clip_record = _Clip.query.filter_by(
+                                id=clip_id, project_id=project.id
+                            ).first()
+                            if clip_record and clip_record.media_file_id:
+                                old_media = MediaFile.query.get(
+                                    clip_record.media_file_id
+                                )
+
+                        # Check if MediaFile already exists for this file path
                         existing_media = MediaFile.query.filter_by(
                             file_path=str(dst)
                         ).first()
 
-                        if not existing_media:
+                        if existing_media:
+                            # File already imported, just link to clip if needed
+                            media = existing_media
+                        elif old_media:
+                            # Clip has old MediaFile - check if it points to a non-existent file
+                            # (likely from worker temp download before artifact import)
+                            old_path_exists = False
+                            try:
+                                import os as _os_check
+
+                                old_file_path = old_media.file_path
+                                # Try to resolve path if it looks like instance-relative
+                                if old_file_path.startswith("/instance/"):
+                                    from flask import current_app
+
+                                    suffix = old_file_path[len("/instance/") :].lstrip(
+                                        "/"
+                                    )
+                                    old_file_path = _os_check.path.join(
+                                        current_app.instance_path, suffix
+                                    )
+                                old_path_exists = _os_check.path.exists(old_file_path)
+                            except Exception:
+                                pass
+
+                            if not old_path_exists:
+                                # Update old MediaFile to point to new imported file
+                                import mimetypes
+
+                                mime = mimetypes.guess_type(str(dst))[0] or "video/mp4"
+                                size = dst.stat().st_size if dst.exists() else 0
+
+                                old_media.filename = dst.name
+                                old_media.original_filename = dst.name
+                                old_media.file_path = str(dst)
+                                old_media.file_size = size
+                                old_media.mime_type = mime
+                                old_media.is_processed = True
+
+                                # Copy thumbnail if available
+                                thumb_filename = mf.get("thumbnail", "thumbnail.jpg")
+                                thumb_src = d / thumb_filename
+                                if thumb_src.is_file():
+                                    thumb_dst = dst.parent / f"{dst.stem}_thumb.jpg"
+                                    if not thumb_dst.exists():
+                                        from shutil import copy2 as _copy2_thumb
+
+                                        _copy2_thumb(str(thumb_src), str(thumb_dst))
+                                    old_media.thumbnail_path = str(thumb_dst)
+
+                                media = old_media
+                                db.session.commit()
+                            else:
+                                # Old media file still exists, create new one
+                                media = old_media
+                        else:
+                            # Create new MediaFile
                             import mimetypes
 
                             mime = mimetypes.guess_type(str(dst))[0] or "video/mp4"
@@ -880,7 +1011,8 @@ def ingest_raw_clips_for_project(
                             )
 
                             # Copy thumbnail if available
-                            thumb_src = d / "thumbnail.jpg"
+                            thumb_filename = mf.get("thumbnail", "thumbnail.jpg")
+                            thumb_src = d / thumb_filename
                             if thumb_src.is_file():
                                 thumb_dst = dst.parent / f"{dst.stem}_thumb.jpg"
                                 if not thumb_dst.exists():
@@ -891,6 +1023,21 @@ def ingest_raw_clips_for_project(
 
                             db.session.add(media)
                             db.session.commit()
+
+                        # Link MediaFile to Clip if clip_id is present
+                        if clip_id and clip_record:
+                            try:
+                                if (
+                                    not clip_record.media_file_id
+                                    or clip_record.media_file_id != media.id
+                                ):
+                                    clip_record.media_file_id = media.id
+                                    clip_record.is_downloaded = True
+                                    if media.duration and not clip_record.duration:
+                                        clip_record.duration = media.duration
+                                    db.session.commit()
+                            except Exception:
+                                db.session.rollback()
                     except Exception:
                         db.session.rollback()
 
@@ -904,8 +1051,13 @@ def ingest_raw_clips_for_project(
                             pass
                     except Exception:
                         pass
-                except Exception:
-                    # ignore individual errors
+                except Exception as e:
+                    # Log individual errors but continue processing other artifacts
+                    import traceback
+
+                    self.app.log.get_default_logger().error(
+                        f"Failed to import {d.name}: {e}\n{traceback.format_exc()}"
+                    )
                     continue
 
         # Reindex to backfill DB rows
@@ -995,6 +1147,277 @@ def ingest_raw_clips_for_project(
             "imported": imported,
             "examined": examined,
             "reindexed": created,
+            "dest": str(clips_dir),
+            "ingest_root": str(ingest_root),
+        }
+
+
+@celery_app.task(bind=True)
+def ingest_downloads_for_project(
+    self,
+    project_id: int,
+    worker_id: str | None = None,
+    action: str = "copy",
+    pattern: str = "downloads_*/*.mp4",
+) -> dict:
+    """Import downloaded clips from artifact directories into the project's clips folder.
+
+    Specifically designed for the downloads exported by download_clip_task_v2 which creates:
+        /artifacts/downloads_<project_id>_<clip_id>_<timestamp>/
+            clip_<clip_id>.mp4
+            manifest.json
+            .DONE
+
+    - Scans Config.INGEST_ROOT[/<worker_id>]/downloads_* for artifacts
+    - Filters by project_id in manifest.json
+    - Imports clips into the project's clips directory
+    - Updates Clip.is_downloaded and links to MediaFile
+
+    Returns summary counts and destination path.
+    """
+    import json as _json
+    import mimetypes as _mimetypes
+    from pathlib import Path
+
+    from app import create_app
+    from app import storage as storage_lib
+    from app.models import Clip, MediaFile, MediaType, Project, User
+    from config.settings import Config
+
+    def _load_manifest(dir_path: Path) -> dict | None:
+        mf = dir_path / "manifest.json"
+        if not mf.is_file():
+            return None
+        try:
+            return _json.loads(mf.read_text())
+        except Exception:
+            return None
+
+    cfg = Config()
+    ingest_root = Path(getattr(cfg, "INGEST_ROOT", "/srv/ingest") or "/srv/ingest")
+
+    try:
+        root_is_dir = ingest_root.is_dir()
+    except PermissionError:
+        return {
+            "status": "skipped",
+            "reason": f"Permission denied accessing ingest root: {ingest_root}",
+        }
+    if not root_is_dir:
+        return {"status": "skipped", "reason": f"No ingest root: {ingest_root}"}
+
+    app = create_app()
+    with app.app_context():
+        project = Project.query.filter_by(id=project_id).first()
+        if not project:
+            return {"status": "skipped", "reason": f"Project not found: {project_id}"}
+        owner = User.query.filter_by(id=project.user_id).first()
+        if not owner:
+            return {"status": "skipped", "reason": "Owner not found"}
+
+        # Determine roots to scan
+        roots: list[Path] = []
+        if worker_id:
+            candidate = ingest_root / worker_id
+            try:
+                if candidate.is_dir():
+                    roots = [candidate]
+                else:
+                    return {
+                        "status": "skipped",
+                        "reason": f"Worker directory not found: {candidate}",
+                    }
+            except PermissionError:
+                return {
+                    "status": "skipped",
+                    "reason": f"Permission denied: {candidate}",
+                }
+        else:
+            try:
+                roots = [p for p in ingest_root.iterdir() if p.is_dir()]
+            except PermissionError:
+                return {"status": "skipped", "reason": "Permission denied"}
+
+        clips_dir = Path(storage_lib.clips_dir(owner, project.name))
+        try:
+            clips_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+
+        imported = 0
+        examined = 0
+
+        for wr in roots:
+            if not wr.is_dir():
+                continue
+            try:
+                # Find all directories matching "downloads_*" pattern
+                artifact_dirs = [
+                    p
+                    for p in wr.iterdir()
+                    if p.is_dir() and p.name.startswith("downloads_")
+                ]
+            except Exception:
+                artifact_dirs = []
+
+            for d in sorted(artifact_dirs):
+                examined += 1
+
+                # Skip if already imported
+                try:
+                    if (d / ".IMPORTED").is_file():
+                        continue
+                except Exception:
+                    pass
+
+                # Check if transfer is complete
+                transfer_complete = False
+                try:
+                    if (d / ".READY").is_file():
+                        transfer_complete = True
+                    elif not (d / ".PUSHING").is_file() and _artifact_ready(d, 30):
+                        transfer_complete = True
+                except Exception:
+                    pass
+                if not transfer_complete:
+                    continue
+
+                mani = _load_manifest(d) or {}
+
+                # Verify this is a download artifact for our project
+                try:
+                    artifact_type = (mani.get("type") or "").strip().lower()
+                except Exception:
+                    artifact_type = ""
+                if artifact_type != "download":
+                    continue
+
+                try:
+                    pid = int(mani.get("project_id") or 0)
+                except Exception:
+                    pid = 0
+                if pid != int(project.id):
+                    continue
+
+                try:
+                    clip_id = int(mani.get("clip_id") or 0)
+                except Exception:
+                    clip_id = 0
+
+                filename = (mani.get("filename") or "").strip()
+                if not filename:
+                    continue
+
+                src = d / filename
+                if not src.is_file():
+                    continue
+
+                dst = clips_dir / filename
+                if dst.exists():
+                    # File already exists, skip but mark as imported
+                    try:
+                        (d / ".IMPORTED").touch()
+                        (d / ".READY").unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    continue
+
+                # Import the file
+                try:
+                    if action == "move":
+                        src.replace(dst)
+                    elif action == "link":
+                        import os
+
+                        os.symlink(src, dst)
+                    else:
+                        from shutil import copy2 as _copy2
+
+                        _copy2(str(src), str(dst))
+                    imported += 1
+                except Exception:
+                    continue
+
+                # Create MediaFile record
+                try:
+                    size = dst.stat().st_size if dst.exists() else 0
+                except Exception:
+                    size = 0
+
+                mime = _mimetypes.guess_type(str(dst))[0] or "video/mp4"
+
+                media = MediaFile(
+                    filename=dst.name,
+                    original_filename=dst.name,
+                    file_path=str(dst),
+                    file_size=size,
+                    mime_type=mime,
+                    media_type=MediaType.CLIP,
+                    user_id=owner.id,
+                    project_id=project.id,
+                    is_processed=True,
+                )
+
+                # Extract metadata if available
+                try:
+                    from app.tasks.video_processing import (
+                        extract_video_metadata as _meta,
+                    )
+
+                    meta = _meta(str(dst)) or {}
+                    media.duration = meta.get("duration")
+                    media.width = meta.get("width")
+                    media.height = meta.get("height")
+                    media.framerate = meta.get("framerate")
+                except Exception:
+                    pass
+
+                # Copy thumbnail if available
+                try:
+                    thumb_src = d / f"{dst.stem}_thumb.jpg"
+                    if thumb_src.is_file():
+                        thumb_dst = dst.parent / f"{dst.stem}_thumb.jpg"
+                        if not thumb_dst.exists():
+                            from shutil import copy2 as _copy2
+
+                            _copy2(str(thumb_src), str(thumb_dst))
+                        media.thumbnail_path = str(thumb_dst)
+                except Exception:
+                    pass
+
+                db.session.add(media)
+                try:
+                    db.session.commit()
+                    media_id = media.id
+                except Exception:
+                    db.session.rollback()
+                    media_id = None
+
+                # Update the Clip record if clip_id was provided
+                if clip_id and media_id:
+                    try:
+                        clip = Clip.query.filter_by(id=clip_id).first()
+                        if clip:
+                            clip.is_downloaded = True
+                            clip.media_file_id = media_id
+                            if media.duration and not clip.duration:
+                                clip.duration = media.duration
+                            db.session.add(clip)
+                            db.session.commit()
+                    except Exception:
+                        db.session.rollback()
+
+                # Mark as imported
+                try:
+                    (d / ".IMPORTED").touch()
+                    (d / ".READY").unlink(missing_ok=True)
+                except Exception:
+                    pass
+
+        return {
+            "status": "completed",
+            "imported": imported,
+            "examined": examined,
             "dest": str(clips_dir),
             "ingest_root": str(ingest_root),
         }

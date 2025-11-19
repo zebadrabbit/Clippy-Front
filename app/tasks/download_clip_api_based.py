@@ -136,8 +136,8 @@ def download_clip_task(self, clip_id: int, source_url: str) -> dict[str, Any]:
                 from app.ffmpeg_config import config_args as _cfg_args
 
                 ffmpeg_bin = os.environ.get("FFMPEG_BINARY", "ffmpeg")
-                ts = "1"  # thumbnail at 1 second
-                w = 480  # thumbnail width
+                ts = os.environ.get("THUMBNAIL_TIMESTAMP_SECONDS", "3")
+                w = int(os.environ.get("THUMBNAIL_WIDTH", "480"))
 
                 cmd = [
                     ffmpeg_bin,

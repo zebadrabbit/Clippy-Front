@@ -498,3 +498,49 @@ def get_media_batch(media_ids: list[int], user_id: int) -> dict[str, Any]:
     """
     data = {"media_ids": media_ids, "user_id": user_id}
     return _make_request("POST", "/worker/media/batch", data)
+
+
+def upload_compilation(
+    project_id: int,
+    video_path: str,
+    thumbnail_path: str | None = None,
+    metadata: dict | None = None,
+) -> dict[str, Any]:
+    """Upload compiled video file to server.
+
+    Args:
+        project_id: Project ID
+        video_path: Path to compiled video file
+        thumbnail_path: Optional path to thumbnail
+        metadata: Optional metadata dict with {duration, width, height, framerate, file_size, filename}
+
+    Returns:
+        {
+            "status": "uploaded",
+            "media_id": int,
+            "project_id": int,
+            "file_path": str,
+            "thumbnail_path": str
+        }
+    """
+    import json
+
+    base_url, api_key = _get_api_config()
+    url = f"{base_url}/api/worker/projects/{project_id}/compilation/upload"
+    headers = {"Authorization": f"Bearer {api_key}"}
+
+    files = {"video": open(video_path, "rb")}
+    if thumbnail_path:
+        files["thumbnail"] = open(thumbnail_path, "rb")
+
+    data = {"metadata": json.dumps(metadata or {})}
+
+    try:
+        response = requests.post(
+            url, headers=headers, files=files, data=data, timeout=300
+        )
+        response.raise_for_status()
+        return response.json()
+    finally:
+        for f in files.values():
+            f.close()

@@ -2,8 +2,8 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "0.12.0"
-__version_info__ = (0, 12, 0)
+__version__ = "0.12.1"
+__version_info__ = (0, 12, 1)
 
 # Version history tracking
 VERSION_HISTORY = {
@@ -94,10 +94,9 @@ VERSION_HISTORY = {
         "resolved a syntax error introduced during refactor. Docs updated: README and workers guide cover task-signature upgrades, STATIC_BUMPER_PATH override, and path-alias tips."
     ),
     "0.10.0": (
-        "Distributed worker artifact sync: added an rsync-over-SSH sidecar with strict host key checking to push artifacts from a named Docker volume; "
-        "new compose stack (compose.worker.yaml) with optional reverse-tunnel sidecar, local-first worker profile, and Docker secrets for rsync key and known_hosts; "
-        "artifact-sync image (Dockerfile.worker) includes rsync, openssh-client, inotify-tools, autossh, supervisor; scripts/clippy-scan.sh and clippy-push.sh manage .DONE→.READY promotion, inotify+poll scanning, and robust secret resolution; "
-        "README updated with step-by-step worker setup, WSL-safe /secrets override, strict-check probe, and smoke test examples."
+        "Worker deployment improvements: updated worker setup documentation; "
+        "improved worker configuration management; "
+        "enhanced worker deployment scripts and examples."
     ),
     "0.11.0": (
         "Worker API infrastructure and configuration overhaul: created worker API endpoints (/api/worker/*) for DMZ-isolated communication "
@@ -122,6 +121,12 @@ VERSION_HISTORY = {
         "Phase 5: switched all task invocations to v2, updated celery_app.py task routing, removed old imports. "
         "Workers now operate 100% via API with FLASK_APP_URL and WORKER_API_KEY. All 70 tests passing. "
         "19 total worker API endpoints, 16 client functions. Full migration documentation in WORKER_API_MIGRATION.md."
+    ),
+    "0.12.1": (
+        "UI and configuration improvements: thumbnail generation now seeks to 3 seconds (from 1) for better frame selection; "
+        "Projects page redesigned with card-based grid layout matching dashboard, compilation thumbnails, quick download buttons; "
+        "delete moved to project details danger zone for safer UX. Logging clarified - all logs in instance/logs/ only. "
+        "Removed orphaned supervisor configs (Docker artifacts). Updated documentation (.env.example, README, CHANGELOG, REPO-STRUCTURE)."
     ),
 }
 

@@ -80,11 +80,11 @@ def create_app(config_class=None):
 
     app.config.from_object(config_class)
 
-    # Configure rotating file logging early (no-op during tests)
+    # Configure structured logging early (no-op during tests)
     try:
-        from app.logging_config import configure_logging as _configure_logging
+        from app.structured_logging import configure_structlog
 
-        _configure_logging(app, role="web")
+        configure_structlog(app, role="web")
     except Exception:
         # Never fail startup due to logging setup
         pass

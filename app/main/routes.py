@@ -213,12 +213,17 @@ def projects():
         page=page, per_page=per_page, error_out=False
     )
 
+    # Import enums for template use
+    from app.models import Clip, MediaType
+
     return render_template(
         "main/projects.html",
         title="My Projects",
         projects=projects_pagination.items,
         pagination=projects_pagination,
         status_filter=status_filter,
+        MediaType=MediaType,
+        Clip=Clip,
     )
 
 
@@ -1348,23 +1353,41 @@ def media_thumbnail(media_id: int):
     """Serve a thumbnail for a media file if available; fallback to preview for images."""
     media = db.session.get(MediaFile, media_id)
     if not media:
+        current_app.logger.warning(
+            f"Thumbnail request for non-existent media_id={media_id}"
+        )
         return jsonify({"error": "Not found"}), 404
     if media.user_id != current_user.id and not current_user.is_admin():
         return jsonify({"error": "Not authorized"}), 403
+
+    current_app.logger.info(
+        f"Thumbnail request for media_id={media_id}, file_path={media.file_path}, thumbnail_path={media.thumbnail_path}"
+    )
 
     # Local resolver for media paths
     # If we have a thumbnail, serve it
     thumb_path = _rebase_instance_path(media.thumbnail_path or "") or (
         media.thumbnail_path or ""
     )
+    current_app.logger.info(
+        f"Resolved thumbnail path: {thumb_path}, exists={os.path.exists(thumb_path) if thumb_path else False}"
+    )
+
     if thumb_path and os.path.exists(thumb_path):
         try:
+            current_app.logger.info(f"Serving thumbnail from: {thumb_path}")
             return send_file(thumb_path, mimetype="image/jpeg", conditional=True)
         except FileNotFoundError:
+            current_app.logger.warning(
+                f"Thumbnail file not found despite existence check: {thumb_path}"
+            )
             pass
     # Lazy-generate a thumbnail for videos on-demand
     try:
         resolved_media_path = _rebase_instance_path(media.file_path) or media.file_path
+        current_app.logger.info(
+            f"Attempting lazy thumbnail generation. Resolved media path: {resolved_media_path}, exists={os.path.exists(resolved_media_path)}"
+        )
         if (
             media.mime_type
             and media.mime_type.startswith("video")
@@ -1374,25 +1397,32 @@ def media_thumbnail(media_id: int):
             media_dir = os.path.dirname(resolved_media_path)
             stem = os.path.splitext(os.path.basename(media.file_path))[0]
             thumb_path = os.path.join(media_dir, f"{stem}_thumb.jpg")
+            current_app.logger.info(
+                f"Target thumbnail path: {thumb_path}, exists={os.path.exists(thumb_path)}"
+            )
             if not os.path.exists(thumb_path):
+                current_app.logger.info("Generating thumbnail with ffmpeg...")
                 subprocess.run(
                     [
                         _resolve_binary(current_app, "ffmpeg"),
                         "-y",
                         "-ss",
-                        "1",
+                        str(current_app.config.get("THUMBNAIL_TIMESTAMP_SECONDS", 3)),
                         "-i",
                         resolved_media_path,
                         "-frames:v",
                         "1",
                         "-vf",
-                        "scale=480:-1",
+                        f"scale={int(current_app.config.get('THUMBNAIL_WIDTH', 480))}:-1",
                         thumb_path,
                     ],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     check=True,
                 )
+                current_app.logger.info("Thumbnail generated successfully")
+            else:
+                current_app.logger.info("Thumbnail already exists, using existing file")
             # Save path to DB if not already set
             if not media.thumbnail_path or media.thumbnail_path != thumb_path:
                 # Store canonical '/instance/…' form for portability
@@ -1401,11 +1431,22 @@ def media_thumbnail(media_id: int):
                 )
                 try:
                     db.session.commit()
+                    current_app.logger.info(
+                        f"Updated media.thumbnail_path to: {media.thumbnail_path}"
+                    )
                 except Exception:
                     db.session.rollback()
+            current_app.logger.info(f"Serving generated thumbnail: {thumb_path}")
             return send_file(thumb_path, mimetype="image/jpeg", conditional=True)
-    except Exception:
+        else:
+            current_app.logger.warning(
+                f"Cannot generate thumbnail: mime_type={media.mime_type}, resolved_path_exists={os.path.exists(resolved_media_path)}"
+            )
+    except Exception as e:
         # Non-fatal: fall through to placeholders
+        current_app.logger.error(
+            f"Error during thumbnail generation: {e}", exc_info=True
+        )
         pass
     # Fallback: for images, serve image; for video with no thumbnail, placeholder if available
     if media.mime_type and media.mime_type.startswith("image"):

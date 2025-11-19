@@ -1,3 +1,17 @@
+#        _ _
+#    ___| (_)_ __  _ __  _   _
+#   / __| | | '_ \| '_ \| | | |
+#  | (__| | | |_) | |_) | |_| |
+#   \___|_|_| .__/| .__/ \__, |
+#           |_|   |_|    |___/
+#
+#  Clippy: Self-hosted AI Video Generation and Editing Service
+#
+#  This service allows users to generate and edit videos using advanced AI techniques.
+#  It supports integrations with Twitch and Discord for media sourcing.
+#
+#  github.com/zebadrabbit/Clippy-Front
+
 """
 Main entry point for the Flask application.
 """

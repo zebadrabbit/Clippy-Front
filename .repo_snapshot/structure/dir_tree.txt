@@ -5,7 +5,13 @@
 │   │   ├── __pycache__
 │   │   └── routes.py
 │   ├── api
+│   │   ├── automation.py
+│   │   ├── health.py
+│   │   ├── _helpers.py
 │   │   ├── __init__.py
+│   │   ├── jobs.py
+│   │   ├── media.py
+│   │   ├── projects.py
 │   │   ├── __pycache__
 │   │   └── routes.py
 │   ├── auth
@@ -19,6 +25,8 @@
 │   │   ├── discord.py
 │   │   ├── __pycache__
 │   │   └── twitch.py
+│   ├── logging_config.py
+│   ├── mailer.py
 │   ├── main
 │   │   ├── __init__.py
 │   │   ├── __pycache__
@@ -27,19 +35,29 @@
 │   ├── __pycache__
 │   │   ├── ffmpeg_config.cpython-310.pyc
 │   │   ├── __init__.cpython-310.pyc
+│   │   ├── __init__.cpython-312.pyc
+│   │   ├── logging_config.cpython-310.pyc
+│   │   ├── mailer.cpython-310.pyc
 │   │   ├── models.cpython-310.pyc
+│   │   ├── quotas.cpython-310.pyc
+│   │   ├── storage.cpython-310.pyc
 │   │   └── version.cpython-310.pyc
+│   ├── quotas.py
 │   ├── static
 │   │   ├── css
 │   │   ├── img
 │   │   ├── js
 │   │   ├── README.md
 │   │   └── vendor
+│   ├── storage.py
 │   ├── tasks
+│   │   ├── automation.py
 │   │   ├── celery_app.py
 │   │   ├── __init__.py
 │   │   ├── media_maintenance.py
+│   │   ├── path_utils.py
 │   │   ├── __pycache__
+│   │   ├── tier_limits.py
 │   │   └── video_processing.py
 │   ├── templates
 │   │   ├── admin
@@ -54,6 +72,11 @@
 │   └── yt-dlp
 ├── celery_worker.py
 ├── CHANGELOG.md
+├── client
+├── compose.worker.local.yaml
+├── compose.worker.override.yaml
+├── compose.worker.tundra.yaml
+├── compose.worker.yaml
 ├── config
 │   ├── __init__.py
 │   ├── __pycache__
@@ -61,13 +84,20 @@
 │   │   └── settings.cpython-310.pyc
 │   └── settings.py
 ├── CONTRIBUTING.md
+├── cookies.txt
+├── debug_ingest.py
 ├── docker
 │   ├── docker-compose.gpu-worker.example.yml
+│   ├── docker-compose.gpu-worker-sync.yml
 │   ├── docker-compose.gpu-worker.yml
+│   ├── worker-combined.Dockerfile
 │   └── worker.Dockerfile
+├── Dockerfile.worker
 ├── docs
 │   ├── gpu-worker.md
+│   ├── repo-structure.md
 │   ├── samba-and-mounts.md
+│   ├── tiers-and-quotas.md
 │   ├── wireguard.md
 │   └── workers.md
 ├── init_db.py
@@ -75,24 +105,13 @@
 │   ├── assets
 │   │   ├── avatars
 │   │   └── static.mp4
-│   ├── clippy_front_dev.db
-│   ├── compilations
-│   │   └── MyCompilation_20251019_083749.mp4
 │   ├── data
-│   ├── downloads
-│   │   ├── clip_163_Whitty fall down..mp4
-│   │   ├── clip_172_clip 14.mp4
-│   │   ├── clip_174_clip 5.mp4
-│   │   ├── clip_176_clip4.mp4
-│   │   ├── clip_178_clip9.mp4
-│   │   └── clip_179_clip 3.mp4
-│   ├── tmp
-│   │   ├── pymp-81_f6hv0
-│   │   ├── pymp-ed2cctwo
-│   │   └── pymp-tq8aruxo
-│   └── uploads
-│       ├── 1
-│       └── system
+│   │   └── admin
+│   ├── data-structure.md
+│   └── logs
+│       ├── app.log
+│       ├── beat.log
+│       └── worker.log
 ├── LICENSE
 ├── main.py
 ├── migrations
@@ -106,25 +125,55 @@
 │       ├── 084c3bc02dc5_init_migrations_and_add_user_date_format.py
 │       ├── 3b12f1a8b4b0_add_theme_outline_color.py
 │       ├── 6c8fe9b7c8a1_add_theme_media_color_compilation.py
+│       ├── 8f21c3a7b9a1_add_user_timezone.py
+│       ├── 9f3a1b2c4d5e_add_tiers_and_render_usage.py
+│       ├── b7f1c2d3e4f5_add_automation_tasks_and_schedules.py
+│       ├── df12ab34add6_add_monthly_schedule_and_fix_enum.py
 │       └── __pycache__
+├── __pycache__
+│   └── main.cpython-310.pyc
 ├── pyproject.toml
 ├── README.md
 ├── repo-snapshot.sh
 ├── requirements.txt
+├── ROUTES.md
 ├── scripts
 │   ├── bootstrap_infra.sh
+│   ├── check_media_path.py
 │   ├── check_nvenc.py
+│   ├── cleanup_avatars.py
+│   ├── cleanup_duplicate_downloads.py
 │   ├── clear_storage.py
+│   ├── clip_repair.py
+│   ├── console.py
 │   ├── create_database.py
 │   ├── fetch_vendor_assets.sh
 │   ├── health_check.py
+│   ├── import_from_ingest.py
+│   ├── ingest_raw_clips.py
 │   ├── install_local_binaries.sh
 │   ├── __pycache__
 │   │   └── reindex_media.cpython-310.pyc
 │   ├── reindex_media.py
+│   ├── run_gpu_worker.sh
+│   ├── run_gpu_worker_sync.sh
 │   ├── setup_samba_share.sh
 │   ├── wg_add_client.sh
-│   └── wg_setup_server.sh
+│   ├── wg_setup_server.sh
+│   └── worker
+│       ├── clippy-push.sh
+│       ├── clippy-retain.sh
+│       ├── clippy-scan.sh
+│       ├── deploy_gpu_worker.sh
+│       ├── smoke-artifact.sh
+│       ├── supervisord.combined.conf
+│       ├── supervisord.conf
+│       └── supervisord.main.conf
+├── secrets
+│   ├── known_hosts
+│   ├── rsync_key
+│   └── rsync_key.pub
+├── server
 ├── setup_dev.sh
 ├── start_dev.sh
 ├── tests
@@ -135,13 +184,24 @@
 │   │   ├── conftest.cpython-310-pytest-8.4.2.pyc
 │   │   ├── __init__.cpython-310.pyc
 │   │   ├── test_api.cpython-310-pytest-7.4.3.pyc
+│   │   ├── test_compile_selection.cpython-310-pytest-7.4.3.pyc
+│   │   ├── test_create_project_and_task.cpython-310-pytest-7.4.3.pyc
 │   │   ├── test_filters.cpython-310-pytest-7.4.3.pyc
 │   │   ├── test_media.cpython-310-pytest-7.4.3.pyc
-│   │   └── test_projects.cpython-310-pytest-7.4.3.pyc
+│   │   ├── test_projects.cpython-310-pytest-7.4.3.pyc
+│   │   ├── test_quotas.cpython-310-pytest-7.4.3.pyc
+│   │   ├── test_signed_media.cpython-310-pytest-7.4.3.pyc
+│   │   └── test_tier_limits.cpython-310-pytest-7.4.3.pyc
 │   ├── test_api.py
+│   ├── test_compile_selection.py
+│   ├── test_create_project_and_task.py
 │   ├── test_filters.py
 │   ├── test_media.py
-│   └── test_projects.py
+│   ├── test_projects.py
+│   ├── test_quotas.py
+│   └── test_tier_limits.py
+├── tmp
+│   └── check_public_project_compiled.py
 ├── venv
 │   ├── bin
 │   │   ├── activate
@@ -202,4 +262,4 @@
 │       └── zsh
 └── watch_and_commit.sh
 
-63 directories, 139 files
+60 directories, 202 files

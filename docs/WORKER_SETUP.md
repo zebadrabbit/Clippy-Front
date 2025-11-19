@@ -199,10 +199,4 @@ See `.env.worker.example` for complete list with descriptions.
 - `CELERY_QUEUES` - Which queues to listen to
 - `USE_GPU_QUEUE` - Use GPU for compilation
 
-**Artifact Export:**
-- `WORKER_ID` - Unique worker identifier
-- `INGEST_HOST` - Rsync destination host
-- `INGEST_USER` - Rsync destination user
-- `INGEST_PATH` - Rsync destination path
-
 See `docs/gpu-worker.md` for detailed GPU worker setup and WSL2 NVENC configuration.

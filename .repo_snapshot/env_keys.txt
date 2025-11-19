@@ -23,19 +23,49 @@ DEV_DATABASE_URL=postgresql://postgres:postgres@localhost/clippy_front_dev
 # For production, PostgreSQL is required:
 # DATABASE_URL=postgresql://username:password@your-host/clippy_front
 
+# Optional: SQLAlchemy engine pool tuning (avoid exhausting Postgres connections)
+# DB_POOL_RECYCLE=300
+# DB_POOL_SIZE=5
+# DB_MAX_OVERFLOW=10
+# DB_POOL_TIMEOUT=30
+
 # Redis Configuration (for Celery and rate limiting)
 REDIS_URL=redis://localhost:6379/0
 CELERY_BROKER_URL=redis://localhost:6379/0
 CELERY_RESULT_BACKEND=redis://localhost:6379/0
 
+# Task routing and scheduler
+# Prefer routing compile jobs to the 'gpu' queue when true (sender-side hint)
+USE_GPU_QUEUE=false
+# Enable a lightweight internal scheduler tick (Celery Beat) at a fixed interval
+SCHEDULER_ENABLE_TICK=false
+SCHEDULER_TICK_SECONDS=60
+
 # File Upload Configuration
 UPLOAD_FOLDER=uploads
 MAX_CONTENT_LENGTH=104857600  # 100MB in bytes
 
+# Shared instance storage (host mount)
+# For workers and multi-host setups, mount your shared storage at /mnt/clippyfront
+# and point the app to it with CLIPPY_INSTANCE_PATH. Set REQUIRE_INSTANCE_MOUNT
+# to 1/true to fail fast if the mount is missing or not writable.
+CLIPPY_INSTANCE_PATH=/mnt/clippyfront
+REQUIRE_INSTANCE_MOUNT=false
+# When using docker-compose for the GPU worker, set HOST_INSTANCE_PATH to the
+# host path that contains your instance storage (must match where the web app writes).
+# Example: HOST_INSTANCE_PATH=/mnt/clippyfront
+HOST_INSTANCE_PATH=
+
 # External API Configuration
 DISCORD_BOT_TOKEN=your-discord-bot-token-here
+DISCORD_CHANNEL_ID=
 TWITCH_CLIENT_ID=your-twitch-client-id-here
 TWITCH_CLIENT_SECRET=your-twitch-client-secret-here
+
+# Clip sources policy
+# When false (default), only Twitch and Discord clip URLs are accepted by the
+# download API and wizard. Set to true to allow other sources (e.g., YouTube).
+ALLOW_EXTERNAL_URLS=false
 
 # Video Processing Configuration
 # If you ran scripts/install_local_binaries.sh, you can point to ./bin
@@ -59,6 +89,8 @@ FFPROBE_ARGS=
 YT_DLP_ARGS=
 # Set to 1/true to force CPU encoding and skip NVENC
 FFMPEG_DISABLE_NVENC=
+# Alternate flag also respected by detection logic
+# CLIPPY_DISABLE_NVENC=
 # Optional: override NVENC preset (slow, medium, p1..p7 depending on ffmpeg build)
 FFMPEG_NVENC_PRESET=
 # Optional: disable overlay (author/game text) if needed (1/true)
@@ -80,6 +112,11 @@ TMPDIR=
 THUMBNAIL_TIMESTAMP_SECONDS=1
 THUMBNAIL_WIDTH=480
 
+# Watermark settings (optional; can also be configured in Admin > System Settings)
+WATERMARK_PATH=
+WATERMARK_OPACITY=0.3
+WATERMARK_POSITION=bottom-right
+
 # Default project settings
 DEFAULT_OUTPUT_RESOLUTION=1080p
 DEFAULT_OUTPUT_FORMAT=mp4
@@ -94,6 +131,8 @@ STRICT_TRANSPORT_SECURITY=true
 # Rate Limiting
 RATELIMIT_DEFAULT=100 per hour
 RATELIMIT_STORAGE_URL=redis://localhost:6379/0
+# Set to false to disable rate limiting (development/testing)
+RATELIMIT_ENABLED=true
 
 # Pagination Settings
 PROJECTS_PER_PAGE=20
@@ -110,11 +149,76 @@ MAIL_PASSWORD=your-app-password
 MAIL_DEFAULT_SENDER=noreply@clippyfront.com
 
 # Logging Configuration
+# Logs are written to <instance>/logs with rotation (10MB x5) by default.
+# Override directory with LOG_DIR. Use LOG_LEVEL to adjust verbosity.
 LOG_LEVEL=INFO
-LOG_FILE=logs/clippyfront.log
+LOG_DIR=
 
 # Development/Production Flags
 ENABLE_DEBUG_TOOLBAR=false
 ENABLE_PROFILER=false
 TESTING=false
 AUTO_REINDEX_ON_STARTUP=
+
+# ------------------------------------------------------------
+# Artifact export and worker sync (rsync over SSH)
+# ------------------------------------------------------------
+# When set and the directory exists, successful compiles are copied into
+# subdirectories under ARTIFACTS_DIR with a .DONE sentinel and manifest.json.
+# The artifact sync sidecar scans this path and pushes .READY items to the
+# ingest host via rsync-over-SSH.
+#
+# Inside containers, this is typically /artifacts (mounted below).
+ARTIFACTS_DIR=/artifacts
+
+# Compose-only helper: set to a host path to bind-mount /artifacts.
+# If unset, compose.worker.yaml uses the named volume 'artifacts' by default.
+# Example:
+#   ARTIFACTS_HOST_PATH=/srv/clippyfront/artifacts
+ARTIFACTS_HOST_PATH=/srv/clippyfront/artifacts
+
+# Artifact sync destination (required when running artifact-sync sidecar)
+# WORKER_ID namespaces uploads on the ingest host (e.g., per machine or region).
+WORKER_ID=worker-01
+INGEST_HOST=
+INGEST_USER=
+# SSH username on the ingest host. This Unix user must exist on the ingest
+# machine, have write access to INGEST_PATH, and have your worker's public key
+# (~/.ssh/authorized_keys) installed. Example: create a dedicated 'ingest' user.
+INGEST_PORT=22
+INGEST_PATH=
+
+# Scan/push behavior
+PUSH_INTERVAL=60
+# Consider a directory "stable" (and eligible to be marked .READY) when no
+# files have changed for this many minutes. Only used if no explicit .DONE
+# sentinel is present. Default: 1 minute.
+STABLE_MINUTES=1
+# Watcher mode for the artifact sync sidecar: auto (use inotify if available),
+# inotify (force event-driven), or poll (disable inotify, polling only).
+WATCH_MODE=auto
+
+# Optional tuning (artifact-sync)
+# CLEANUP_MODE=none|delete|archive (archive moves pushed dirs to /artifacts/_pushed)
+CLEANUP_MODE=none
+# Limit rsync bandwidth in KB/s (e.g., 50000 for ~50 MB/s)
+RSYNC_BWLIMIT=
+# Extra rsync flags (e.g., --chmod=F644,D755)
+RSYNC_EXTRA_FLAGS=
+
+# Optional delivery webhook (POST on successful push)
+DELIVERY_WEBHOOK_URL=
+DELIVERY_WEBHOOK_TOKEN=
+DELIVERY_WEBHOOK_TIMEOUT=5
+
+# Retention policy for archived artifacts (when CLEANUP_MODE=archive)
+RETENTION_DAYS=30
+# Ensure at least this many GB free by pruning oldest archives (optional)
+MIN_FREE_GB=
+
+# ------------------------------------------------------------
+# Worker media over HTTP (internal-only)
+# ------------------------------------------------------------
+# Base URL that workers use to call the raw media endpoint when no shared storage exists.
+# Example: http://10.8.0.1:5000 or https://clippyfront.example.com
+MEDIA_BASE_URL=http://10.8.0.1:5000

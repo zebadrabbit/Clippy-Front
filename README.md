@@ -1,27 +1,223 @@
 # ClippyFront
 
-ClippyFront is a Flask-based web application for organizing media and assembling clip compilations. It includes authentication, an admin panel, a media library with uploads and previews, and optional background processing via Celery.
+ClippyFront is a Flask-based web application for organizing media and assembling video compilations with professional overlays, transitions, and GPU-accelerated rendering.
 
-## Highlights
 
-- Flask app factory with blueprints: auth, main, admin, api
-- Theme system: dynamic `/theme.css` that maps theme colors to Bootstrap variables; admin CRUD to create, edit, activate, and delete themes
-	- Per-media-type colors (intro/clip/outro/transition) are themeable and applied to Media Library cards and the Arrange timeline.
-- Media Library: drag-and-drop uploads (Dropzone), per-user storage, thumbnails, tags, bulk actions
-- Robust video preview using Video.js with MIME detection and graceful fallbacks
-- Self-hosted frontend vendor assets (Dropzone, Video.js) for CSP/MIME safety
-- Admin panel for users, projects, themes, and system info
-- Security: CSRF, CORS, secure headers (Talisman), rate limiting
-- Optional async jobs via Celery + Redis
-- Project Wizard: consolidated flow with robust task polling
-- Arrange step: Intro/Outro selection, Transitions with multi-select, Randomize, Select All/Clear All
-- Timeline: card-style items with thumbnails and native drag-and-drop reordering with persistence
-	- Type-colored borders and a dashed insert marker for clear placement during drag.
-- Compile pipeline: interleaves transitions and inserts a static bumper between all segments; clearer logs
-- Branded overlays: author and game text with optional avatar; NVENC detection with CPU fallback
-- Download deduplication across projects: normalized-URL reuse avoids re-downloading the same clip for the same user
-	- Creator avatars are auto-fetched (when available) during clip downloads, cached under `instance/assets/avatars/`, and pruned to keep only recent files per author
-- Tests with pytest and coverage; linting (Ruff) and formatting (Black)
+## Quick Overview
+
+- **Media Library**: Drag-and-drop uploads, video previews, tag management
+- **Project Wizard**: Fetch clips from Twitch/Discord, arrange with drag-and-drop timeline, compile with GPU rendering
+- **Theming**: Dynamic color system with per-media-type colors
+- **Admin Panel**: User management, subscription tiers, worker monitoring
+- **Background Processing**: Celery workers for downloads and compilations
+- **Security**: CSRF protection, rate limiting, strict CSP
+- **Subscription Tiers**: Quota-based rendering and storage limits
+
+## Documentation
+
+### Getting Started
+
+- **[Installation Guide](docs/INSTALLATION.md)** - Complete setup instructions
+- **[Configuration](docs/CONFIGURATION.md)** - Environment variables reference
+- **[Features](docs/FEATURES.md)** - Detailed feature documentation
+
+### Operations
+
+- **[Worker Setup](docs/WORKER_SETUP.md)** - Deploy background workers (v0.12.0+)
+- **[Remote Workers](docs/REMOTE_WORKER_SETUP.md)** - Multi-host deployment
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
+
+### Development
+
+- **[Development Guide](docs/DEVELOPMENT.md)** - Developer workflow and architecture
+- **[Contributing](docs/CONTRIBUTING.md)** - Contribution guidelines
+- **[Repository Structure](docs/REPO-STRUCTURE.md)** - Directory layout
+
+### Reference
+
+- **[API Routes](docs/ROUTES.md)** - Endpoint documentation
+- **[Tiers & Quotas](docs/TIERS-AND-QUOTAS.md)** - Subscription system
+- **[Worker Versioning](docs/WORKER-VERSION-CHECKING.md)** - Version compatibility
+- **[Changelog](docs/CHANGELOG.md)** - Release history
+
+## Quick Start
+
+```bash
+# Clone and setup
+git clone <your-repo-url>
+cd ClippyFront
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Configure
+cp .env.example .env
+bash scripts/fetch_vendor_assets.sh
+
+# Initialize
+python init_db.py --all --password admin123
+flask db upgrade
+
+# Run
+python main.py
+```
+
+Visit http://localhost:5000 and log in with `admin`/`admin123`.
+
+See [Installation Guide](docs/INSTALLATION.md) for complete setup.
+
+## Key Features
+
+### Media Management
+
+- Upload media with drag-and-drop (Dropzone)
+- Automatic thumbnail generation
+- Video.js player with format detection
+- Tag-based organization
+- Bulk operations
+
+### Video Compilation
+
+- **Fetch clips** from Twitch/Discord with deduplication
+- **Drag-and-drop timeline** with visual reordering
+- **Intro/outro/transitions** from media library
+- **GPU rendering** with NVENC (auto-fallback to CPU)
+- **Branded overlays** with author/game text and avatars
+- **Progress tracking** with live logs
+
+### Worker System (v0.12.0+)
+
+Workers operate via HTTP API - **no database credentials needed**:
+
+- Deploy in DMZ/untrusted environments
+- Configure with `FLASK_APP_URL` and `WORKER_API_KEY`
+- Version checking with admin dashboard
+- Queue routing: `gpu`, `cpu`, `celery`
+
+See [Worker Setup](docs/WORKER_SETUP.md) for details.
+
+### Subscription Tiers
+
+- Monthly render-time quotas
+- Total storage quotas
+- Tier-aware watermarks
+- Admin management UI
+
+See [Tiers & Quotas](docs/TIERS-AND-QUOTAS.md) for details.
+
+## Architecture
+
+- **Flask** app factory with blueprints
+- **Celery** for background jobs
+- **PostgreSQL** database (SQLite for tests only)
+- **Redis** for caching and queues
+- **FFmpeg** for video processing
+- **yt-dlp** for clip downloads
+
+## Testing
+
+```bash
+pytest                  # Run tests
+pytest --cov=app        # With coverage
+ruff check .            # Lint
+black .                 # Format
+```
+
+## Project Structure
+
+```
+ClippyFront/
+├── app/                # Application code
+│   ├── admin/          # Admin panel
+│   ├── api/            # REST API
+│   ├── auth/           # Authentication
+│   ├── main/           # Main UI
+│   └── tasks/          # Celery tasks
+├── docs/               # Documentation
+├── scripts/            # Utility scripts
+├── tests/              # Test suite
+└── instance/           # Runtime data
+    ├── data/           # Media storage
+    ├── assets/         # Avatars, static bumper
+    └── logs/           # Legacy location (deprecated, use instance/logs/)
+```
+
+See [Repository Structure](docs/REPO-STRUCTURE.md) for details.
+
+## Common Tasks
+
+### Initialize Database
+
+```bash
+python init_db.py --all --password admin123
+```
+
+### Run Services
+
+```bash
+# Web app
+python main.py
+
+# Server worker (maintenance tasks)
+celery -A app.tasks.celery_app worker -Q celery --loglevel=info
+
+# GPU/CPU worker (compilations)
+celery -A app.tasks.celery_app worker -Q gpu,cpu --loglevel=info
+```
+
+### Troubleshooting
+
+```bash
+# Reindex media from disk
+python scripts/reindex_media.py
+
+# Check worker versions
+# Visit /admin/workers
+
+# Detect stale workers
+./scripts/check_stale_workers.sh --stop
+
+# Health check
+python scripts/health_check.py --db "$DATABASE_URL" --redis "$REDIS_URL"
+```
+
+See [Troubleshooting Guide](docs/TROUBLESHOOTING.md) for more.
+
+## Configuration
+
+All configuration via environment variables in `.env`:
+
+```bash
+# Core
+SECRET_KEY=your-secret-key
+DATABASE_URL=postgresql://user:pass@localhost/clippy_front
+REDIS_URL=redis://localhost:6379/0
+
+# Media
+FFMPEG_BINARY=/path/to/ffmpeg
+ALLOW_EXTERNAL_URLS=false
+
+# Workers (v0.12.0+)
+FLASK_APP_URL=https://your-app.com
+WORKER_API_KEY=your-secure-key
+```
+
+See [Configuration Guide](docs/CONFIGURATION.md) for all options.
+
+## Contributing
+
+Contributions welcome! See [Contributing Guide](docs/CONTRIBUTING.md).
+
+## License
+
+[Add your license here]
+
+## Support
+
+- **Documentation**: See `docs/` directory
+- **Issues**: Check [Troubleshooting Guide](docs/TROUBLESHOOTING.md)
+- **Development**: See [Development Guide](docs/DEVELOPMENT.md)
+
 
 ### Subscription tiers and quotas
 
@@ -140,6 +336,8 @@ Adjust via environment variables (see `.env.example`):
 - FFMPEG_DISABLE_NVENC (set to 1/true to force CPU encoding)
 - FFMPEG_NVENC_PRESET (override NVENC preset if supported by your ffmpeg)
 - FFMPEG_GLOBAL_ARGS, FFMPEG_ENCODE_ARGS, FFMPEG_THUMBNAIL_ARGS, FFMPEG_CONCAT_ARGS, FFPROBE_ARGS, YT_DLP_ARGS (optional extra CLI flags injected at runtime)
+- THUMBNAIL_TIMESTAMP_SECONDS (default: 3) - Seek time for thumbnail generation
+- THUMBNAIL_WIDTH (default: 480) - Thumbnail width in pixels
 - ALLOW_EXTERNAL_URLS (default: false): when false, only Twitch and Discord clip URLs are accepted by the download API and the wizard; non-supported URLs are filtered and if none remain the request returns 400. Set to true to allow other sources (e.g., YouTube).
 - TMPDIR (optional): set to `/app/instance/tmp` on workers bound to a network share to avoid EXDEV cross-device moves when saving final outputs.
 - Instance storage mount (required in multi-host setups):
@@ -265,324 +463,8 @@ CELERY_QUEUES=gpu,celery
 
 3) Deploy worker
 
-```bash
-docker compose -f compose.worker.yaml up -d worker artifact-sync
-```
+Workers are typically deployed using Docker or directly on GPU machines. See `docs/WORKER_SETUP.md` for complete deployment instructions.
 
-### Artifact Export Setup (Optional)
-
-For workers to push final renders to a central ingest server:
-
-1) Generate SSH keypair for the worker
-
-```bash
-mkdir -p secrets
-ssh-keygen -t ed25519 -N "" -f secrets/rsync_key
-```
-
-2) Add the public key to the ingest host and capture its host key
-
-```bash
-# Replace with your host/port
-export INGEST_HOST=ingest.example.com
-export INGEST_PORT=22
-ssh-keyscan -p "$INGEST_PORT" "$INGEST_HOST" > secrets/known_hosts
-cat secrets/rsync_key.pub   # add to ~<INGEST_USER>/.ssh/authorized_keys on the ingest host
-```
-
-3) Create a minimal .env for the worker/sync loop
-
-```bash
-cat > .env << 'EOF'
-WORKER_ID=worker-01
-INGEST_HOST=ingest.example.com
-INGEST_USER=ingest
-INGEST_PORT=22
-INGEST_PATH=/srv/ingest
-PUSH_INTERVAL=60
-# Automatically delete artifacts locally after successful push
-CLEANUP_MODE=delete
-EOF
-```
-
-4) Launch the worker stack
-
-```bash
-docker compose -f compose.worker.yaml up -d --build
-```
-
-This starts a worker with a shared `artifacts` volume and an rsync-over-SSH loop that scans `/artifacts` every 60s and pushes any directory containing a `.READY` sentinel to `${INGEST_PATH}/${WORKER_ID}/...` on the ingest host. Strict host key checking is enforced via the `known_hosts` secret.
-
-
-This repository includes an rsync-over-SSH artifact sync system for distributed workers. The pattern is:
-
-- A Celery worker container writes artifacts into a shared named volume `artifacts` at `/artifacts`.
-- A lightweight sidecar (`artifact-sync`) scans `/artifacts` every 60s and pushes any directory containing a `.READY` sentinel to an ingest host via SSH/rsync (it also promotes `.DONE` → `.READY`).
-- An optional `tunnel` sidecar can maintain a reverse SSH tunnel if outbound connectivity is restricted.
-
-Artifacts mount location:
-
-- By default, `compose.worker.yaml` uses a named Docker volume called `artifacts` and mounts it at `/artifacts` in both the worker and sync containers.
-- Inside the worker, set `ARTIFACTS_DIR=/artifacts` so pipelines can export artifacts and write a `.DONE` sentinel.
-
-### 1) Generate SSH keypair for the worker
-
-```bash
-mkdir -p secrets
-ssh-keygen -t ed25519 -N "" -f secrets/rsync_key
-```
-
-### 2) Trust the ingest host and install the worker public key there
-
-On your control machine:
-
-```bash
-# Replace with your ingest host and port
-export INGEST_HOST=ingest.example.com
-export INGEST_PORT=22
-
-# Capture the host key for StrictHostKeyChecking
-ssh-keyscan -p "$INGEST_PORT" "$INGEST_HOST" > secrets/known_hosts
-
-# Show the worker public key to add to the ingest host's authorized_keys
-cat secrets/rsync_key.pub
-```
-
-On the ingest host, append the above public key to the target user’s `~/.ssh/authorized_keys` (the user should own the destination path below).
-
-#### Ingest host account (INGEST_USER)
-
-`INGEST_USER` is the SSH username on your ingest host. It must be a real Unix user on that machine with write access to `INGEST_PATH` (e.g., `/srv/ingest`). A simple, secure baseline is to create a dedicated unprivileged account and directory owned by that user:
-
-```bash
-# On the ingest host (run as root or via sudo)
-adduser --disabled-password --gecos "" ingest    # or: useradd -m ingest
-mkdir -p /srv/ingest
-chown ingest:ingest /srv/ingest
-chmod 750 /srv/ingest
-
-# Install the worker public key for key-only SSH
-sudo -u ingest mkdir -p ~ingest/.ssh
-sudo -u ingest bash -c 'cat >> ~ingest/.ssh/authorized_keys' < /path/to/rsync_key.pub
-chmod 700 ~ingest/.ssh
-chmod 600 ~ingest/.ssh/authorized_keys
-```
-
-Hardening tips (optional): in `authorized_keys`, you can prepend restrictions like `no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty`, and/or a `from="<worker-ip>"` source filter if you have a static source IP.
-
-### 3) Create a minimal .env for the artifact sync
-
-```bash
-cat > .env << 'EOF'
-# Identify this worker in the destination path
-WORKER_ID=worker-01
-
-# Ingest SSH target and destination path for artifacts
-INGEST_HOST=ingest.example.com
-INGEST_USER=ingest   # Unix user on the ingest host with write access to INGEST_PATH
-INGEST_PORT=22
-INGEST_PATH=/srv/ingest
-
-# Scan/push interval in seconds
-PUSH_INTERVAL=60
-
-# Optional: reverse-tunnel mapping when enabling the tunnel profile
-# TUNNEL_REVERSE=2222:localhost:22
-EOF
-```
-
-### 4) Start the stack (local-first)
-
-```bash
-docker compose -f compose.worker.yaml --profile local up -d --build worker-local artifact-sync
-```
-
-This brings up:
-
-- `worker-local`: the Celery worker built locally from `docker/celery-worker.Dockerfile` (tag `clippyfront-worker:local`) that writes artifacts into `/artifacts`.
-- `artifact-sync`: a tiny container that runs `scripts/worker/clippy-scan.sh` and `clippy-push.sh` to detect `.READY` directories and push them via rsync/SSH.
-
-The named volume `artifacts` is shared between both containers. SSH credentials are mounted as Docker secrets: `rsync_key` and `known_hosts`.
-
-Optional: enable the reverse tunnel sidecar with a profile if your network requires inbound connectivity on the ingest host:
-
-```bash
-docker compose -f compose.worker.yaml --profile tunnel up -d
-```
-
-Alternative: use the published worker image from GHCR
-
-If you see an error like:
-
-```
-error from registry: denied
-```
-
-1) Authenticate to GHCR to pull the worker image
-
-```bash
-# Create a GitHub Personal Access Token (classic) with read:packages
-# Then login to GHCR (will prompt or read from stdin)
-echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_USER" --password-stdin
-
-docker compose -f compose.worker.yaml up -d --build worker artifact-sync
-```
-
-2) Alternatively, override the image to a locally-built tag without profiles:
-
-```bash
-WORKER_IMAGE=clippyfront-worker:local docker compose -f compose.worker.yaml up -d --build worker artifact-sync
-```
-
-The local worker build uses `docker/celery-worker.Dockerfile` in this repo and writes artifacts to the shared named volume at `/artifacts` the same way.
-
-For a full GPU worker deployment guide with recommended environment variables, examples, and troubleshooting, see `docs/gpu-worker.md`. For broader worker patterns (native, Docker, storage, networking), see `docs/workers.md`.
-
-Notes:
-
-- The sync sidecar respects env vars: `WORKER_ID`, `INGEST_HOST`, `INGEST_USER`, `INGEST_PATH`, `INGEST_PORT`, `PUSH_INTERVAL`. It scans `/artifacts` and pushes any directory containing a `.READY` sentinel; on success, it writes `.PUSHED` with a timestamp.
-- If you already produce a `.DONE` sentinel, the scanner will promote it to `.READY`. Otherwise, it heuristically marks directories `.READY` once they appear stable (no file changes for ~1 minute) and non-empty.
-- No host directory mounts are required—only the named volume `artifacts` and Docker secrets.
-
-What gets pushed:
-
-- Raw clips (Gather): after each successful download, the worker exports the unmodified file into an artifact directory like `clip_<id>_<slug>_<UTC>`, writes a small manifest (clip/project/user IDs, source URL, sizes), drops a `.DONE` sentinel, and the sidecar pushes it. A `thumbnail.jpg` is included when available.
-- Final compilations (Compile): after rendering, the worker exports the final mp4 into an artifact directory `<projectId>_<slug>_<UTC>`, writes a manifest, generates a small `thumbnail.jpg`, and drops `.DONE`.
-
-Thumbnails to the app:
-
-- Thumbnails are generated locally by the worker and included in the artifact directories. They appear in the UI after the ingest importer picks up the artifacts (no separate HTTPS thumbnail uploads required).
-
-When workers can’t mount the app’s storage
-
-- If your worker does not have the same `instance/` storage available, it can fetch inputs (clips, intros/outros, transitions) over HTTP from an internal raw endpoint.
-- Set a base URL so the worker can construct absolute links outside a request context:
-
-```
-MEDIA_BASE_URL=https://your-clippyfront.example.com
-```
-
-The pipeline will attempt local/remapped paths first; if not available, it downloads from `${MEDIA_BASE_URL}/api/media/raw/<media_id>` into a temporary folder before running ffmpeg. Keep this endpoint reachable only to trusted networks (VPN or private ingress).
-
-Author avatars without worker secrets
-
-- Workers do not need Twitch credentials. The server resolves and caches avatars during clip creation and exposes them via an internal endpoint.
-- Ensure workers have `MEDIA_BASE_URL` set. If an avatar isn’t found locally, the worker will fetch it from:
-
-```
-${MEDIA_BASE_URL}/api/avatars/by-clip/<clip_id>
-```
-
-- This keeps secrets on the server only, and still allows avatars to render in overlays on remote workers.
-
-Secrets troubleshooting (secrets mounted as directories on some platforms)
-
-- On some platforms (WSL/Docker Desktop), Compose may present secrets under `/run/secrets/<name>` as directories instead of files. The sidecar handles both, but manual SSH probes can fail unless you target an actual file.
-- Easiest, cross-platform approach: bind your local `./secrets` directory into the container and point the sidecar at those paths via env.
-
-```bash
-# Use the Tundra override that mounts the whole ./secrets dir at /secrets
-# (or create your own based on compose.worker.tundra.yaml)
-docker compose -f compose.worker.yaml -f compose.worker.tundra.yaml up -d --build artifact-sync
-
-# Optional: strict host key check probe inside the container
-docker compose -f compose.worker.yaml -f compose.worker.tundra.yaml exec artifact-sync sh -lc '\
-  ssh -o StrictHostKeyChecking=yes \
-     -o UserKnownHostsFile=${KNOWN_HOSTS_FILE:-/run/secrets/known_hosts} \
-     -i ${RSYNC_KEY_FILE:-/run/secrets/rsync_key} \
-     -p ${INGEST_PORT:-22} \
-     ${INGEST_USER}@${INGEST_HOST} true'
-```
-
-If you prefer to stick with Docker secrets, ensure `secrets/known_hosts` and `secrets/rsync_key` are real files on the host (not directories) before you (re)create `artifact-sync`.
-
-Quick examples:
-
-```
-# Example: ingest behind WireGuard at 10.8.0.1:22
-ssh-keyscan -p 22 -t ed25519 -H 10.8.0.1 > secrets/known_hosts
-
-# Bring up just the sync sidecar for a smoke test
-docker compose -f compose.worker.yaml up -d --build artifact-sync
-
-# Create a dummy artifact in the shared volume
-docker compose -f compose.worker.yaml run --rm artifact-sync /scripts/worker/smoke-artifact.sh
-
-# Tail logs
-docker compose -f compose.worker.yaml logs --tail=200 artifact-sync
-```
-
-Polling vs event-driven latency:
-
-- By default the image now includes inotify and runs in `WATCH_MODE=auto`, so it reacts immediately when a `.DONE` or `.READY` file is created (event-driven) and still performs periodic safety sweeps.
-- Without `.DONE`, readiness can still rely on stability: no file modifications for `STABLE_MINUTES` (default 1 minute). You can set `STABLE_MINUTES=0` if you always write `.DONE`.
-- To force modes: set `WATCH_MODE=inotify` (event-driven only + sweeps) or `WATCH_MODE=poll` to disable inotify and rely only on `PUSH_INTERVAL`.
-
-Advanced options:
-
-- Limit egress with `RSYNC_BWLIMIT` (KB/s) and pass `RSYNC_EXTRA_FLAGS` (e.g., `--chmod=F644,D755`).
-- Control local retention after successful push with `CLEANUP_MODE`:
-	- `none` (default): keep the directory with `.PUSHED` marker
-	- `delete`: remove the directory entirely after a successful push
-	- `archive`: move to `/artifacts/_pushed/<dir>` for local retention
-
-Optional delivery webhook:
-
-- Set `DELIVERY_WEBHOOK_URL=https://...` (and optionally `DELIVERY_WEBHOOK_TOKEN`) to receive a POST after each successful push with JSON:
-	`{ "worker_id": "...", "artifact": { "name": "...", "remote_path": "...", "pushed_at": "ISO8601", "files": N } }`
-
-Retention pruning:
-
-- A background job removes archived artifacts older than `RETENTION_DAYS` (default 30). You can also enforce a minimum free space with `MIN_FREE_GB`.
-
-Smoke test:
-
-- Validate the scan/push flow by creating a dummy artifact locally:
-
-```bash
-# Rebuild the artifact-sync image to ensure scripts are included
-docker compose -f compose.worker.yaml build --no-cache artifact-sync
-
-# Start the scanner only (no worker dependency required)
-docker compose -f compose.worker.yaml up -d artifact-sync
-
-# Create a dummy artifact in the shared volume without starting dependencies
-# Use --entrypoint to run via bash regardless of image entrypoint settings
-docker compose -f compose.worker.yaml run --no-deps --rm \
-	--entrypoint /bin/bash artifact-sync -lc '/scripts/worker/smoke-artifact.sh'
-
-Troubleshooting: Host key verification failed
-
-If pushes fail with `Host key verification failed.`, refresh the host key for your target and recreate the sidecar:
-
-```
-ssh-keyscan -p 22 -H 10.8.0.1 > secrets/known_hosts
-docker compose -f compose.worker.yaml up -d --force-recreate artifact-sync
-```
-```
-
-### Multiple workers
-
-There are a few safe ways to run more than one worker:
-
-- One worker per sync (recommended for per-worker segregation)
-	- Run a separate compose stack (or service pair) for each worker host.
-	- Give each its own `/artifacts` volume and a unique `WORKER_ID`.
-	- Remote paths become `${INGEST_PATH}/${WORKER_ID}/...`, cleanly namespaced.
-
-- Many workers, one sync (shared namespace)
-	- You can scale the `worker` service and keep a single `artifact-sync` that watches a shared `/artifacts` volume.
-	- Set `WORKER_ID` on the sync to a group label (e.g., the host name). All artifacts upload under that prefix.
-	- The artifact manifest still records the originating worker’s `worker_id` (from the worker container env) even if the sync uses a group `WORKER_ID`.
-
-- HA sync watchers (optional)
-	- You may run multiple `artifact-sync` watchers against the same `/artifacts`. A `.PUSHING` lock file prevents duplicate uploads; whichever sync grabs it first pushes, others skip.
-
-Notes:
-- Ensure every worker uses a distinct `WORKER_ID` if you want remote-level segregation. If you deliberately share a `WORKER_ID`, artifacts from those workers land under the same remote prefix.
-- Artifact directory names include project id, slug, and UTC timestamp to seconds. Collisions are rare; if you expect extremely high concurrency, we can add a short unique suffix for extra safety.
-
-### Worker HTTP media (raw endpoint)
 
 If your render workers can’t mount the same instance storage, they can fetch source media over HTTP via an internal‑only raw endpoint.
 
@@ -676,6 +558,22 @@ If you prefer a one-shot import, use:
 ### Celery error: unexpected keyword argument 'clip_ids'
 
 This means the web app and worker are running different code versions (the compile task signature changed). Rebuild/restart your worker(s) so they pick up the new code, and ensure the web app is also updated. After upgrades that change task signatures, restart both web and workers to keep them in sync.
+
+**v0.12.0+: Worker Version Checking**
+
+The admin dashboard (`/admin/workers`) now shows all connected workers with version compatibility. If you see:
+- **Multiple workers on the same queue** (e.g., 2 GPU workers) → Stale container or duplicate deployment
+- **Version mismatches** (yellow highlight) → Old code running on a worker
+
+To find and stop stale workers:
+```bash
+./scripts/check_stale_workers.sh         # Detect stale workers
+./scripts/check_stale_workers.sh --stop  # Stop them interactively
+```
+
+**Common issue**: Docker containers from previous deployments continue running and steal tasks. Use `docker ps | grep celery` to find them, then `docker stop <container_id>`.
+
+See [docs/worker-version-checking.md](docs/worker-version-checking.md) for full details.
 
 ### Media files exist on disk but don't show up
 

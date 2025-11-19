@@ -23,7 +23,7 @@ PyJWT==2.8.0
 cryptography>=42,<43
 
 # Media processing
-yt-dlp==2023.11.16
+yt-dlp==2025.11.12
 ffmpeg-python==0.2.0
 
 # External APIs
@@ -39,6 +39,10 @@ python-magic==0.4.27
 gunicorn==21.2.0
 python-dotenv==1.0.0
 Werkzeug==3.0.1
+
+# Structured logging
+structlog==24.1.0
+python-json-logger==2.0.7
 
 # Validation and forms
 WTForms==3.1.1
