@@ -22,11 +22,11 @@ class TestWorkerDownloadEndpoints:
     ):
         """POST /api/worker/media/find-reusable returns existing media."""
         # Update the clip and media file for matching
-        media = MediaFile.query.get(test_media_file)
+        media = db.session.get(MediaFile, test_media_file)
         media.source_url = "https://clips.twitch.tv/test-clip"
         db.session.commit()
 
-        clip = Clip.query.get(test_clip)
+        clip = db.session.get(Clip, test_clip)
         clip.source_url = "https://clips.twitch.tv/test-clip"
         clip.media_file_id = test_media_file
         db.session.commit()

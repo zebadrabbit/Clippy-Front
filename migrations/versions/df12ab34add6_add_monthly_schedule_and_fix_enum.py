@@ -1,7 +1,7 @@
 """add monthly schedule and fix enum storage
 
 Revision ID: df12ab34add6
-Revises: b7f1c2d3e4f5_add_automation_tasks_and_schedules
+Revises: b7f1c2d3e4f5
 Create Date: 2025-10-26
 """
 import sqlalchemy as sa
@@ -9,7 +9,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "df12ab34add6"
-down_revision = "b7f1c2d3e4f5_add_automation_tasks_and_schedules"
+down_revision = "b7f1c2d3e4f5"
 branch_labels = None
 depends_on = None
 

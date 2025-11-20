@@ -78,9 +78,22 @@
         </select>
       </div>
       <div class="col-auto">
+        <label class="form-label">Tags</label>
+        <input type="text" class="form-control" id="tagFilterInput" placeholder="Filter by tags..." style="min-width: 200px;">
+        <input type="hidden" name="tags" id="tagFilterHidden" value="">
+      </div>
+      <div class="col-auto">
+        <label class="form-label">Search</label>
+        <input type="text" class="form-control" name="q" placeholder="Search files..." value="{{ request.args.get('q', '') }}">
+      </div>
+      <div class="col-auto">
         <button class="btn btn-primary" type="submit">Filter</button>
       </div>
+      <div class="col-auto">
+        <a href="{{ url_for('main.media_library') }}" class="btn btn-outline-secondary">Clear</a>
+      </div>
     </div>
+    <div id="selectedTags" class="mt-2"></div>
   </form>
 
   {% if media_files %}
@@ -160,6 +173,120 @@
   </nav>
   {% endif %}
 </div>
+
+<script>
+// Tag autocomplete functionality
+let availableTags = [];
+let selectedTagIds = [];
+
+// Load tags on page load
+async function loadTags() {
+    try {
+        const response = await fetch('/api/tags?limit=100');
+        const data = await response.json();
+        availableTags = data.tags || [];
+    } catch (error) {
+        console.error('Error loading tags:', error);
+    }
+}
+
+// Tag autocomplete
+function setupTagAutocomplete() {
+    const input = document.getElementById('tagFilterInput');
+    const container = document.getElementById('selectedTags');
+
+    if (!input || !container) return;
+
+    input.addEventListener('keydown', async function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const query = this.value.trim().toLowerCase();
+
+            if (!query) return;
+
+            // Find matching tag
+            const tag = availableTags.find(t =>
+                t.name.toLowerCase() === query ||
+                t.slug.toLowerCase() === query
+            );
+
+            if (tag && !selectedTagIds.includes(tag.id)) {
+                selectedTagIds.push(tag.id);
+                renderSelectedTags();
+                this.value = '';
+            } else if (tag) {
+                alert('Tag already selected');
+                this.value = '';
+            } else {
+                // Offer to create new tag
+                if (confirm(`Tag "${query}" not found. Create it?`)) {
+                    await createTag(query);
+                }
+            }
+        }
+    });
+}
+
+async function createTag(name) {
+    try {
+        const response = await fetch('/api/tags', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+            },
+            body: JSON.stringify({ name: name })
+        });
+
+        if (response.ok) {
+            const tag = await response.json();
+            availableTags.push(tag);
+            selectedTagIds.push(tag.id);
+            renderSelectedTags();
+            document.getElementById('tagFilterInput').value = '';
+        } else {
+            const error = await response.json();
+            alert('Error: ' + (error.error || 'Failed to create tag'));
+        }
+    } catch (error) {
+        console.error('Error creating tag:', error);
+        alert('Failed to create tag');
+    }
+}
+
+function renderSelectedTags() {
+    const container = document.getElementById('selectedTags');
+    const hiddenInput = document.getElementById('tagFilterHidden');
+
+    if (!container || !hiddenInput) return;
+
+    hiddenInput.value = selectedTagIds.join(',');
+
+    if (selectedTagIds.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+
+    const tags = selectedTagIds.map(id => availableTags.find(t => t.id === id)).filter(Boolean);
+
+    container.innerHTML = '<small class="text-muted">Filtering by:</small> ' + tags.map(tag => `
+        <span class="badge me-1" style="background-color: ${tag.color}; cursor: pointer;" onclick="removeTag(${tag.id})">
+            ${tag.name} <i class="bi bi-x"></i>
+        </span>
+    `).join('');
+}
+
+function removeTag(tagId) {
+    selectedTagIds = selectedTagIds.filter(id => id !== tagId);
+    renderSelectedTags();
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', async function() {
+    await loadTags();
+    setupTagAutocomplete();
+});
+</script>
 {% endblock %}
 
 {% block styles %}

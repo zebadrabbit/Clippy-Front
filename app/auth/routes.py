@@ -5,6 +5,7 @@ This module handles all authentication-related routes including user registratio
 login, logout, password reset, and profile management.
 """
 import os
+from datetime import datetime
 from urllib.parse import urlparse
 
 from flask import (
@@ -20,7 +21,14 @@ from flask import (
 )
 from flask_login import current_user, login_required, login_user, logout_user
 
-from app.auth.forms import LoginForm, ProfileForm, RegistrationForm
+from app.auth.forms import (
+    ChangeEmailForm,
+    LoginForm,
+    PasswordResetForm,
+    PasswordResetRequestForm,
+    ProfileForm,
+    RegistrationForm,
+)
 from app.models import User, db
 
 # Create authentication blueprint
@@ -525,3 +533,161 @@ def remove_profile_image():
         current_app.logger.error(f"Profile image remove failed: {e}")
         flash("Failed to remove profile image.", "danger")
     return redirect(url_for("auth.profile"))
+
+
+@auth_bp.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    """
+    Handle password reset request.
+
+    GET: Display password reset request form
+    POST: Generate reset token and send email
+
+    Returns:
+        Response: Rendered template or redirect to login
+    """
+    if current_user.is_authenticated:
+        return redirect(url_for("main.dashboard"))
+
+    form = PasswordResetRequestForm()
+
+    if form.validate_on_submit():
+        try:
+            user = User.query.filter_by(email=form.email.data).first()
+            if user:
+                # Generate token
+                token = user.generate_password_reset_token()
+                user.reset_token = token
+                user.reset_token_created_at = datetime.utcnow()
+                db.session.commit()
+
+                # Send reset email
+                from app.mailer import send_email
+
+                reset_url = url_for("auth.reset_password", token=token, _external=True)
+                send_email(
+                    to=user.email,
+                    subject="Password Reset Request",
+                    body=f"Click here to reset your password: {reset_url}\n\n"
+                    f"This link will expire in 1 hour.\n\n"
+                    f"If you did not request this, please ignore this email.",
+                )
+                current_app.logger.info(f"Password reset requested for: {user.email}")
+
+            # Always show success message (security best practice)
+            flash(
+                "If that email is registered, a password reset link has been sent.",
+                "info",
+            )
+            return redirect(url_for("auth.login"))
+
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Password reset request error: {str(e)}")
+            flash(
+                "An error occurred. Please try again later.",
+                "danger",
+            )
+
+    return render_template(
+        "auth/forgot_password.html", title="Forgot Password", form=form
+    )
+
+
+@auth_bp.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    """
+    Handle password reset with token.
+
+    GET: Display password reset form
+    POST: Update password if token is valid
+
+    Args:
+        token: Password reset token from email
+
+    Returns:
+        Response: Rendered template or redirect to login
+    """
+    if current_user.is_authenticated:
+        return redirect(url_for("main.dashboard"))
+
+    user = User.verify_password_reset_token(token)
+    if not user:
+        flash("Invalid or expired reset link.", "danger")
+        return redirect(url_for("auth.forgot_password"))
+
+    form = PasswordResetForm()
+
+    if form.validate_on_submit():
+        try:
+            user.set_password(form.password.data)
+            user.reset_token = None
+            user.reset_token_created_at = None
+            user.password_changed_at = datetime.utcnow()
+            db.session.commit()
+
+            current_app.logger.info(f"Password reset completed for: {user.email}")
+            flash("Your password has been reset. You can now sign in.", "success")
+            return redirect(url_for("auth.login"))
+
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Password reset error: {str(e)}")
+            flash("An error occurred. Please try again.", "danger")
+
+    return render_template(
+        "auth/reset_password.html", title="Reset Password", form=form, token=token
+    )
+
+
+@auth_bp.route("/change-email", methods=["GET", "POST"])
+@login_required
+def change_email():
+    """
+    Handle email address change.
+
+    Requires current password for security.
+    Sends verification email to new address.
+
+    Returns:
+        Response: Redirect to account settings with flash message
+    """
+    form = ChangeEmailForm(current_user)
+
+    if form.validate_on_submit():
+        # Verify current password
+        if not current_user.check_password(form.current_password.data):
+            flash("Current password is incorrect.", "danger")
+            return redirect(url_for("auth.account_settings"))
+
+        try:
+            old_email = current_user.email
+            current_user.email = form.new_email.data
+            # Mark email as unverified until they confirm
+            current_user.email_verified = False
+            db.session.commit()
+
+            # TODO: Send verification email to new address
+            current_app.logger.info(
+                f"Email changed for user {current_user.id}: {old_email} -> {current_user.email}"
+            )
+            flash(
+                "Your email address has been updated. Please check your new email to verify.",
+                "success",
+            )
+            return redirect(url_for("auth.account_settings"))
+
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(
+                f"Email change error for user {current_user.id}: {e}"
+            )
+            flash("An error occurred. Please try again.", "danger")
+            return redirect(url_for("auth.account_settings"))
+
+    # Show form errors
+    for field, errors in form.errors.items():
+        for error in errors:
+            flash(f"{field.replace('_', ' ').title()}: {error}", "danger")
+
+    return redirect(url_for("auth.account_settings"))

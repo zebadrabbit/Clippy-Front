@@ -1,8 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Development setup script for ClippyFront
 
-set -e
+set -euo pipefail
 
 echo "Setting up ClippyFront development environment..."
 

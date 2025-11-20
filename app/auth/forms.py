@@ -181,6 +181,41 @@ class PasswordResetForm(FlaskForm):
     submit = SubmitField("Reset Password")
 
 
+class ChangeEmailForm(FlaskForm):
+    """
+    Form for changing user email address.
+
+    Requires current password for security.
+    """
+
+    new_email = StringField(
+        "New Email",
+        validators=[DataRequired(), Email()],
+        render_kw={"placeholder": "Enter new email address"},
+    )
+    current_password = PasswordField(
+        "Current Password",
+        validators=[DataRequired()],
+        render_kw={"placeholder": "Confirm your password"},
+    )
+    submit = SubmitField("Update Email")
+
+    def __init__(self, current_user, *args, **kwargs):
+        """Initialize form with current user."""
+        super().__init__(*args, **kwargs)
+        self.current_user = current_user
+
+    def validate_new_email(self, new_email):
+        """Validate that new email is different and not already in use."""
+        if new_email.data == self.current_user.email:
+            raise ValidationError("This is already your current email address.")
+        user = User.query.filter_by(email=new_email.data).first()
+        if user:
+            raise ValidationError(
+                "This email is already registered to another account."
+            )
+
+
 class ProfileForm(FlaskForm):
     """
     Form for updating user profile information.

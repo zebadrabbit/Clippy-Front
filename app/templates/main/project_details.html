@@ -3,7 +3,14 @@
 {% block content %}
 <div class="container py-4">
   <div class="d-flex justify-content-between align-items-center mb-3">
-    <h2 class="mb-0"><i class="bi bi-folder"></i> {{ project.name }}</h2>
+    <div>
+      <h2 class="mb-0"><i class="bi bi-folder"></i> {{ project.name }}</h2>
+    </div>
+    <div>
+      <button class="btn btn-outline-primary btn-sm" id="saveAsTemplateBtn">
+        <i class="bi bi-file-earmark-code"></i> Save as Template
+      </button>
+    </div>
   </div>
 
   {% if project.description %}
@@ -160,6 +167,39 @@
     </div>
   </div>
 
+  <!-- Export Settings -->
+  <div class="card mt-4">
+    <div class="card-header">
+      <strong><i class="bi bi-gear"></i> Export Settings</strong>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Platform Preset</label>
+          <select class="form-select" id="projectPlatformPreset" data-project-id="{{ project.id }}">
+            <option value="custom" {% if project.platform_preset == 'custom' or not project.platform_preset %}selected{% endif %}>Custom</option>
+            <!-- Populated dynamically via JavaScript -->
+          </select>
+          <small class="text-muted">Select a preset to optimize for specific platforms</small>
+        </div>
+        <div class="col-md-6">
+          <div class="alert alert-info mb-0 small">
+            <strong>Current Settings:</strong><br>
+            Resolution: {{ project.resolution or '1080p' }}<br>
+            Format: {{ project.format or 'mp4' }}<br>
+            FPS: {{ project.fps or '60' }}
+          </div>
+        </div>
+      </div>
+      <div class="mt-3">
+        <button class="btn btn-primary" id="applyPresetBtn" disabled>
+          <i class="bi bi-check-circle"></i> Apply Preset
+        </button>
+        <small class="text-muted ms-2" id="presetFeedback"></small>
+      </div>
+    </div>
+  </div>
+
   <!-- Danger Zone -->
   <div class="card border-danger mt-4">
     <div class="card-header bg-danger bg-opacity-10 border-danger">
@@ -181,4 +221,119 @@
     </div>
   </div>
 </div>
+
+<script>
+document.getElementById('saveAsTemplateBtn')?.addEventListener('click', async function() {
+    const templateName = prompt('Enter a name for this template:', '{{ project.name }} Template');
+    if (!templateName) return;
+
+    const description = prompt('Enter a description (optional):');
+
+    try {
+        const response = await fetch('/api/templates', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+            },
+            body: JSON.stringify({
+                name: templateName,
+                description: description || '',
+                project_id: {{ project.id }}
+            })
+        });
+
+        if (response.ok) {
+            alert('Template created successfully!');
+            window.location.href = '/templates';
+        } else {
+            const error = await response.json();
+            alert('Error: ' + (error.error || 'Failed to create template'));
+        }
+    } catch (error) {
+        console.error('Error creating template:', error);
+        alert('Failed to create template');
+    }
+});
+
+// Platform Preset Integration for Project Details
+(function initProjectPresets() {
+    const presetSelect = document.getElementById('projectPlatformPreset');
+    const applyBtn = document.getElementById('applyPresetBtn');
+    const feedbackEl = document.getElementById('presetFeedback');
+
+    if (!presetSelect || !applyBtn) return;
+
+    const projectId = presetSelect.dataset.projectId;
+
+    // Load available presets
+    fetch('/api/presets')
+        .then(res => res.json())
+        .then(presets => {
+            if (!Array.isArray(presets)) return;
+
+            presets.forEach(preset => {
+                if (preset.value === 'custom') return; // Already in HTML
+                const option = document.createElement('option');
+                option.value = preset.value;
+                option.textContent = preset.name;
+                option.dataset.settings = JSON.stringify(preset.settings);
+
+                // Pre-select if this project has this preset
+                if ('{{ project.platform_preset }}' === preset.value) {
+                    option.selected = true;
+                }
+
+                presetSelect.appendChild(option);
+            });
+        })
+        .catch(err => console.error('Failed to load presets:', err));
+
+    // Enable apply button when preset changes
+    presetSelect.addEventListener('change', function() {
+        applyBtn.disabled = (this.value === 'custom');
+        feedbackEl.textContent = '';
+    });
+
+    // Apply preset to project
+    applyBtn.addEventListener('click', async function() {
+        const selectedPreset = presetSelect.value;
+        if (selectedPreset === 'custom') return;
+
+        applyBtn.disabled = true;
+        feedbackEl.textContent = 'Applying preset...';
+        feedbackEl.className = 'text-muted ms-2';
+
+        try {
+            const response = await fetch(`/api/projects/${projectId}/preset`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                },
+                body: JSON.stringify({ preset: selectedPreset })
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                feedbackEl.textContent = `✓ Applied successfully! Reload page to see updated settings.`;
+                feedbackEl.className = 'text-success ms-2';
+
+                // Optionally reload page after 2 seconds to show updated settings
+                setTimeout(() => window.location.reload(), 2000);
+            } else {
+                const error = await response.json();
+                feedbackEl.textContent = `Error: ${error.error || 'Failed to apply preset'}`;
+                feedbackEl.className = 'text-danger ms-2';
+                applyBtn.disabled = false;
+            }
+        } catch (err) {
+            console.error('Failed to apply preset:', err);
+            feedbackEl.textContent = 'Failed to apply preset';
+            feedbackEl.className = 'text-danger ms-2';
+            applyBtn.disabled = false;
+        }
+    });
+})();
+</script>
 {% endblock %}

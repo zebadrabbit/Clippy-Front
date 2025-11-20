@@ -5,7 +5,7 @@ This document summarizes the implementation of all wishlist features and Sprint 
 ## Completed Tasks
 
 ### ✅ Task #1: SQLAlchemy 2.0 Migration
-**Status:** Complete  
+**Status:** Complete
 **Changes:**
 - Replaced all `Session.query()` calls with `Session.execute(select())`
 - Eliminated 53 deprecation warnings
@@ -20,7 +20,7 @@ This document summarizes the implementation of all wishlist features and Sprint 
 ---
 
 ### ✅ Task #2: File Deduplication Removal
-**Status:** Complete  
+**Status:** Complete
 **Changes:**
 - Removed deduplication logic from `app/automation.py`
 - Simplified media library operations
@@ -31,22 +31,22 @@ This document summarizes the implementation of all wishlist features and Sprint 
 ---
 
 ### ✅ Task #3: Password Reset & Email Management
-**Status:** Complete  
+**Status:** Complete
 **Changes:**
 - **Web-based password reset flow:**
   - New routes: `/auth/forgot-password`, `/auth/reset-password/<token>`
   - Email-based token system with 1-hour expiration
   - Integration with existing mailer system
-  
+
 - **Email change capability:**
   - New route: `/auth/change-email`
   - Verification email sent to new address
   - Token-based confirmation flow
-  
+
 - **CLI admin password reset:**
   - New script: `scripts/admin_reset_password.py`
   - Usage: `python scripts/admin_reset_password.py <username> <new_password>`
-  
+
 - **Restructured auth UI:**
   - Updated `/auth/profile` page with email change form
   - Added password reset link to login page
@@ -57,12 +57,12 @@ This document summarizes the implementation of all wishlist features and Sprint 
 ---
 
 ### ✅ Task #4: Project Templates - Backend
-**Status:** Complete  
+**Status:** Complete
 **Changes:**
 - **Database schema:**
   - Added `is_template` boolean field to `projects` table
   - Migration: `migrations/versions/xxxx_add_project_templates.py`
-  
+
 - **API endpoints:**
   - `POST /api/templates` - Create template from project
   - `GET /api/templates` - List all user templates
@@ -76,17 +76,17 @@ This document summarizes the implementation of all wishlist features and Sprint 
 ---
 
 ### ✅ Task #5: Project Templates - UI
-**Status:** Complete  
+**Status:** Complete
 **Changes:**
 - **New pages:**
   - `/templates` - Browse user templates with grid layout
   - Template cards show preview, name, description, created date
-  
+
 - **Integration points:**
   - "Save as Template" button on project details page
   - "Use Template" button on templates list
   - Navigation link in main menu
-  
+
 - **Features:**
   - Modal dialogs for template creation
   - Instant template application to new projects
@@ -97,14 +97,14 @@ This document summarizes the implementation of all wishlist features and Sprint 
 ---
 
 ### ✅ Task #6: Tag-based Search & Filtering
-**Status:** Complete  
+**Status:** Complete
 **Changes:**
 - **Database schema:**
   - New `tags` table with hierarchical support (id, name, slug, description, color, parent_id, user_id)
   - Association tables: `media_tags`, `clip_tags`
   - Indexes on (user_id, slug) and foreign keys
   - Migration: `migrations/versions/bd703e60dd61_add_tags_for_media_and_clips.py`
-  
+
 - **Backend API (9 endpoints):**
   - `GET /api/tags` - List tags with optional search and filtering
   - `POST /api/tags` - Create new tag (auto-generates slug)
@@ -115,12 +115,12 @@ This document summarizes the implementation of all wishlist features and Sprint 
   - `DELETE /api/media/<id>/tags/<tag_id>` - Remove tag from media
   - `POST /api/clips/<id>/tags` - Add tags to clip
   - `DELETE /api/clips/<id>/tags/<tag_id>` - Remove tag from clip
-  
+
 - **Enhanced media API:**
   - `GET /api/media` now supports `?tags=1,2,3` filter
   - Response includes `tag_objects` array with tag details
   - Combined tag + search + type filtering
-  
+
 - **UI enhancements:**
   - Tag filter input on media library page
   - Autocomplete dropdown with tag creation capability
@@ -132,7 +132,7 @@ This document summarizes the implementation of all wishlist features and Sprint 
 ---
 
 ### ✅ Task #7: Social Media Export Presets
-**Status:** Complete  
+**Status:** Complete
 **Changes:**
 - **Database schema:**
   - New `PlatformPreset` enum type with 10 platforms:
@@ -146,7 +146,7 @@ This document summarizes the implementation of all wishlist features and Sprint 
     - `facebook` - 1920x1080, 16:9, 30fps, mp4
     - `twitch` - 1920x1080, 16:9, 60fps, mp4
     - `custom` - User-defined settings
-    
+
   - Extended `projects` table with 7 new columns:
     - `platform_preset` (enum)
     - `quality` (integer)
@@ -156,31 +156,31 @@ This document summarizes the implementation of all wishlist features and Sprint 
     - `intro_media_id` (foreign key)
     - `outro_media_id` (foreign key)
   - Migration: `migrations/versions/658ecf23832f_add_platform_presets_and_project_export_.py`
-  
+
 - **Backend API:**
   - Each preset has `get_settings()` method returning:
     - width, height, aspect_ratio
     - format, codec, fps
     - bitrate, max_duration
     - orientation (landscape/portrait/square)
-  
+
   - `POST /api/projects/<id>/preset` - Apply preset to project
     - Validates preset enum value
     - Updates resolution (e.g., "1080p" for 1080-height)
     - Sets format, fps, quality based on bitrate
     - Returns applied settings
-  
+
   - `GET /api/presets` - List all presets
     - Returns array of preset objects with:
       - value, name, settings, description
-  
+
 - **UI enhancements:**
   - **Project wizard (Setup step):**
     - New "Platform Preset" dropdown before output settings
     - Auto-populates resolution, format, FPS when preset selected
     - JavaScript fetches presets via `/api/presets`
     - Adds missing resolution/FPS options dynamically if needed
-  
+
   - **Project details page:**
     - New "Export Settings" card
     - Preset dropdown pre-selects current project preset
@@ -193,7 +193,7 @@ This document summarizes the implementation of all wishlist features and Sprint 
 ---
 
 ### ✅ Task #8: Preview Before Compile (Sprint 3)
-**Status:** Complete  
+**Status:** Complete
 **Changes:**
 - **Database schema:**
   - Added `preview_filename` (String 255) to `projects` table
@@ -225,7 +225,7 @@ This document summarizes the implementation of all wishlist features and Sprint 
 ---
 
 ### ✅ Task #9: Keyboard Shortcuts for Timeline (Sprint 3)
-**Status:** Complete  
+**Status:** Complete
 **Changes:**
 - **Keyboard shortcuts (8 total):**
   - **Step 3 (Arrange):**
@@ -255,7 +255,7 @@ This document summarizes the implementation of all wishlist features and Sprint 
 ---
 
 ### ✅ Task #10: Undo/Redo Timeline Operations (Sprint 3)
-**Status:** Complete  
+**Status:** Complete
 **Changes:**
 - **Command pattern infrastructure:**
   - `commandHistory` manager with `undoStack` and `redoStack`
@@ -268,12 +268,12 @@ This document summarizes the implementation of all wishlist features and Sprint 
     - Stores `clipId`, `oldIndex`, `newIndex`
     - `execute()`: Moves clip to new position via DOM manipulation
     - `undo()`: Moves clip back to original position
-  
+
   - **RemoveClipCommand** - Tracks clip removal
     - Stores `clipId`, `clipData`, `position`, `cardHTML`
     - `execute()`: Removes card, stores HTML for restoration
     - `undo()`: Recreates card from HTML, reattaches event listeners
-  
+
   - **AddClipCommand** - Tracks clip addition from grid
     - Stores `clipId`, `clipData`, `position`
     - `execute()`: Calls `makeTimelineCard()` and inserts
@@ -294,12 +294,12 @@ This document summarizes the implementation of all wishlist features and Sprint 
 ---
 
 ### ✅ Worker Offloading (Architecture)
-**Status:** Complete  
+**Status:** Complete
 **Changes:**
 - **Server no longer performs ANY rendering operations**
   - Removed all synchronous `ffmpeg` and `ffprobe` calls from routes
   - Server handles only HTTP, database, and queue routing
-  
+
 - **New background task:**
   - `process_uploaded_media_task` in `app/tasks/media_maintenance.py`
   - Generates video thumbnails (ffmpeg)
@@ -328,7 +328,7 @@ This document summarizes the implementation of all wishlist features and Sprint 
 ---
 
 ### ✅ Task #11: Team Collaboration - Phase 1
-**Status:** Complete  
+**Status:** Complete
 **Changes:**
 
 #### Database Models (`app/models.py`)
@@ -447,7 +447,7 @@ This document summarizes the implementation of all wishlist features and Sprint 
 ---
 
 ### ✅ Task #12: Team Collaboration - Phase 2 (Activity Feed)
-**Status:** Complete  
+**Status:** Complete
 **Changes:**
 
 #### Activity Log Model (`app/models.py`)
@@ -532,7 +532,7 @@ This document summarizes the implementation of all wishlist features and Sprint 
 ---
 
 ### ✅ Task #13: Team Invitations System
-**Status:** Complete  
+**Status:** Complete
 **Changes:**
 
 #### TeamInvitation Model (`app/models.py`)
@@ -1030,7 +1030,7 @@ The codebase is now production-ready with a comprehensive feature set, clean arc
 Team invitation emails are now fully automated:
 - **Implementation:** `send_team_invitation_email()` in `app/mailer.py`
 - **Integration:** Automatically sent when creating team invitations
-- **Features:** 
+- **Features:**
   - Professional HTML + plain text email formats
   - Role descriptions (viewer, editor, admin)
   - Expiration date included

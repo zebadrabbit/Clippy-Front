@@ -140,7 +140,7 @@ class TestWorkerClipEndpoints:
 
         # Verify database was updated
         with app.app_context():
-            clip_obj = Clip.query.get(test_clip)
+            clip_obj = db.session.get(Clip, test_clip)
             assert clip_obj.is_downloaded is True
             assert clip_obj.duration == 45.2
 
@@ -157,7 +157,7 @@ class TestWorkerClipEndpoints:
         assert response.status_code == 200
 
         with app.app_context():
-            clip_obj = Clip.query.get(test_clip)
+            clip_obj = db.session.get(Clip, test_clip)
             assert clip_obj.media_file_id == test_media_file
 
 
@@ -180,7 +180,7 @@ class TestWorkerMediaEndpoints:
         assert data["media_type"] == "clip"
         assert data["duration"] == 30.5
         # Fetch the actual object to check user_id
-        media = MediaFile.query.get(test_media_file)
+        media = db.session.get(MediaFile, test_media_file)
         assert data["user_id"] == media.user_id
         assert data["username"] == "testuser"
 
@@ -214,7 +214,7 @@ class TestWorkerMediaEndpoints:
         assert "media_id" in result
 
         # Verify database record
-        media = MediaFile.query.get(result["media_id"])
+        media = db.session.get(MediaFile, result["media_id"])
         assert media is not None
         assert media.filename == "new_video.mp4"
         assert media.file_size == 2048000
@@ -237,7 +237,7 @@ class TestWorkerMediaEndpoints:
         assert response.status_code == 200
 
         result = response.get_json()
-        media = MediaFile.query.get(result["media_id"])
+        media = db.session.get(MediaFile, result["media_id"])
         assert media.filename == "minimal.mp4"
         assert media.project_id is None
         assert media.duration is None
@@ -265,7 +265,7 @@ class TestWorkerJobEndpoints:
         assert "job_id" in result
 
         # Verify database record
-        job = ProcessingJob.query.get(result["job_id"])
+        job = db.session.get(ProcessingJob, result["job_id"])
         assert job is not None
         assert job.celery_task_id == "test-task-123"
         assert job.job_type == "download_clip"
@@ -361,7 +361,7 @@ class TestWorkerProjectEndpoints:
         assert data["id"] == test_project
         assert data["name"] == "Test Project"
         # Fetch the actual object to check user_id
-        project = Project.query.get(test_project)
+        project = db.session.get(Project, test_project)
         assert data["user_id"] == project.user_id
         assert data["username"] == "testuser"
         assert data["output_resolution"] == "1080p"
@@ -396,7 +396,7 @@ class TestWorkerProjectEndpoints:
         assert result["status"] == "updated"
 
         # Verify database - fetch the object
-        project = Project.query.get(test_project)
+        project = db.session.get(Project, test_project)
         assert str(project.status.value) == "completed"
         assert project.output_filename == "final_output.mp4"
         assert project.output_file_size == 50000000
@@ -416,7 +416,7 @@ class TestWorkerProjectEndpoints:
         assert response.status_code == 200
 
         # Fetch the object to check
-        project = Project.query.get(test_project)
+        project = db.session.get(Project, test_project)
         assert project.completed_at.isoformat().startswith("2025-11-11T12:00")
 
 

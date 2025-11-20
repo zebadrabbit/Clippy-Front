@@ -644,95 +644,8 @@ def upload_media(project_id):
                     # If quota check fails unexpectedly, continue; enforcement will happen on next operations
                     pass
 
-                # Generate thumbnail for videos
-                thumb_path = None
-                if mime_type and mime_type.startswith("video"):
-                    try:
-                        # Store thumbnail alongside the video file
-                        dest_dir = os.path.dirname(dest_path)
-                        stem = os.path.splitext(os.path.basename(dest_path))[0]
-                        thumb_path = os.path.join(dest_dir, f"{stem}_thumb.jpg")
-                        # Extract a frame at configured timestamp; scale width per config keeping aspect ratio
-                        from app.ffmpeg_config import config_args as _cfg_args
-
-                        subprocess.run(
-                            [
-                                _resolve_binary(current_app, "ffmpeg"),
-                                *_cfg_args(current_app, "ffmpeg", "thumbnail"),
-                                "-y",
-                                "-ss",
-                                str(
-                                    current_app.config.get(
-                                        "THUMBNAIL_TIMESTAMP_SECONDS", 1
-                                    )
-                                ),
-                                "-i",
-                                dest_path,
-                                "-frames:v",
-                                "1",
-                                "-vf",
-                                f"scale={int(current_app.config.get('THUMBNAIL_WIDTH', 480))}:-1",
-                                thumb_path,
-                            ],
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                            check=True,
-                        )
-                    except Exception as e:
-                        current_app.logger.warning(
-                            f"Thumbnail generation failed (project upload): {e}"
-                        )
-                        thumb_path = None
-
-                # Optionally probe basic video metadata and checksum
-                v_duration = None
-                v_width = None
-                v_height = None
-                v_fps = None
-                try:
-                    if mime_type and mime_type.startswith("video"):
-                        from app.ffmpeg_config import config_args as _cfg_args
-
-                        probe_cmd = [
-                            _resolve_binary(current_app, "ffprobe"),
-                            *_cfg_args(current_app, "ffprobe"),
-                            "-v",
-                            "error",
-                            "-select_streams",
-                            "v:0",
-                            "-show_entries",
-                            "stream=width,height,r_frame_rate",
-                            "-show_entries",
-                            "format=duration",
-                            "-of",
-                            "json",
-                            dest_path,
-                        ]
-                        out = subprocess.check_output(
-                            probe_cmd, text=True, encoding="utf-8"
-                        )
-                        import json as _json
-
-                        data = _json.loads(out)
-                        st = (data.get("streams") or [{}])[0]
-                        fr = st.get("r_frame_rate") or "0/1"
-                        try:
-                            num, den = fr.split("/")
-                            v_fps = (
-                                (float(num) / float(den)) if float(den) != 0 else None
-                            )
-                        except Exception:
-                            v_fps = None
-                        v_width = st.get("width")
-                        v_height = st.get("height")
-                        try:
-                            v_duration = float(
-                                (data.get("format") or {}).get("duration")
-                            )
-                        except Exception:
-                            v_duration = None
-                except Exception:
-                    pass
+                # Thumbnail generation and metadata extraction will be handled by background task
+                # (no longer block web request with ffmpeg operations)
 
                 checksum = None
                 try:
@@ -746,7 +659,7 @@ def upload_media(project_id):
                 except Exception:
                     checksum = None
 
-                # Create media record
+                # Create media record (metadata will be filled in by background task)
                 media_file = MediaFile(
                     filename=unique_name,
                     original_filename=original_name,
@@ -756,21 +669,58 @@ def upload_media(project_id):
                     media_type=mtype,
                     user_id=current_user.id,
                     project_id=project.id,
-                    thumbnail_path=(
-                        storage_lib.instance_canonicalize(thumb_path)
-                        if thumb_path
-                        else None
-                    )
-                    or thumb_path,
                     checksum=checksum,
-                    duration=v_duration,
-                    width=v_width,
-                    height=v_height,
-                    framerate=v_fps,
                 )
 
                 db.session.add(media_file)
                 db.session.commit()
+
+                # Queue background task to generate thumbnail and extract metadata
+                # (offload ffmpeg work to worker instead of blocking web request)
+                try:
+                    from app.tasks.media_maintenance import process_uploaded_media_task
+
+                    # Determine queue (prefer gpu/cpu workers, same as downloads)
+                    queue_name = "cpu"  # Default to CPU for media processing
+                    try:
+                        from app.tasks.celery_app import celery_app as _celery
+
+                        i = _celery.control.inspect(timeout=1.0)
+                        active_queues = set()
+                        if i:
+                            aq = i.active_queues() or {}
+                            for _worker, queues in aq.items():
+                                for q in queues or []:
+                                    qname = (
+                                        q.get("name") if isinstance(q, dict) else None
+                                    )
+                                    if qname:
+                                        active_queues.add(qname)
+
+                        # Prefer cpu queue, fallback to gpu
+                        if "cpu" in active_queues:
+                            queue_name = "cpu"
+                        elif "gpu" in active_queues:
+                            queue_name = "gpu"
+                    except Exception:
+                        pass
+
+                    process_uploaded_media_task.apply_async(
+                        args=(media_file.id,),
+                        kwargs={
+                            "generate_thumbnail": bool(
+                                mime_type and mime_type.startswith("video")
+                            )
+                        },
+                        queue=queue_name,
+                    )
+                    current_app.logger.info(
+                        f"Queued media processing task for {media_file.id} on {queue_name} queue"
+                    )
+                except Exception as e:
+                    current_app.logger.warning(
+                        f"Failed to queue media processing task for {media_file.id}: {e}"
+                    )
 
                 # Sidecar files are no longer used; all metadata is kept in DB
 
@@ -986,6 +936,13 @@ def automation():
     )
 
 
+@main_bp.route("/templates")
+@login_required
+def templates():
+    """Render the Templates page for managing reusable project configurations."""
+    return render_template("main/templates.html")
+
+
 @main_bp.route("/automation/tasks/<int:task_id>")
 @login_required
 def automation_task_details(task_id: int):
@@ -1193,85 +1150,10 @@ def media_upload():
         # MediaFile row, we now always continue and create a new DB record
         # below even when a checksum match exists.
 
-        # Generate thumbnail for videos (deterministic name; reuse if exists)
-        thumb_path = None
-        if mime_type and mime_type.startswith("video"):
-            try:
-                # Store thumbnail alongside the video file
-                dest_dir = os.path.dirname(dest_path)
-                stem = os.path.splitext(unique_name)[0]
-                thumb_path = os.path.join(dest_dir, f"{stem}_thumb.jpg")
-                if not os.path.exists(thumb_path):
-                    # Extract a frame at configured timestamp; scale width per config keeping aspect ratio
-                    from app.ffmpeg_config import config_args as _cfg_args
+        # Thumbnail generation will be handled by background task
+        # (no longer block API request with ffmpeg operations)
 
-                    subprocess.run(
-                        [
-                            _resolve_binary(current_app, "ffmpeg"),
-                            *_cfg_args(current_app, "ffmpeg", "thumbnail"),
-                            "-y",
-                            "-ss",
-                            str(
-                                current_app.config.get("THUMBNAIL_TIMESTAMP_SECONDS", 1)
-                            ),
-                            "-i",
-                            dest_path,
-                            "-frames:v",
-                            "1",
-                            "-vf",
-                            f"scale={int(current_app.config.get('THUMBNAIL_WIDTH', 480))}:-1",
-                            thumb_path,
-                        ],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        check=True,
-                    )
-            except Exception as e:
-                current_app.logger.warning(f"Thumbnail generation failed: {e}")
-                thumb_path = None
-
-        # Optionally probe basic video metadata
-        v_duration = None
-        v_width = None
-        v_height = None
-        v_fps = None
-        try:
-            if mime_type and mime_type.startswith("video"):
-                # Use ffprobe via subprocess for portability
-                probe_cmd = [
-                    _resolve_binary(current_app, "ffprobe"),
-                    "-v",
-                    "error",
-                    "-select_streams",
-                    "v:0",
-                    "-show_entries",
-                    "stream=width,height,r_frame_rate",
-                    "-show_entries",
-                    "format=duration",
-                    "-of",
-                    "json",
-                    dest_path,
-                ]
-                out = subprocess.check_output(probe_cmd, text=True, encoding="utf-8")
-                import json as _json
-
-                data = _json.loads(out)
-                st = (data.get("streams") or [{}])[0]
-                fr = st.get("r_frame_rate") or "0/1"
-                try:
-                    num, den = fr.split("/")
-                    v_fps = (float(num) / float(den)) if float(den) != 0 else None
-                except Exception:
-                    v_fps = None
-                v_width = st.get("width")
-                v_height = st.get("height")
-                try:
-                    v_duration = float((data.get("format") or {}).get("duration"))
-                except Exception:
-                    v_duration = None
-        except Exception:
-            pass
-
+        # Create media record (metadata will be filled in by background task)
         media_file = MediaFile(
             filename=unique_name,
             original_filename=original_name,
@@ -1281,18 +1163,52 @@ def media_upload():
             media_type=mtype,
             user_id=current_user.id,
             project_id=None,
-            thumbnail_path=(
-                storage_lib.instance_canonicalize(thumb_path) if thumb_path else None
-            )
-            or thumb_path,
             checksum=checksum,
-            duration=v_duration,
-            width=v_width,
-            height=v_height,
-            framerate=v_fps,
         )
         db.session.add(media_file)
         db.session.commit()
+
+        # Queue background task to generate thumbnail and extract metadata
+        try:
+            from app.tasks.media_maintenance import process_uploaded_media_task
+
+            queue_name = "cpu"
+            try:
+                from app.tasks.celery_app import celery_app as _celery
+
+                i = _celery.control.inspect(timeout=1.0)
+                active_queues = set()
+                if i:
+                    aq = i.active_queues() or {}
+                    for _worker, queues in aq.items():
+                        for q in queues or []:
+                            qname = q.get("name") if isinstance(q, dict) else None
+                            if qname:
+                                active_queues.add(qname)
+
+                if "cpu" in active_queues:
+                    queue_name = "cpu"
+                elif "gpu" in active_queues:
+                    queue_name = "gpu"
+            except Exception:
+                pass
+
+            process_uploaded_media_task.apply_async(
+                args=(media_file.id,),
+                kwargs={
+                    "generate_thumbnail": bool(
+                        mime_type and mime_type.startswith("video")
+                    )
+                },
+                queue=queue_name,
+            )
+            current_app.logger.info(
+                f"Queued media processing for {media_file.id} on {queue_name}"
+            )
+        except Exception as e:
+            current_app.logger.warning(
+                f"Failed to queue media processing for {media_file.id}: {e}"
+            )
 
         # Sidecar files are no longer used; all metadata is kept in DB
 
@@ -2152,3 +2068,187 @@ def preview_compiled_output(project_id: int):
         return rv
     except Exception:
         return send_file(final_path, mimetype=mimetype, conditional=True)
+
+
+@main_bp.route("/projects/<int:project_id>/preview", methods=["GET"])
+@login_required
+def preview_preview_file(project_id: int):
+    """Stream the preview file with Range support (ownership enforced)."""
+    from sqlalchemy import select
+
+    project = db.session.execute(
+        select(Project).filter_by(id=project_id, user_id=current_user.id)
+    ).scalar_one_or_none()
+
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+
+    if not project.preview_filename:
+        return jsonify({"error": "No preview available"}), 404
+
+    # Build path to preview file
+    from app.storage import get_project_output_dir
+
+    output_dir = get_project_output_dir(project.user_id, project.id)
+    preview_path = os.path.join(output_dir, project.preview_filename)
+
+    if not os.path.exists(preview_path):
+        return jsonify({"error": "Preview file not found"}), 404
+
+    guessed, _ = mimetypes.guess_type(preview_path)
+    mimetype = guessed or "video/mp4"
+
+    range_header = request.headers.get("Range", None)
+    if not range_header:
+        return send_file(preview_path, mimetype=mimetype, conditional=True)
+
+    try:
+        file_size = os.path.getsize(preview_path)
+        units, _, rng = range_header.partition("=")
+        if units != "bytes":
+            return send_file(preview_path, mimetype=mimetype, conditional=True)
+        start_str, _, end_str = rng.partition("-")
+        start = int(start_str) if start_str.isdigit() else 0
+        end = int(end_str) if end_str.isdigit() else file_size - 1
+        start = max(0, min(start, file_size - 1))
+        end = max(start, min(end, file_size - 1))
+        length = end - start + 1
+
+        with open(preview_path, "rb") as f:
+            f.seek(start)
+            data = f.read(length)
+
+        rv = Response(data, 206, mimetype=mimetype, direct_passthrough=True)
+        rv.headers.add("Content-Range", f"bytes {start}-{end}/{file_size}")
+        rv.headers.add("Accept-Ranges", "bytes")
+        rv.headers.add("Content-Length", str(length))
+        return rv
+    except Exception:
+        return send_file(preview_path, mimetype=mimetype, conditional=True)
+
+
+@main_bp.route("/teams")
+@login_required
+def teams_list():
+    """Display list of teams the user owns or belongs to."""
+    return render_template("main/teams.html")
+
+
+@main_bp.route("/teams/<int:team_id>")
+@login_required
+def team_details(team_id):
+    """Display detailed view of a team."""
+    from sqlalchemy import select
+
+    from app.models import Team, TeamMembership, User
+    from app.team_permissions import (
+        can_delete_team,
+        can_manage_team,
+        get_user_team_role,
+    )
+
+    team = db.session.execute(
+        select(Team).where(Team.id == team_id)
+    ).scalar_one_or_none()
+
+    if not team:
+        flash("Team not found", "error")
+        return redirect(url_for("main.teams_list"))
+
+    # Check access
+    user_role = get_user_team_role(team)
+    is_owner = team.owner_id == current_user.id
+
+    if not is_owner and not user_role:
+        flash("You don't have access to this team", "error")
+        return redirect(url_for("main.teams_list"))
+
+    # Get members
+    members = []
+    owner = db.session.execute(
+        select(User).where(User.id == team.owner_id)
+    ).scalar_one_or_none()
+    if owner:
+        members.append(
+            {
+                "user_id": owner.id,
+                "username": owner.username,
+                "email": owner.email,
+                "role": "owner",
+                "joined_at": team.created_at,
+            }
+        )
+
+    memberships = db.session.execute(
+        select(TeamMembership)
+        .where(TeamMembership.team_id == team_id)
+        .order_by(TeamMembership.joined_at)
+    ).scalars()
+
+    for membership in memberships:
+        user = membership.user
+        members.append(
+            {
+                "user_id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "role": membership.role.value,
+                "joined_at": membership.joined_at,
+            }
+        )
+
+    # Get shared projects
+    projects = db.session.execute(
+        select(Project)
+        .where(Project.team_id == team_id)
+        .order_by(Project.created_at.desc())
+    ).scalars()
+
+    return render_template(
+        "main/team_details.html",
+        team=team,
+        members=members,
+        projects=list(projects),
+        is_owner=is_owner,
+        user_role=user_role,
+        can_manage=can_manage_team(team),
+        can_delete=can_delete_team(team),
+    )
+
+
+@main_bp.route("/invitations/<token>")
+def invitation(token):
+    """Display team invitation acceptance page."""
+    from sqlalchemy import select
+
+    from app.models import TeamInvitation
+
+    invitation = db.session.execute(
+        select(TeamInvitation).where(TeamInvitation.token == token)
+    ).scalar_one_or_none()
+
+    if not invitation:
+        flash("Invitation not found", "error")
+        return redirect(url_for("main.index"))
+
+    # Check if already responded
+    if invitation.status != "pending":
+        status_messages = {
+            "accepted": "This invitation has already been accepted.",
+            "declined": "This invitation has been declined.",
+            "expired": "This invitation has expired.",
+        }
+        flash(
+            status_messages.get(
+                invitation.status, "This invitation is no longer valid"
+            ),
+            "warning",
+        )
+        return redirect(url_for("main.index"))
+
+    # Check if expired
+    if not invitation.is_valid():
+        flash("This invitation has expired", "error")
+        return redirect(url_for("main.index"))
+
+    return render_template("main/invitation.html", invitation=invitation)

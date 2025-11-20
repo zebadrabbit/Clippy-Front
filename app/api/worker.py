@@ -69,7 +69,7 @@ def worker_get_clip(clip_id: int):
         }
     """
     try:
-        clip = Clip.query.get(clip_id)
+        clip = db.session.get(Clip, clip_id)
         if not clip:
             return jsonify({"error": "Clip not found"}), 404
 
@@ -105,7 +105,7 @@ def worker_update_clip_status(clip_id: int):
         }
     """
     try:
-        clip = Clip.query.get(clip_id)
+        clip = db.session.get(Clip, clip_id)
         if not clip:
             return jsonify({"error": "Clip not found"}), 404
 
@@ -146,7 +146,7 @@ def worker_get_media(media_id: int):
         }
     """
     try:
-        media = MediaFile.query.get(media_id)
+        media = db.session.get(MediaFile, media_id)
         if not media:
             return jsonify({"error": "Media file not found"}), 404
 
@@ -414,7 +414,7 @@ def worker_get_job(job_id: int):
         }
     """
     try:
-        job = ProcessingJob.query.get(job_id)
+        job = db.session.get(ProcessingJob, job_id)
         if not job:
             return jsonify({"error": "Job not found"}), 404
 
@@ -448,7 +448,7 @@ def worker_update_job(job_id: int):
         }
     """
     try:
-        job = ProcessingJob.query.get(job_id)
+        job = db.session.get(ProcessingJob, job_id)
         if not job:
             return jsonify({"error": "Job not found"}), 404
 
@@ -504,7 +504,7 @@ def worker_get_project(project_id: int):
         }
     """
     try:
-        project = Project.query.get(project_id)
+        project = db.session.get(Project, project_id)
         if not project:
             return jsonify({"error": "Project not found"}), 404
 
@@ -555,7 +555,7 @@ def worker_update_project_status(project_id: int):
         }
     """
     try:
-        project = Project.query.get(project_id)
+        project = db.session.get(Project, project_id)
         if not project:
             return jsonify({"error": "Project not found"}), 404
 
@@ -666,7 +666,7 @@ def worker_get_user_quota(user_id: int):
         from app.models import User
         from app.quotas import get_effective_tier, storage_used_bytes
 
-        user = User.query.get(user_id)
+        user = db.session.get(User, user_id)
         if not user:
             return jsonify({"error": "User not found"}), 404
 
@@ -714,7 +714,7 @@ def worker_get_tier_limits(user_id: int):
         from app.models import User
         from app.quotas import get_effective_tier, should_apply_watermark
 
-        user = User.query.get(user_id)
+        user = db.session.get(User, user_id)
         if not user:
             return jsonify({"error": "User not found"}), 404
 
@@ -758,7 +758,7 @@ def worker_record_render_usage(user_id: int):
         from app.models import User
         from app.quotas import record_render_usage
 
-        user = User.query.get(user_id)
+        user = db.session.get(User, user_id)
         if not user:
             return jsonify({"error": "User not found"}), 404
 
@@ -799,11 +799,11 @@ def worker_upload_clip(project_id: int, clip_id: int):
     """
     try:
         # Verify project and clip exist
-        project = Project.query.get(project_id)
+        project = db.session.get(Project, project_id)
         if not project:
             return jsonify({"error": "Project not found"}), 404
 
-        clip = Clip.query.get(clip_id)
+        clip = db.session.get(Clip, clip_id)
         if not clip or clip.project_id != project_id:
             return jsonify({"error": "Clip not found or wrong project"}), 404
 
@@ -964,7 +964,7 @@ def worker_upload_compilation(project_id: int):
     """
     try:
         # Verify project exists
-        project = Project.query.get(project_id)
+        project = db.session.get(Project, project_id)
         if not project:
             return jsonify({"error": "Project not found"}), 404
 
@@ -1114,7 +1114,7 @@ def worker_get_compilation_context(project_id: int):
         }
     """
     try:
-        project = Project.query.get(project_id)
+        project = db.session.get(Project, project_id)
         if not project:
             return jsonify({"error": "Project not found"}), 404
 
@@ -1131,7 +1131,7 @@ def worker_get_compilation_context(project_id: int):
         # Get tier limits
         from app.models import User
 
-        user = User.query.get(project.user_id)
+        user = db.session.get(User, project.user_id)
         tier_limits = {"max_res_label": None, "max_fps": None, "max_clips": None}
         username = None
 

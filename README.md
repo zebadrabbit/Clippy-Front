@@ -171,6 +171,11 @@ celery -A app.tasks.celery_app worker -Q gpu,cpu --loglevel=info
 # Reindex media from disk
 python scripts/reindex_media.py
 
+# Reset admin password (CLI only for security)
+python scripts/reset_admin_password.py admin
+python scripts/reset_admin_password.py --email admin@example.com
+python scripts/reset_admin_password.py --list-admins
+
 # Check worker versions
 # Visit /admin/workers
 

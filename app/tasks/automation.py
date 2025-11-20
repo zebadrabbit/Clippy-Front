@@ -154,18 +154,6 @@ def _fetch_twitch_clip_urls(
         return []
 
 
-def _reused_media_for_url(
-    session, url_s: str, user_id: int, project_id: int
-) -> tuple[bool, MediaFile | None, str | None]:
-    """Try reuse an already-downloaded clip by normalized URL or platform key.
-
-    Returns (reused, media_file, source_platform)
-    """
-    # Worker-side reuse disabled: do not attempt to find/reuse previously-downloaded media.
-    # Returning False forces creating a new Clip row and queuing a download task.
-    return False, None, None
-
-
 @celery_app.task(bind=True)
 def run_compilation_task(self, task_id: int) -> dict[str, Any]:
     """Execute a saved CompilationTask: create a project, gather clips, download, and enqueue compile.
@@ -188,10 +176,10 @@ def run_compilation_task(self, task_id: int) -> dict[str, Any]:
     """
     session, _app = _get_db_session()
     try:
-        ctask = session.query(CompilationTask).get(int(task_id))
+        ctask = session.get(CompilationTask, int(task_id))
         if not ctask:
             raise ValueError(f"CompilationTask {task_id} not found")
-        user = session.query(User).get(int(ctask.user_id))
+        user = session.get(User, int(ctask.user_id))
         if not user:
             raise ValueError("Task owner not found")
 
@@ -354,53 +342,27 @@ def run_compilation_task(self, task_id: int) -> dict[str, Any]:
                 if not norm or norm in seen:
                     continue
                 seen.add(norm)
-                reused, media_file, src_platform = _reused_media_for_url(
-                    session, norm, user_id=user.id, project_id=project.id
+                # Create new clip and queue download (no reuse)
+                clip = Clip(
+                    title=f"Clip {order_base + idx + 1}",
+                    description=None,
+                    source_platform=("twitch" if "twitch" in norm else "external"),
+                    source_url=url_s,
+                    project_id=project.id,
+                    order_index=order_base + idx,
                 )
-                if reused and media_file:
-                    clip = Clip(
-                        title=f"Clip {order_base + idx + 1}",
-                        description=None,
-                        source_platform=src_platform
-                        or ("twitch" if "twitch" in norm else "external"),
-                        source_url=url_s,
-                        project_id=project.id,
-                        order_index=order_base + idx,
-                        media_file_id=media_file.id,
-                        is_downloaded=True,
-                        duration=media_file.duration,
-                    )
-                    session.add(clip)
-                    session.flush()
-                    items.append(
-                        {
-                            "clip_id": clip.id,
-                            "task_id": None,
-                            "url": url_s,
-                            "reused": True,
-                        }
-                    )
-                else:
-                    clip = Clip(
-                        title=f"Clip {order_base + idx + 1}",
-                        description=None,
-                        source_platform=("twitch" if "twitch" in norm else "external"),
-                        source_url=url_s,
-                        project_id=project.id,
-                        order_index=order_base + idx,
-                    )
-                    session.add(clip)
-                    session.flush()
-                    # Commit before running the download task to ensure the Clip row is persisted
-                    try:
-                        session.commit()
-                    except Exception:
-                        session.rollback()
-                        continue
-                    # Run download task inline in this worker process
-                    res = download_clip_task.apply(args=(clip.id, url_s))
-                    _ = res.result  # raise if failure
-                    items.append({"clip_id": clip.id, "task_id": res.id, "url": url_s})
+                session.add(clip)
+                session.flush()
+                # Commit before running the download task to ensure the Clip row is persisted
+                try:
+                    session.commit()
+                except Exception:
+                    session.rollback()
+                    continue
+                # Run download task inline in this worker process
+                res = download_clip_task.apply(args=(clip.id, url_s))
+                _ = res.result  # raise if failure
+                items.append({"clip_id": clip.id, "task_id": res.id, "url": url_s})
         else:
             # Use most recent library media files as clips (no download)
             for idx, mf in enumerate(library_media[:clip_limit]):

@@ -547,9 +547,9 @@ def _save_final_video_v2(temp_path: str, project_data: dict, user_id: int) -> st
 
     with app.app_context():
         # Build output directory using storage helper for project-based layout
-        from app.models import User
+        from app.models import User, db
 
-        user = User.query.get(user_id)
+        user = db.session.get(User, user_id)
         if not user:
             raise ValueError(f"User {user_id} not found")
 

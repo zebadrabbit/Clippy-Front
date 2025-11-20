@@ -28,6 +28,72 @@ class UserRole(Enum):
     ADMIN = "admin"
 
 
+class TeamRole(Enum):
+    """
+    Enumeration for team member roles.
+
+    - OWNER: Team owner with full permissions (cannot be removed)
+    - ADMIN: Administrator with full team management permissions
+    - EDITOR: Can edit shared projects but cannot manage team
+    - VIEWER: Read-only access to shared projects
+    """
+
+    OWNER = "owner"
+    ADMIN = "admin"
+    EDITOR = "editor"
+    VIEWER = "viewer"
+
+
+class ActivityType(Enum):
+    """
+    Enumeration for activity log types.
+
+    Team Activities:
+    - TEAM_CREATED: Team was created
+    - TEAM_UPDATED: Team name/description changed
+    - TEAM_DELETED: Team was deleted
+    - MEMBER_ADDED: User added to team
+    - MEMBER_REMOVED: User removed from team
+    - MEMBER_LEFT: User left team voluntarily
+    - MEMBER_ROLE_CHANGED: User's role in team changed
+
+    Project Activities:
+    - PROJECT_CREATED: Project was created
+    - PROJECT_SHARED: Project shared with team
+    - PROJECT_UNSHARED: Project removed from team
+    - PROJECT_UPDATED: Project settings changed
+    - PROJECT_DELETED: Project was deleted
+
+    Compilation Activities:
+    - PREVIEW_GENERATED: Preview video created
+    - COMPILATION_STARTED: Full compilation started
+    - COMPILATION_COMPLETED: Compilation finished successfully
+    - COMPILATION_FAILED: Compilation failed with error
+    """
+
+    # Team activities
+    TEAM_CREATED = "team_created"
+    TEAM_UPDATED = "team_updated"
+    TEAM_DELETED = "team_deleted"
+    MEMBER_ADDED = "member_added"
+    MEMBER_REMOVED = "member_removed"
+    MEMBER_LEFT = "member_left"
+    MEMBER_ROLE_CHANGED = "member_role_changed"
+
+    # Project activities
+    PROJECT_CREATED = "project_created"
+    PROJECT_SHARED = "project_shared"
+    PROJECT_UNSHARED = "project_unshared"
+    PROJECT_UPDATED = "project_updated"
+    PROJECT_DELETED = "project_deleted"
+
+    # Compilation activities
+    PREVIEW_GENERATED = "preview_generated"
+    COMPILATION_STARTED = "compilation_started"
+    COMPILATION_COMPLETED = "compilation_completed"
+    COMPILATION_FAILED = "compilation_failed"
+
+
 class ProjectStatus(Enum):
     """
     Enumeration for project processing status.
@@ -62,6 +128,183 @@ class MediaType(Enum):
     COMPILATION = "compilation"
 
 
+class PlatformPreset(Enum):
+    """
+    Enumeration for social media platform export presets.
+
+    Each preset defines optimal settings for specific platforms:
+    - YOUTUBE: YouTube standard (1920x1080, 16:9, MP4)
+    - YOUTUBE_SHORTS: YouTube Shorts (1080x1920, 9:16, ≤60s)
+    - TIKTOK: TikTok (1080x1920, 9:16, ≤10min)
+    - INSTAGRAM_FEED: Instagram Feed (1080x1080, 1:1)
+    - INSTAGRAM_REEL: Instagram Reels (1080x1920, 9:16, ≤90s)
+    - INSTAGRAM_STORY: Instagram Stories (1080x1920, 9:16, ≤60s)
+    - TWITTER: Twitter/X (1920x1080, 16:9, ≤2:20)
+    - FACEBOOK: Facebook (1920x1080, 16:9)
+    - TWITCH: Twitch Clips (1920x1080, 16:9)
+    - CUSTOM: User-defined settings
+    """
+
+    YOUTUBE = "youtube"
+    YOUTUBE_SHORTS = "youtube_shorts"
+    TIKTOK = "tiktok"
+    INSTAGRAM_FEED = "instagram_feed"
+    INSTAGRAM_REEL = "instagram_reel"
+    INSTAGRAM_STORY = "instagram_story"
+    TWITTER = "twitter"
+    FACEBOOK = "facebook"
+    TWITCH = "twitch"
+    CUSTOM = "custom"
+
+    @property
+    def display_name(self) -> str:
+        """Get human-readable platform name."""
+        names = {
+            "youtube": "YouTube",
+            "youtube_shorts": "YouTube Shorts",
+            "tiktok": "TikTok",
+            "instagram_feed": "Instagram Feed",
+            "instagram_reel": "Instagram Reels",
+            "instagram_story": "Instagram Stories",
+            "twitter": "Twitter/X",
+            "facebook": "Facebook",
+            "twitch": "Twitch Clips",
+            "custom": "Custom",
+        }
+        return names.get(self.value, self.value.title())
+
+    def get_settings(self) -> dict:
+        """
+        Get recommended export settings for this platform.
+
+        Returns:
+            dict: Export settings including resolution, aspect ratio, format, etc.
+        """
+        settings = {
+            "youtube": {
+                "width": 1920,
+                "height": 1080,
+                "aspect_ratio": "16:9",
+                "resolution": "1080p",
+                "format": "mp4",
+                "codec": "h264",
+                "fps": 30,
+                "bitrate": "8M",
+                "max_duration": None,
+                "orientation": "landscape",
+            },
+            "youtube_shorts": {
+                "width": 1080,
+                "height": 1920,
+                "aspect_ratio": "9:16",
+                "resolution": "1080p",
+                "format": "mp4",
+                "codec": "h264",
+                "fps": 30,
+                "bitrate": "5M",
+                "max_duration": 60,
+                "orientation": "portrait",
+            },
+            "tiktok": {
+                "width": 1080,
+                "height": 1920,
+                "aspect_ratio": "9:16",
+                "resolution": "1080p",
+                "format": "mp4",
+                "codec": "h264",
+                "fps": 30,
+                "bitrate": "5M",
+                "max_duration": 600,
+                "orientation": "portrait",
+            },
+            "instagram_feed": {
+                "width": 1080,
+                "height": 1080,
+                "aspect_ratio": "1:1",
+                "resolution": "1080p",
+                "format": "mp4",
+                "codec": "h264",
+                "fps": 30,
+                "bitrate": "5M",
+                "max_duration": 60,
+                "orientation": "square",
+            },
+            "instagram_reel": {
+                "width": 1080,
+                "height": 1920,
+                "aspect_ratio": "9:16",
+                "resolution": "1080p",
+                "format": "mp4",
+                "codec": "h264",
+                "fps": 30,
+                "bitrate": "5M",
+                "max_duration": 90,
+                "orientation": "portrait",
+            },
+            "instagram_story": {
+                "width": 1080,
+                "height": 1920,
+                "aspect_ratio": "9:16",
+                "resolution": "1080p",
+                "format": "mp4",
+                "codec": "h264",
+                "fps": 30,
+                "bitrate": "5M",
+                "max_duration": 60,
+                "orientation": "portrait",
+            },
+            "twitter": {
+                "width": 1920,
+                "height": 1080,
+                "aspect_ratio": "16:9",
+                "resolution": "1080p",
+                "format": "mp4",
+                "codec": "h264",
+                "fps": 30,
+                "bitrate": "6M",
+                "max_duration": 140,
+                "orientation": "landscape",
+            },
+            "facebook": {
+                "width": 1920,
+                "height": 1080,
+                "aspect_ratio": "16:9",
+                "resolution": "1080p",
+                "format": "mp4",
+                "codec": "h264",
+                "fps": 30,
+                "bitrate": "8M",
+                "max_duration": None,
+                "orientation": "landscape",
+            },
+            "twitch": {
+                "width": 1920,
+                "height": 1080,
+                "aspect_ratio": "16:9",
+                "resolution": "1080p",
+                "format": "mp4",
+                "codec": "h264",
+                "fps": 60,
+                "bitrate": "8M",
+                "max_duration": 60,
+                "orientation": "landscape",
+            },
+            "custom": {
+                "width": 1920,
+                "height": 1080,
+                "aspect_ratio": "16:9",
+                "resolution": "1080p",
+                "format": "mp4",
+                "codec": "h264",
+                "fps": 30,
+                "bitrate": "8M",
+                "max_duration": None,
+                "orientation": "landscape",
+            },
+        }
+        return settings.get(self.value, settings["custom"])
+
+
 class User(UserMixin, db.Model):
     """
     User model for authentication and user management.
@@ -88,6 +331,9 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     last_login = db.Column(db.DateTime)
     password_changed_at = db.Column(db.DateTime)
+    # Password reset token and expiration
+    reset_token = db.Column(db.String(255))
+    reset_token_created_at = db.Column(db.DateTime)
     # Optional path to user's profile image stored on disk
     profile_image_path = db.Column(db.String(500))
 
@@ -145,6 +391,37 @@ class User(UserMixin, db.Model):
         """
         return check_password_hash(self.password_hash, password)
 
+    def generate_password_reset_token(self) -> str:
+        """
+        Generate a secure password reset token.
+
+        Returns:
+            str: URL-safe token (32 bytes hex = 64 chars)
+        """
+        return secrets.token_urlsafe(32)
+
+    @staticmethod
+    def verify_password_reset_token(token: str, max_age: int = 3600) -> "User | None":
+        """
+        Verify a password reset token and return the user.
+
+        Args:
+            token: The reset token to verify
+            max_age: Token validity period in seconds (default 1 hour)
+
+        Returns:
+            User | None: User object if token is valid, None otherwise
+        """
+        # Simple implementation: find user with matching token that hasn't expired
+        # For production, consider using itsdangerous.URLSafeTimedSerializer
+        from datetime import timedelta
+
+        cutoff = datetime.utcnow() - timedelta(seconds=max_age)
+        user = User.query.filter(
+            User.reset_token == token, User.reset_token_created_at > cutoff
+        ).first()
+        return user
+
     def is_admin(self) -> bool:
         """
         Check if user has admin privileges.
@@ -201,6 +478,9 @@ class Project(db.Model):
         db.Enum(ProjectStatus), default=ProjectStatus.DRAFT, nullable=False
     )
 
+    # Team collaboration (optional)
+    team_id = db.Column(db.Integer, db.ForeignKey("teams.id"), nullable=True)
+
     # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
@@ -216,16 +496,52 @@ class Project(db.Model):
     audio_norm_profile = db.Column(db.String(32))
     audio_norm_db = db.Column(db.Float)
 
+    # Platform export preset
+    platform_preset = db.Column(
+        db.Enum(PlatformPreset, native_enum=False),
+        default=PlatformPreset.CUSTOM,
+        nullable=True,
+    )
+    # Additional video settings
+    quality = db.Column(db.String(20), default="high")
+    fps = db.Column(db.Integer, default=30)
+    transitions_enabled = db.Column(db.Boolean, default=True)
+    watermark_enabled = db.Column(db.Boolean, default=False)
+
+    # Intro/Outro media references
+    intro_media_id = db.Column(db.Integer, db.ForeignKey("media_files.id"))
+    outro_media_id = db.Column(db.Integer, db.ForeignKey("media_files.id"))
+
     # Output file information
     output_filename = db.Column(db.String(255))
     output_file_size = db.Column(db.BigInteger)
     processing_log = db.Column(db.Text)
 
+    # Preview file (low-res quick preview before full compile)
+    preview_filename = db.Column(db.String(255))
+    preview_file_size = db.Column(db.BigInteger)
+
     # Relationships
     clips = db.relationship(
         "Clip", backref="project", lazy="dynamic", cascade="all, delete-orphan"
     )
-    media_files = db.relationship("MediaFile", backref="project", lazy="dynamic")
+    media_files = db.relationship(
+        "MediaFile",
+        backref="project",
+        lazy="dynamic",
+        foreign_keys="MediaFile.project_id",
+    )
+    intro_media = db.relationship(
+        "MediaFile", foreign_keys=[intro_media_id], uselist=False
+    )
+    outro_media = db.relationship(
+        "MediaFile", foreign_keys=[outro_media_id], uselist=False
+    )
+    team = db.relationship(
+        "Team",
+        back_populates="projects",
+        foreign_keys=[team_id],
+    )
 
     def get_total_duration(self) -> int:
         """
@@ -399,6 +715,102 @@ class Clip(db.Model):
         return f"<Clip {self.title}>"
 
 
+# Association tables for many-to-many relationships
+media_tags = db.Table(
+    "media_tags",
+    db.Column(
+        "media_file_id", db.Integer, db.ForeignKey("media_files.id"), primary_key=True
+    ),
+    db.Column("tag_id", db.Integer, db.ForeignKey("tags.id"), primary_key=True),
+    db.Column("created_at", db.DateTime, default=datetime.utcnow, nullable=False),
+)
+
+clip_tags = db.Table(
+    "clip_tags",
+    db.Column("clip_id", db.Integer, db.ForeignKey("clips.id"), primary_key=True),
+    db.Column("tag_id", db.Integer, db.ForeignKey("tags.id"), primary_key=True),
+    db.Column("created_at", db.DateTime, default=datetime.utcnow, nullable=False),
+)
+
+
+class Tag(db.Model):
+    """
+    Tag model for categorizing and filtering media files and clips.
+
+    Tags provide a flexible way to organize content with support for
+    hierarchical relationships (parent/child tags) and color coding.
+    """
+
+    __tablename__ = "tags"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), nullable=False, index=True)
+    slug = db.Column(db.String(50), nullable=False, index=True)
+    description = db.Column(db.Text)
+
+    # Visual customization
+    color = db.Column(db.String(7), default="#6c757d")  # Hex color code
+
+    # Ownership (user-specific tags or global)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    is_global = db.Column(db.Boolean, default=False)  # System-wide tags (admin only)
+
+    # Hierarchical tags (optional parent-child relationship)
+    parent_id = db.Column(db.Integer, db.ForeignKey("tags.id"))
+    children = db.relationship(
+        "Tag", backref=db.backref("parent", remote_side=[id]), lazy="dynamic"
+    )
+
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    # Relationships with media and clips
+    media_files = db.relationship(
+        "MediaFile",
+        secondary=media_tags,
+        backref=db.backref("tag_objects", lazy="dynamic"),
+        lazy="dynamic",
+    )
+
+    clips = db.relationship(
+        "Clip",
+        secondary=clip_tags,
+        backref=db.backref("tag_objects", lazy="dynamic"),
+        lazy="dynamic",
+    )
+
+    # Usage statistics
+    use_count = db.Column(db.Integer, default=0)  # Number of times tag is used
+
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "slug", name="uix_user_tag_slug"),
+        db.Index("ix_tags_user_name", "user_id", "name"),
+    )
+
+    @property
+    def full_path(self) -> str:
+        """
+        Get the full hierarchical path of the tag.
+
+        Returns:
+            str: Full path like "Gaming/FPS/Valorant"
+        """
+        if self.parent:
+            return f"{self.parent.full_path}/{self.name}"
+        return self.name
+
+    def increment_usage(self):
+        """Increment the usage counter for this tag."""
+        self.use_count = (self.use_count or 0) + 1
+        self.updated_at = datetime.utcnow()
+
+    def __repr__(self) -> str:
+        return f"<Tag {self.name}>"
+
+
 class ProcessingJob(db.Model):
     """
     Processing job model for tracking video compilation jobs.
@@ -518,6 +930,17 @@ class Tier(db.Model):
         default=1,
         nullable=False,
         doc="Maximum number of active schedules per user for this tier.",
+    )
+    # Team collaboration limits
+    max_teams_owned = db.Column(
+        db.Integer,
+        nullable=True,
+        doc="Maximum number of teams a user can own (None => unlimited)",
+    )
+    max_team_members = db.Column(
+        db.Integer,
+        nullable=True,
+        doc="Maximum number of members per team (None => unlimited)",
     )
 
     # Timestamps
@@ -698,6 +1121,9 @@ class CompilationTask(db.Model):
     name = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text)
 
+    # Template flag: if True, this is a saved template not meant for direct execution
+    is_template = db.Column(db.Boolean, default=False, nullable=False)
+
     # Parameters blob; structure is validated in API layer
     params = db.Column(db.JSON, nullable=False, default={})
 
@@ -791,3 +1217,454 @@ class ScheduledTask(db.Model):
 
     def __repr__(self) -> str:
         return f"<ScheduledTask {self.id} {self.schedule_type.value} enabled={self.enabled}>"
+
+
+class Team(db.Model):
+    """
+    Team model for collaboration features.
+
+    Teams allow multiple users to collaborate on projects.
+    Each team has an owner and can have multiple members with different roles.
+    """
+
+    __tablename__ = "teams"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(128), nullable=False)
+    description = db.Column(db.Text)
+
+    # Team ownership
+    owner_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    # Relationships
+    owner = db.relationship(
+        "User",
+        foreign_keys=[owner_id],
+        backref=db.backref("owned_teams", lazy="dynamic", cascade="all, delete-orphan"),
+    )
+
+    # Members relationship (through TeamMembership)
+    memberships = db.relationship(
+        "TeamMembership",
+        back_populates="team",
+        cascade="all, delete-orphan",
+        lazy="dynamic",
+    )
+
+    # Projects shared with this team
+    projects = db.relationship(
+        "Project",
+        back_populates="team",
+        lazy="dynamic",
+    )
+
+    def __repr__(self) -> str:
+        return f"<Team {self.id} '{self.name}'>"
+
+    def get_member_role(self, user_id: int):
+        """
+        Get the role of a user in this team.
+
+        Args:
+            user_id: ID of the user to check
+
+        Returns:
+            TeamRole if user is a member, None otherwise
+        """
+        if self.owner_id == user_id:
+            return TeamRole.OWNER
+
+        from sqlalchemy import select
+
+        membership = db.session.execute(
+            select(TeamMembership).where(
+                TeamMembership.team_id == self.id, TeamMembership.user_id == user_id
+            )
+        ).scalar_one_or_none()
+
+        return membership.role if membership else None
+
+    def has_permission(self, user_id: int, required_role: TeamRole) -> bool:
+        """
+        Check if a user has at least the required permission level.
+
+        Args:
+            user_id: ID of the user to check
+            required_role: Minimum required role
+
+        Returns:
+            True if user has sufficient permissions, False otherwise
+        """
+        role = self.get_member_role(user_id)
+        if not role:
+            return False
+
+        # Role hierarchy: OWNER > ADMIN > EDITOR > VIEWER
+        role_hierarchy = {
+            TeamRole.OWNER: 4,
+            TeamRole.ADMIN: 3,
+            TeamRole.EDITOR: 2,
+            TeamRole.VIEWER: 1,
+        }
+
+        return role_hierarchy.get(role, 0) >= role_hierarchy.get(required_role, 0)
+
+
+class TeamMembership(db.Model):
+    """
+    Association model for team members.
+
+    Tracks which users belong to which teams and their roles.
+    """
+
+    __tablename__ = "team_memberships"
+
+    id = db.Column(db.Integer, primary_key=True)
+    team_id = db.Column(db.Integer, db.ForeignKey("teams.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+
+    role = db.Column(
+        db.Enum(
+            TeamRole,
+            name="teamrole",
+            values_callable=lambda enum: [e.value for e in enum],
+        ),
+        nullable=False,
+        default=TeamRole.VIEWER,
+    )
+
+    # Timestamps
+    joined_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    # Relationships
+    team = db.relationship("Team", back_populates="memberships")
+    user = db.relationship(
+        "User",
+        backref=db.backref(
+            "team_memberships", lazy="dynamic", cascade="all, delete-orphan"
+        ),
+    )
+
+    # Unique constraint: a user can only be in a team once
+    __table_args__ = (
+        db.UniqueConstraint("team_id", "user_id", name="unique_team_member"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<TeamMembership team={self.team_id} user={self.user_id} role={self.role.value}>"
+
+
+class ActivityLog(db.Model):
+    """
+    Activity log for tracking team and project activities.
+
+    Records important events like team member changes, project sharing,
+    compilations, and other collaborative activities for audit trail
+    and activity feeds.
+    """
+
+    __tablename__ = "activity_logs"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # Activity metadata
+    activity_type = db.Column(
+        db.Enum(
+            ActivityType,
+            name="activitytype",
+            values_callable=lambda enum: [e.value for e in enum],
+        ),
+        nullable=False,
+    )
+
+    # Relationships to entities
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    team_id = db.Column(db.Integer, db.ForeignKey("teams.id"), nullable=True)
+    project_id = db.Column(db.Integer, db.ForeignKey("projects.id"), nullable=True)
+
+    # Additional context (JSON for flexibility)
+    # Examples:
+    # - For MEMBER_ROLE_CHANGED: {"old_role": "viewer", "new_role": "editor", "target_user_id": 123}
+    # - For COMPILATION_FAILED: {"error": "ffmpeg timeout"}
+    # - For PROJECT_SHARED: {"team_name": "My Team"}
+    context = db.Column(db.JSON, nullable=True)
+
+    # Timestamp
+    created_at = db.Column(
+        db.DateTime, default=datetime.utcnow, nullable=False, index=True
+    )
+
+    # Relationships
+    user = db.relationship("User", backref=db.backref("activities", lazy="dynamic"))
+    team = db.relationship(
+        "Team",
+        backref=db.backref("activities", lazy="dynamic", cascade="all, delete-orphan"),
+    )
+    project = db.relationship(
+        "Project",
+        backref=db.backref("activities", lazy="dynamic", cascade="all, delete-orphan"),
+    )
+
+    # Indexes for efficient querying
+    __table_args__ = (
+        db.Index("idx_activity_team_created", "team_id", "created_at"),
+        db.Index("idx_activity_project_created", "project_id", "created_at"),
+        db.Index("idx_activity_user_created", "user_id", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<ActivityLog {self.activity_type.value} user={self.user_id} team={self.team_id} project={self.project_id}>"
+
+    def to_dict(self) -> dict:
+        """
+        Convert activity log to dictionary for JSON serialization.
+
+        Returns:
+            dict: Activity log data including user info and context
+        """
+        return {
+            "id": self.id,
+            "activity_type": self.activity_type.value,
+            "user_id": self.user_id,
+            "user": {
+                "id": self.user.id,
+                "username": self.user.username,
+            }
+            if self.user
+            else None,
+            "team_id": self.team_id,
+            "project_id": self.project_id,
+            "context": self.context,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class TeamInvitation(db.Model):
+    """
+    Team invitation model for inviting users to join teams.
+
+    Allows team admins to send email invitations to users (existing or new).
+    Invitations have unique tokens and can be accepted or declined.
+    """
+
+    __tablename__ = "team_invitations"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # Invitation details
+    team_id = db.Column(db.Integer, db.ForeignKey("teams.id"), nullable=False)
+    invited_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    email = db.Column(db.String(255), nullable=False, index=True)
+
+    # Invited user (if they already have an account)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+
+    # Role to assign when accepted
+    role = db.Column(
+        db.Enum(
+            TeamRole,
+            name="teamrole",
+            values_callable=lambda enum: [e.value for e in enum],
+        ),
+        nullable=False,
+        default=TeamRole.VIEWER,
+    )
+
+    # Invitation token (unique)
+    token = db.Column(db.String(64), unique=True, nullable=False, index=True)
+
+    # Status
+    status = db.Column(
+        db.String(20),
+        nullable=False,
+        default="pending",
+    )  # pending, accepted, declined, expired
+
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)  # 7 days by default
+    responded_at = db.Column(db.DateTime, nullable=True)
+
+    # Relationships
+    team = db.relationship(
+        "Team",
+        backref=db.backref("invitations", lazy="dynamic", cascade="all, delete-orphan"),
+    )
+    invited_by = db.relationship("User", foreign_keys=[invited_by_id])
+    user = db.relationship("User", foreign_keys=[user_id])
+
+    def __repr__(self) -> str:
+        return f"<TeamInvitation {self.email} → Team {self.team_id} ({self.status})>"
+
+    def is_valid(self) -> bool:
+        """Check if invitation is still valid (pending and not expired)."""
+        return self.status == "pending" and self.expires_at > datetime.utcnow()
+
+    def accept(self, user: "User") -> "TeamMembership":
+        """
+        Accept the invitation and create team membership.
+
+        Args:
+            user: User accepting the invitation
+
+        Returns:
+            TeamMembership: The created membership
+
+        Raises:
+            ValueError: If invitation is not valid
+        """
+        if not self.is_valid():
+            raise ValueError("Invitation is not valid")
+
+        # Create membership
+        membership = TeamMembership(
+            team_id=self.team_id, user_id=user.id, role=self.role
+        )
+
+        self.status = "accepted"
+        self.responded_at = datetime.utcnow()
+        self.user_id = user.id
+
+        db.session.add(membership)
+        db.session.commit()
+
+        return membership
+
+    def decline(self) -> None:
+        """Decline the invitation."""
+        if self.status != "pending":
+            raise ValueError("Only pending invitations can be declined")
+
+        self.status = "declined"
+        self.responded_at = datetime.utcnow()
+        db.session.commit()
+
+    def to_dict(self) -> dict:
+        """Convert invitation to dictionary for JSON serialization."""
+        return {
+            "id": self.id,
+            "team_id": self.team_id,
+            "team_name": self.team.name if self.team else None,
+            "email": self.email,
+            "role": self.role.value,
+            "status": self.status,
+            "invited_by": {
+                "id": self.invited_by.id,
+                "username": self.invited_by.username,
+            }
+            if self.invited_by
+            else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "responded_at": self.responded_at.isoformat()
+            if self.responded_at
+            else None,
+        }
+
+
+class Notification(db.Model):
+    """
+    Notification model for real-time user notifications.
+
+    Notifications are triggered by team/project activities and
+    allow users to stay informed about important events.
+    """
+
+    __tablename__ = "notifications"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # Recipient
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+
+    # Notification type (reuses ActivityType enum)
+    notification_type = db.Column(
+        db.Enum(ActivityType, name="activitytype", create_type=False), nullable=False
+    )
+
+    # Context (what the notification is about)
+    team_id = db.Column(db.Integer, db.ForeignKey("teams.id"), nullable=True)
+    project_id = db.Column(db.Integer, db.ForeignKey("projects.id"), nullable=True)
+
+    # Optional actor (who triggered the notification)
+    actor_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+
+    # Message and metadata
+    message = db.Column(db.Text, nullable=False)
+    context = db.Column(
+        db.JSON, nullable=True
+    )  # Additional data (e.g., old_role, new_role)
+
+    # Read status
+    is_read = db.Column(db.Boolean, default=False, nullable=False)
+    read_at = db.Column(db.DateTime, nullable=True)
+
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    user = db.relationship(
+        "User",
+        foreign_keys=[user_id],
+        backref=db.backref("notifications", lazy="dynamic"),
+    )
+    actor = db.relationship("User", foreign_keys=[actor_id])
+    team = db.relationship("Team", backref=db.backref("notifications", lazy="dynamic"))
+    project = db.relationship(
+        "Project", backref=db.backref("notifications", lazy="dynamic")
+    )
+
+    # Indexes for efficient queries
+    __table_args__ = (
+        db.Index("ix_notifications_user_created", user_id, created_at.desc()),
+        db.Index("ix_notifications_user_read", user_id, is_read),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Notification {self.id} {self.notification_type.value} for user {self.user_id}>"
+
+    def mark_as_read(self):
+        """Mark notification as read."""
+        if not self.is_read:
+            self.is_read = True
+            self.read_at = datetime.utcnow()
+            db.session.commit()
+
+    def to_dict(self) -> dict:
+        """Convert notification to dictionary for JSON serialization."""
+        return {
+            "id": self.id,
+            "type": self.notification_type.value,
+            "message": self.message,
+            "context": self.context,
+            "is_read": self.is_read,
+            "read_at": self.read_at.isoformat() if self.read_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "actor": {
+                "id": self.actor.id,
+                "username": self.actor.username,
+            }
+            if self.actor
+            else None,
+            "team": {
+                "id": self.team.id,
+                "name": self.team.name,
+            }
+            if self.team
+            else None,
+            "project": {
+                "id": self.project.id,
+                "name": self.project.name,
+            }
+            if self.project
+            else None,
+        }

@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+
+{% block title %}Team Invitation - {{ invitation.team.name }}{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card shadow">
+                <div class="card-body text-center p-5">
+                    <i class="bi bi-envelope-check display-1 text-primary mb-3"></i>
+                    <h2 class="mb-3">Team Invitation</h2>
+
+                    <p class="lead">You've been invited to join</p>
+                    <h3 class="text-primary mb-4">{{ invitation.team.name }}</h3>
+
+                    <div class="alert alert-light border mb-4">
+                        <p class="mb-2"><strong>Invited by:</strong> {{ invitation.invited_by.username }}</p>
+                        <p class="mb-2"><strong>Your role:</strong> <span class="badge bg-secondary">{{ invitation.role.value }}</span></p>
+                        <p class="mb-0"><strong>Expires:</strong> {{ invitation.expires_at.strftime('%B %d, %Y at %I:%M %p') }}</p>
+                    </div>
+
+                    {% if invitation.team.description %}
+                    <p class="text-muted mb-4">{{ invitation.team.description }}</p>
+                    {% endif %}
+
+                    {% if current_user.is_authenticated %}
+                        <!-- User is logged in -->
+                        {% if invitation.user_id and invitation.user_id != current_user.id %}
+                            <div class="alert alert-warning">
+                                <i class="bi bi-exclamation-triangle"></i>
+                                This invitation was sent to <strong>{{ invitation.email }}</strong>.
+                                You are currently logged in as <strong>{{ current_user.email }}</strong>.
+                                <br>
+                                Please log in with the invited email address or contact the team admin.
+                            </div>
+                        {% else %}
+                            <div id="responseMessage" class="alert" style="display: none;"></div>
+
+                            <div id="actionButtons" class="d-grid gap-2">
+                                <button class="btn btn-primary btn-lg" onclick="acceptInvitation()">
+                                    <i class="bi bi-check-circle"></i> Accept Invitation
+                                </button>
+                                <button class="btn btn-outline-secondary" onclick="declineInvitation()">
+                                    <i class="bi bi-x-circle"></i> Decline
+                                </button>
+                            </div>
+                        {% endif %}
+                    {% else %}
+                        <!-- User is not logged in -->
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i>
+                            You need to be logged in to accept this invitation.
+                        </div>
+                        <div class="d-grid gap-2">
+                            <a href="{{ url_for('auth.login', next=url_for('main.invitation', token=invitation.token)) }}" class="btn btn-primary btn-lg">
+                                <i class="bi bi-box-arrow-in-right"></i> Log In to Accept
+                            </a>
+                            <a href="{{ url_for('auth.register', next=url_for('main.invitation', token=invitation.token)) }}" class="btn btn-outline-primary">
+                                <i class="bi bi-person-plus"></i> Create Account
+                            </a>
+                            <button class="btn btn-outline-secondary btn-sm" onclick="declineWithoutLogin()">
+                                Decline Invitation
+                            </button>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const token = "{{ invitation.token }}";
+
+async function acceptInvitation() {
+    const messageDiv = document.getElementById('responseMessage');
+    const buttons = document.getElementById('actionButtons');
+
+    try {
+        const response = await fetch(`/api/invitations/${token}/accept`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to accept invitation');
+        }
+
+        const result = await response.json();
+
+        // Show success message
+        messageDiv.className = 'alert alert-success';
+        messageDiv.innerHTML = `
+            <i class="bi bi-check-circle"></i>
+            <strong>Success!</strong> You've joined ${result.team_name} as ${result.role}.
+            <br>
+            <span class="spinner-border spinner-border-sm mt-2"></span> Redirecting to team page...
+        `;
+        messageDiv.style.display = 'block';
+        buttons.style.display = 'none';
+
+        // Redirect to team page
+        setTimeout(() => {
+            window.location.href = `/teams/${result.team_id}`;
+        }, 2000);
+
+    } catch (error) {
+        messageDiv.className = 'alert alert-danger';
+        messageDiv.innerHTML = `<i class="bi bi-exclamation-triangle"></i> ${error.message}`;
+        messageDiv.style.display = 'block';
+    }
+}
+
+async function declineInvitation() {
+    if (!confirm('Are you sure you want to decline this invitation?')) return;
+
+    const messageDiv = document.getElementById('responseMessage');
+    const buttons = document.getElementById('actionButtons');
+
+    try {
+        const response = await fetch(`/api/invitations/${token}/decline`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to decline invitation');
+        }
+
+        // Show success message
+        messageDiv.className = 'alert alert-info';
+        messageDiv.innerHTML = `
+            <i class="bi bi-info-circle"></i>
+            You've declined the invitation.
+            <br>
+            <span class="spinner-border spinner-border-sm mt-2"></span> Redirecting...
+        `;
+        messageDiv.style.display = 'block';
+        buttons.style.display = 'none';
+
+        // Redirect to home
+        setTimeout(() => {
+            window.location.href = '/';
+        }, 2000);
+
+    } catch (error) {
+        messageDiv.className = 'alert alert-danger';
+        messageDiv.innerHTML = `<i class="bi bi-exclamation-triangle"></i> ${error.message}`;
+        messageDiv.style.display = 'block';
+    }
+}
+
+function declineWithoutLogin() {
+    alert('To decline this invitation, please contact the team administrator or simply ignore this email.');
+}
+</script>
+{% endblock %}

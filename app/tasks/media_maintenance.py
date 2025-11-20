@@ -927,8 +927,8 @@ def ingest_raw_clips_for_project(
                                 id=clip_id, project_id=project.id
                             ).first()
                             if clip_record and clip_record.media_file_id:
-                                old_media = MediaFile.query.get(
-                                    clip_record.media_file_id
+                                old_media = db.session.get(
+                                    MediaFile, clip_record.media_file_id
                                 )
 
                         # Check if MediaFile already exists for this file path
@@ -1421,3 +1421,152 @@ def ingest_downloads_for_project(
             "dest": str(clips_dir),
             "ingest_root": str(ingest_root),
         }
+
+
+@celery_app.task(bind=True)
+def process_uploaded_media_task(
+    self, media_id: int, generate_thumbnail: bool = True
+) -> dict:
+    """Process uploaded media file: generate thumbnail and extract metadata.
+
+    This task should be called after a media file is uploaded to avoid
+    blocking the web request with ffmpeg operations.
+
+    Args:
+        media_id: ID of the MediaFile to process
+        generate_thumbnail: Whether to generate a thumbnail (default True)
+
+    Returns:
+        Dict with processing results
+    """
+    import subprocess
+    from pathlib import Path
+
+    from app import create_app
+    from app.models import MediaFile, db
+
+    app = create_app()
+    with app.app_context():
+        from sqlalchemy import select
+
+        # Get media file
+        media = db.session.execute(
+            select(MediaFile).filter_by(id=media_id)
+        ).scalar_one_or_none()
+
+        if not media:
+            return {"status": "error", "error": f"Media file {media_id} not found"}
+
+        if not media.filepath or not Path(media.filepath).exists():
+            return {
+                "status": "error",
+                "error": f"File not found: {media.filepath}",
+            }
+
+        file_path = Path(media.filepath)
+        results = {"status": "success", "media_id": media_id}
+
+        # Generate thumbnail for video files
+        if (
+            generate_thumbnail
+            and media.mime_type
+            and media.mime_type.startswith("video")
+        ):
+            try:
+                from app.ffmpeg_config import config_args as _cfg_args
+                from app.main.routes import _resolve_binary
+
+                dest_dir = file_path.parent
+                stem = file_path.stem
+                thumb_path = dest_dir / f"{stem}_thumb.jpg"
+
+                subprocess.run(
+                    [
+                        _resolve_binary(app, "ffmpeg"),
+                        *_cfg_args(app, "ffmpeg", "thumbnail"),
+                        "-y",
+                        "-ss",
+                        str(app.config.get("THUMBNAIL_TIMESTAMP_SECONDS", 1)),
+                        "-i",
+                        str(file_path),
+                        "-frames:v",
+                        "1",
+                        "-vf",
+                        f"scale={int(app.config.get('THUMBNAIL_WIDTH', 480))}:-1",
+                        str(thumb_path),
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=True,
+                    timeout=30,
+                )
+
+                media.thumbnail_path = str(thumb_path)
+                results["thumbnail"] = str(thumb_path)
+
+            except Exception as e:
+                app.logger.warning(f"Thumbnail generation failed for {media_id}: {e}")
+                results["thumbnail_error"] = str(e)
+
+        # Extract metadata with ffprobe
+        if media.mime_type and media.mime_type.startswith("video"):
+            try:
+                from app.ffmpeg_config import config_args as _cfg_args
+                from app.main.routes import _resolve_binary
+
+                probe_cmd = [
+                    _resolve_binary(app, "ffprobe"),
+                    *_cfg_args(app, "ffprobe"),
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration:stream=width,height,r_frame_rate,codec_type",
+                    "-of",
+                    "json",
+                    str(file_path),
+                ]
+
+                import json
+
+                out = subprocess.check_output(
+                    probe_cmd, text=True, encoding="utf-8", timeout=15
+                )
+                data = json.loads(out)
+
+                # Extract duration from format
+                duration = data.get("format", {}).get("duration")
+                if duration:
+                    media.duration = float(duration)
+                    results["duration"] = float(duration)
+
+                # Extract video stream metadata
+                for stream in data.get("streams", []):
+                    if stream.get("codec_type") == "video":
+                        if "width" in stream:
+                            media.width = int(stream["width"])
+                            results["width"] = int(stream["width"])
+                        if "height" in stream:
+                            media.height = int(stream["height"])
+                            results["height"] = int(stream["height"])
+                        if "r_frame_rate" in stream:
+                            fps_str = stream["r_frame_rate"]
+                            if "/" in fps_str:
+                                num, den = fps_str.split("/")
+                                media.fps = float(num) / float(den)
+                                results["fps"] = float(num) / float(den)
+                        break
+
+            except Exception as e:
+                app.logger.warning(f"Metadata extraction failed for {media_id}: {e}")
+                results["metadata_error"] = str(e)
+
+        # Save changes
+        try:
+            db.session.commit()
+            results["saved"] = True
+        except Exception as e:
+            db.session.rollback()
+            app.logger.error(f"Failed to save media {media_id} metadata: {e}")
+            results["save_error"] = str(e)
+
+        return results

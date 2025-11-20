@@ -709,6 +709,123 @@ def compile_project_api(project_id: int):
         return jsonify({"error": "Failed to start compilation"}), 500
 
 
+@api_bp.route("/projects/<int:project_id>/preview", methods=["POST"])
+@login_required
+def generate_preview_api(project_id: int):
+    """Generate low-resolution preview for quick validation before compilation."""
+    from app.models import Project, ProjectStatus, db
+
+    project = Project.query.filter_by(id=project_id, user_id=current_user.id).first()
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+
+    if project.status == ProjectStatus.PROCESSING:
+        return jsonify({"error": "Project is currently being processed"}), 400
+
+    data = request.get_json(silent=True) or {}
+
+    # Use same clip_ids logic as compilation
+    raw_clip_ids = data.get("clip_ids")
+    clip_ids: list[int] | None = None
+    if isinstance(raw_clip_ids, list):
+        tmp: list[int] = []
+        seen: set[int] = set()
+        for v in raw_clip_ids:
+            try:
+                iv = int(v)
+            except Exception:
+                continue
+            if iv not in seen:
+                tmp.append(iv)
+                seen.add(iv)
+        if tmp:
+            from app.models import Clip
+
+            rows = (
+                db.session.query(Clip.id)
+                .filter(Clip.project_id == project.id, Clip.id.in_(tmp))
+                .all()
+            )
+            valid = {rid for (rid,) in rows}
+            clip_ids = [rid for rid in tmp if rid in valid]
+        else:
+            clip_ids = []
+
+    # Check for clips
+    if (clip_ids is not None and len(clip_ids) == 0) or (
+        clip_ids is None and project.clips.count() == 0
+    ):
+        return jsonify({"error": "Project has no clips to preview"}), 400
+
+    try:
+        from app.tasks.video_processing import generate_preview_task
+
+        intro_id = data.get("intro_id")
+        outro_id = data.get("outro_id")
+        transition_ids = data.get("transition_ids") or []
+        randomize_transitions = bool(data.get("randomize_transitions") or False)
+
+        # Determine queue (same logic as compilation - use GPU/CPU workers, never 'celery')
+        # Default to gpu, or cpu if USE_GPU_QUEUE is false
+        queue_name = "gpu" if bool(current_app.config.get("USE_GPU_QUEUE")) else "cpu"
+
+        try:
+            from app.tasks.celery_app import celery_app as _celery
+
+            # Check for active workers and prefer available queues
+            i = _celery.control.inspect(timeout=1.0)
+            active_queues = set()
+            if i:
+                aq = i.active_queues() or {}
+                for _worker, queues in aq.items():
+                    for q in queues or []:
+                        qname = q.get("name") if isinstance(q, dict) else None
+                        if qname:
+                            active_queues.add(qname)
+
+            # Prefer gpu if available and configured, otherwise cpu
+            if bool(current_app.config.get("USE_GPU_QUEUE")):
+                if "gpu" in active_queues:
+                    queue_name = "gpu"
+                elif "cpu" in active_queues:
+                    queue_name = "cpu"  # Fallback to CPU if GPU not available
+                # else keep default "gpu" - task will wait for worker
+            else:
+                # CPU mode - prefer cpu queue if available
+                if "cpu" in active_queues:
+                    queue_name = "cpu"
+                elif "gpu" in active_queues:
+                    queue_name = "gpu"  # GPU can do CPU work
+                # else keep default "cpu" - task will wait for worker
+        except Exception:
+            # On error, use configured default (never 'celery')
+            pass
+
+        # Start preview generation task on worker queue
+        task = generate_preview_task.apply_async(
+            args=(project_id,),
+            kwargs={
+                "intro_id": intro_id,
+                "outro_id": outro_id,
+                "transition_ids": transition_ids,
+                "randomize_transitions": randomize_transitions,
+                "clip_ids": clip_ids,
+            },
+            queue=queue_name,
+        )
+
+        db.session.commit()
+        return jsonify({"task_id": task.id, "status": "started"}), 202
+
+    except Exception as e:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+        current_app.logger.error(f"Preview generation failed: {e}")
+        return jsonify({"error": "Failed to start preview generation"}), 500
+
+
 @api_bp.route("/projects/<int:project_id>/clips", methods=["GET"])
 @login_required
 def list_project_clips_api(project_id: int):
@@ -921,6 +1038,110 @@ def ingest_downloads_api(project_id: int):
     except Exception as e:
         current_app.logger.error(f"API ingest downloads failed: {e}")
         return jsonify({"error": "Failed to start ingest"}), 500
+
+
+@api_bp.route("/projects/<int:project_id>/preset", methods=["POST"])
+@login_required
+def apply_platform_preset_api(project_id: int):
+    """Apply a platform preset to a project, updating all export settings."""
+    from app.models import PlatformPreset, Project, db
+
+    project = Project.query.filter_by(id=project_id, user_id=current_user.id).first()
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+    preset_value = data.get("preset")
+
+    if not preset_value:
+        return jsonify({"error": "Preset is required"}), 400
+
+    # Validate preset
+    try:
+        preset = PlatformPreset(preset_value)
+    except ValueError:
+        return (
+            jsonify(
+                {
+                    "error": f"Invalid preset. Must be one of: {', '.join(p.value for p in PlatformPreset)}"
+                }
+            ),
+            400,
+        )
+
+    # Get preset settings
+    settings = preset.get_settings()
+
+    # Apply settings to project
+    project.platform_preset = preset
+    project.output_resolution = settings["resolution"]
+    project.output_format = settings["format"]
+    project.fps = settings["fps"]
+
+    # Update quality based on bitrate
+    if settings["bitrate"] and "M" in settings["bitrate"]:
+        bitrate_mb = int(settings["bitrate"].replace("M", ""))
+        if bitrate_mb >= 8:
+            project.quality = "high"
+        elif bitrate_mb >= 5:
+            project.quality = "medium"
+        else:
+            project.quality = "low"
+
+    try:
+        db.session.commit()
+        logger.info(
+            "platform_preset_applied",
+            project_id=project.id,
+            preset=preset.value,
+            user_id=current_user.id,
+        )
+
+        return jsonify(
+            {
+                "message": f"Applied {preset.display_name} preset",
+                "preset": preset.value,
+                "settings": {
+                    "resolution": project.output_resolution,
+                    "format": project.output_format,
+                    "fps": project.fps,
+                    "quality": project.quality,
+                    "aspect_ratio": settings["aspect_ratio"],
+                    "max_duration": settings["max_duration"],
+                    "orientation": settings["orientation"],
+                },
+            }
+        )
+    except Exception as e:
+        db.session.rollback()
+        logger.error("preset_apply_failed", project_id=project.id, error=str(e))
+        return jsonify({"error": "Failed to apply preset"}), 500
+
+
+@api_bp.route("/presets", methods=["GET"])
+@login_required
+def list_platform_presets_api():
+    """List all available platform presets with their settings."""
+    from app.models import PlatformPreset
+
+    presets = []
+    for preset in PlatformPreset:
+        settings = preset.get_settings()
+        presets.append(
+            {
+                "value": preset.value,
+                "name": preset.display_name,
+                "settings": settings,
+                "description": f"{settings['width']}x{settings['height']} ({settings['aspect_ratio']})"
+                + (
+                    f" • Max {settings['max_duration']}s"
+                    if settings["max_duration"]
+                    else ""
+                ),
+            }
+        )
+
+    return jsonify({"presets": presets})
 
 
 @api_bp.route("/projects/<int:project_id>", methods=["GET"])

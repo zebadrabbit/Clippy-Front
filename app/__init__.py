@@ -948,6 +948,38 @@ def register_blueprints(app):
 
     app.register_blueprint(admin_bp, url_prefix="/admin")
 
+    # Teams API routes
+    try:
+        from app.api.teams import teams_bp
+
+        app.register_blueprint(teams_bp, url_prefix="/api")
+    except ImportError:
+        app.logger.warning("Teams blueprint not available")
+
+    # Notifications API routes
+    try:
+        from app.api.notifications import notifications_bp
+
+        app.register_blueprint(notifications_bp, url_prefix="/api")
+    except ImportError:
+        app.logger.warning("Notifications blueprint not available")
+
+    # Tags API routes (if exists)
+    try:
+        from app.api.tags import tags_bp
+
+        app.register_blueprint(tags_bp, url_prefix="/api")
+    except ImportError:
+        pass  # Optional
+
+    # Templates API routes (if exists)
+    try:
+        from app.api.templates import templates_bp
+
+        app.register_blueprint(templates_bp, url_prefix="/api")
+    except ImportError:
+        pass  # Optional
+
 
 def register_template_filters(app: Flask) -> None:
     """

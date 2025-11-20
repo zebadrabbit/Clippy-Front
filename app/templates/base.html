@@ -61,6 +61,12 @@
                             <a class="nav-link" href="{{ url_for('main.projects') }}">Projects</a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('main.teams_list') }}">Teams</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('main.templates') }}">Templates</a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('main.automation') }}">Automation</a>
                         </li>
                         <li class="nav-item">
@@ -78,15 +84,25 @@
                 <div class="d-flex align-items-center gap-3">
                     {% if current_user.is_authenticated %}
                         <!-- Notifications -->
-                        <div class="nav-item dropdown me-3" id="notificationsDropdown" style="display:none;">
+                        <div class="nav-item dropdown me-3" id="notificationsDropdown">
                             <a class="nav-link dropdown-toggle position-relative" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Notifications">
                                 <i class="bi bi-bell"></i>
                                 <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" id="notifBadge" style="display:none;">0</span>
                             </a>
-                            <ul class="dropdown-menu dropdown-menu-end" style="min-width: 320px; max-height: 60vh; overflow: auto;" id="notifMenu">
-                                <li class="dropdown-header">Recent activity</li>
+                            <ul class="dropdown-menu dropdown-menu-end" style="min-width: 380px; max-height: 60vh; overflow-y: auto;" id="notifMenu">
+                                <li class="dropdown-header d-flex justify-content-between align-items-center">
+                                    <span>Notifications</span>
+                                    <button class="btn btn-sm btn-link text-decoration-none" id="markAllReadBtn" style="font-size: 0.8rem;">Mark all read</button>
+                                </li>
                                 <li><hr class="dropdown-divider"></li>
-                                <li class="px-3 py-2 text-muted small">No recent jobs</li>
+                                <li id="notificationsList">
+                                    <div class="px-3 py-2 text-muted small text-center">
+                                        <div class="spinner-border spinner-border-sm me-2" role="status">
+                                            <span class="visually-hidden">Loading...</span>
+                                        </div>
+                                        Loading notifications...
+                                    </div>
+                                </li>
                             </ul>
                         </div>
 
@@ -199,6 +215,7 @@
     <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
     {% if current_user.is_authenticated %}
     <script src="{{ url_for('static', filename='js/jobs.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/notifications.js') }}"></script>
     {% endif %}
 
         <!-- Show any queued toasts -->

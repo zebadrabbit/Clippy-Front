@@ -38,6 +38,8 @@ DEFAULT_TIERS = [
         "apply_watermark": True,
         "is_unlimited": False,
         "is_active": True,
+        "max_teams_owned": 1,  # 1 team
+        "max_team_members": 3,  # 3 members (owner + 2 others)
     },
     {
         "name": "Pro",
@@ -47,6 +49,8 @@ DEFAULT_TIERS = [
         "apply_watermark": False,
         "is_unlimited": False,
         "is_active": True,
+        "max_teams_owned": 5,  # 5 teams
+        "max_team_members": 15,  # 15 members per team
     },
     {
         "name": "Unlimited",
@@ -56,6 +60,8 @@ DEFAULT_TIERS = [
         "apply_watermark": False,
         "is_unlimited": True,
         "is_active": True,
+        "max_teams_owned": None,  # Unlimited teams
+        "max_team_members": None,  # Unlimited members
     },
 ]
 
@@ -270,3 +276,66 @@ def should_apply_watermark(user: User, session=None) -> bool:
             return False
         return bool(tier.apply_watermark)
     return True
+
+
+def count_owned_teams(user_id: int, session=None) -> int:
+    """Count the number of teams owned by a user."""
+    from app.models import Team
+
+    s = session or db.session
+    return s.query(func.count(Team.id)).filter(Team.owner_id == user_id).scalar() or 0
+
+
+def count_team_members(team_id: int, session=None) -> int:
+    """Count total members in a team (including owner)."""
+    from app.models import TeamMembership
+
+    s = session or db.session
+    # Owner + memberships
+    membership_count = (
+        s.query(func.count(TeamMembership.id))
+        .filter(TeamMembership.team_id == team_id)
+        .scalar()
+        or 0
+    )
+    return int(membership_count) + 1  # +1 for owner
+
+
+def check_team_creation_quota(user: User, session=None) -> QuotaCheck:
+    """Check if user can create another team."""
+    tier = get_effective_tier(user, session=session)
+    if not tier or tier.is_unlimited or tier.max_teams_owned is None:
+        return QuotaCheck(ok=True, remaining=None, limit=None)
+
+    owned = count_owned_teams(user.id, session=session)
+    limit = int(tier.max_teams_owned)
+
+    if owned < limit:
+        return QuotaCheck(ok=True, remaining=limit - owned - 1, limit=limit)
+
+    return QuotaCheck(
+        ok=False,
+        remaining=0,
+        limit=limit,
+        reason="max_teams_reached",
+    )
+
+
+def check_team_member_quota(team_id: int, owner: User, session=None) -> QuotaCheck:
+    """Check if a team can add another member based on owner's tier."""
+    tier = get_effective_tier(owner, session=session)
+    if not tier or tier.is_unlimited or tier.max_team_members is None:
+        return QuotaCheck(ok=True, remaining=None, limit=None)
+
+    current = count_team_members(team_id, session=session)
+    limit = int(tier.max_team_members)
+
+    if current < limit:
+        return QuotaCheck(ok=True, remaining=limit - current - 1, limit=limit)
+
+    return QuotaCheck(
+        ok=False,
+        remaining=0,
+        limit=limit,
+        reason="max_team_members_reached",
+    )

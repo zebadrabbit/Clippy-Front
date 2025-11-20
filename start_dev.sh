@@ -1,8 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Start all services for ClippyFront development
 
-set -e
+set -euo pipefail
 
 # Colors
 GREEN='\033[0;32m'
@@ -13,7 +13,7 @@ NC='\033[0m'
 echo -e "${BLUE}Starting ClippyFront development environment...${NC}"
 
 # Check if virtual environment is activated
-if [[ "$VIRTUAL_ENV" == "" ]]; then
+if [[ "${VIRTUAL_ENV:-}" == "" ]]; then
     echo -e "${YELLOW}Activating virtual environment...${NC}"
     source venv/bin/activate
 fi

@@ -98,3 +98,70 @@ def send_verification_email(to_address: str, username: str, verify_url: str) -> 
     """
     text = f"Hi {username},\n\nPlease verify your email address by opening this link: {verify_url}\n\n"
     return send_email(to_address, subject, html=html, text=text)
+
+
+def send_team_invitation_email(
+    to_address: str,
+    team_name: str,
+    inviter_name: str,
+    role: str,
+    invitation_url: str,
+    expires_at: str,
+) -> bool:
+    """Send a team invitation email.
+
+    Args:
+        to_address: Recipient email
+        team_name: Name of the team
+        inviter_name: Username of person sending invitation
+        role: Role being offered (viewer, editor, admin)
+        invitation_url: Full URL to accept invitation
+        expires_at: Expiration date/time string
+
+    Returns:
+        True on success, False on failure
+    """
+    subject = f"You've been invited to join {team_name}"
+
+    role_description = {
+        "viewer": "view projects and media",
+        "editor": "view and edit projects",
+        "admin": "manage team members and projects",
+    }.get(role.lower(), "collaborate")
+
+    html = f"""
+    <h2>Team Invitation</h2>
+    <p>Hi there!</p>
+    <p><strong>{inviter_name}</strong> has invited you to join the team <strong>{team_name}</strong> as a <strong>{role}</strong>.</p>
+    <p>As a {role}, you'll be able to {role_description}.</p>
+    <p style="margin: 20px 0;">
+        <a href="{invitation_url}" style="background-color: #0d6efd; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
+            Accept Invitation
+        </a>
+    </p>
+    <p style="color: #666; font-size: 0.9em;">
+        This invitation expires on {expires_at}.<br>
+        If you don't want to join this team, you can safely ignore this email.
+    </p>
+    <p style="color: #999; font-size: 0.8em; margin-top: 30px;">
+        If the button doesn't work, copy and paste this link:<br>
+        {invitation_url}
+    </p>
+    """
+
+    text = f"""
+You've been invited to join {team_name}
+
+{inviter_name} has invited you to join the team "{team_name}" as a {role}.
+
+As a {role}, you'll be able to {role_description}.
+
+To accept this invitation, open this link:
+{invitation_url}
+
+This invitation expires on {expires_at}.
+
+If you don't want to join this team, you can safely ignore this email.
+    """
+
+    return send_email(to_address, subject, html=html, text=text)

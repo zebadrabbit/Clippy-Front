@@ -33,8 +33,10 @@ importlib.import_module("app.api.media")
 importlib.import_module("app.api.projects")
 importlib.import_module("app.api.automation")
 importlib.import_module("app.api.worker")
-importlib.import_module("app.api.projects")
-importlib.import_module("app.api.automation")
+importlib.import_module("app.api.templates")
+importlib.import_module("app.api.tags")
+importlib.import_module("app.api.teams")
+importlib.import_module("app.api.notifications")
 
 
 @api_bp.route("/twitch/clips", methods=["GET"])

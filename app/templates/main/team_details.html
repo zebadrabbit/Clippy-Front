@@ -1,0 +1,775 @@
+{% extends "base.html" %}
+
+{% block title %}{{ team.name }} - Team Details{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <!-- Team Header -->
+    <div class="d-flex justify-content-between align-items-start mb-4">
+        <div>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="/teams">Teams</a></li>
+                    <li class="breadcrumb-item active">{{ team.name }}</li>
+                </ol>
+            </nav>
+            <h1 id="teamName">{{ team.name }}</h1>
+            {% if team.description %}
+            <p class="text-muted" id="teamDescription">{{ team.description }}</p>
+            {% endif %}
+        </div>
+        <div>
+            {% if can_manage %}
+            <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editTeamModal">
+                <i class="bi bi-pencil"></i> Edit Team
+            </button>
+            {% endif %}
+            {% if can_delete %}
+            <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteTeamModal">
+                <i class="bi bi-trash"></i> Delete
+            </button>
+            {% elif not is_owner %}
+            <button class="btn btn-outline-danger" onclick="leaveTeam()">
+                <i class="bi bi-box-arrow-right"></i> Leave Team
+            </button>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Team Stats -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body text-center">
+                    <i class="bi bi-people display-4 text-primary"></i>
+                    <h3 class="mt-2" id="memberCount">{{ members|length }}</h3>
+                    <p class="text-muted mb-0">Members</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body text-center">
+                    <i class="bi bi-folder display-4 text-success"></i>
+                    <h3 class="mt-2" id="projectCount">{{ projects|length }}</h3>
+                    <p class="text-muted mb-0">Shared Projects</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body text-center">
+                    <i class="bi bi-calendar display-4 text-info"></i>
+                    <h3 class="mt-2">{{ team.created_at.strftime('%b %Y') }}</h3>
+                    <p class="text-muted mb-0">Created</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Members Section -->
+        <div class="col-lg-6 mb-4">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Team Members</h5>
+                    {% if can_manage %}
+                    <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addMemberModal">
+                        <i class="bi bi-person-plus"></i> Add Member
+                    </button>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    <div class="list-group list-group-flush" id="membersList">
+                        {% for member in members %}
+                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>{{ member.username }}</strong>
+                                <br>
+                                <small class="text-muted">{{ member.email }}</small>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="badge bg-{{ 'primary' if member.role == 'owner' else 'secondary' }}">
+                                    {{ member.role }}
+                                </span>
+                                {% if can_manage and member.role != 'owner' %}
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                                        <i class="bi bi-three-dots-vertical"></i>
+                                    </button>
+                                    <ul class="dropdown-menu">
+                                        <li><a class="dropdown-item" href="#" onclick="changeRole({{ member.user_id }}, 'viewer')">Set as Viewer</a></li>
+                                        <li><a class="dropdown-item" href="#" onclick="changeRole({{ member.user_id }}, 'editor')">Set as Editor</a></li>
+                                        <li><a class="dropdown-item" href="#" onclick="changeRole({{ member.user_id }}, 'admin')">Set as Admin</a></li>
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li><a class="dropdown-item text-danger" href="#" onclick="removeMember({{ member.user_id }}, '{{ member.username }}')">Remove</a></li>
+                                    </ul>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Invitations Section (Admin only) -->
+        {% if can_manage %}
+        <div class="col-lg-6 mb-4">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Pending Invitations</h5>
+                    <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#inviteMemberModal">
+                        <i class="bi bi-envelope-plus"></i> Invite Member
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div id="invitationsList">
+                        <div class="text-center py-3">
+                            <div class="spinner-border spinner-border-sm text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Projects Section -->
+        <div class="col-lg-6 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Shared Projects</h5>
+                </div>
+                <div class="card-body">
+                    {% if projects %}
+                    <div class="list-group list-group-flush" id="projectsList">
+                        {% for project in projects %}
+                        <a href="/projects/{{ project.id }}" class="list-group-item list-group-item-action">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong>{{ project.name }}</strong>
+                                    <br>
+                                    <small class="text-muted">Created {{ project.created_at.strftime('%b %d, %Y') }}</small>
+                                </div>
+                                <span class="badge bg-{{ 'success' if project.status == 'completed' else 'warning' }}">
+                                    {{ project.status }}
+                                </span>
+                            </div>
+                        </a>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-muted text-center py-4">No projects shared with this team yet.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+    <!-- Activity Feed -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recent Activity</h5>
+                    <small class="text-muted" id="activityCount">Loading...</small>
+                </div>
+                <div class="card-body p-0">
+                    <div id="activityFeed" class="list-group list-group-flush">
+                        <div class="text-center py-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="loadMoreContainer" class="text-center py-3" style="display: none;">
+                        <button class="btn btn-sm btn-outline-primary" onclick="loadMoreActivities()">
+                            Load More
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Team Modal -->
+{% if can_manage %}
+<div class="modal fade" id="editTeamModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Team</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editTeamForm">
+                    <div class="mb-3">
+                        <label for="editTeamName" class="form-label">Team Name *</label>
+                        <input type="text" class="form-control" id="editTeamName" value="{{ team.name }}" required maxlength="128">
+                    </div>
+                    <div class="mb-3">
+                        <label for="editTeamDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="editTeamDescription" rows="3">{{ team.description or '' }}</textarea>
+                    </div>
+                    <div id="editTeamError" class="alert alert-danger" style="display: none;"></div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveTeamDetails()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Member Modal -->
+<div class="modal fade" id="addMemberModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add Team Member</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addMemberForm">
+                    <div class="mb-3">
+                        <label for="memberUsername" class="form-label">Username or Email *</label>
+                        <input type="text" class="form-control" id="memberUsername" required>
+                        <div class="form-text">Enter the username or email address of the user to add.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="memberRole" class="form-label">Role *</label>
+                        <select class="form-select" id="memberRole" required>
+                            <option value="viewer">Viewer (read-only)</option>
+                            <option value="editor">Editor (can edit projects)</option>
+                            <option value="admin">Admin (can manage team)</option>
+                        </select>
+                    </div>
+                    <div id="addMemberError" class="alert alert-danger" style="display: none;"></div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="addMember()">Add Member</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Invite Member Modal -->
+{% if can_manage %}
+<div class="modal fade" id="inviteMemberModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Invite Team Member</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="inviteMemberForm">
+                    <div class="mb-3">
+                        <label for="inviteEmail" class="form-label">Email Address *</label>
+                        <input type="email" class="form-control" id="inviteEmail" required>
+                        <div class="form-text">An invitation link will be sent to this email address.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="inviteRole" class="form-label">Role *</label>
+                        <select class="form-select" id="inviteRole" required>
+                            <option value="viewer">Viewer (read-only)</option>
+                            <option value="editor">Editor (can edit projects)</option>
+                            <option value="admin">Admin (can manage team)</option>
+                        </select>
+                    </div>
+                    <div id="inviteError" class="alert alert-danger" style="display: none;"></div>
+                    <div id="inviteSuccess" class="alert alert-success" style="display: none;"></div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="sendInvitation()">Send Invitation</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Delete Team Modal -->
+{% if can_delete %}
+<div class="modal fade" id="deleteTeamModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">Delete Team</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete <strong>{{ team.name }}</strong>?</p>
+                <p class="text-danger"><strong>Warning:</strong> This action cannot be undone. All shared projects will be unshared (but not deleted).</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" onclick="deleteTeam()">Delete Team</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<script>
+const teamId = {{ team.id }};
+
+async function saveTeamDetails() {
+    const name = document.getElementById('editTeamName').value.trim();
+    const description = document.getElementById('editTeamDescription').value.trim();
+    const errorDiv = document.getElementById('editTeamError');
+
+    try {
+        const response = await fetch(`/api/teams/${teamId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, description: description || null })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to update team');
+        }
+
+        // Update UI
+        document.getElementById('teamName').textContent = name;
+        const descEl = document.getElementById('teamDescription');
+        if (description) {
+            if (descEl) {
+                descEl.textContent = description;
+            } else {
+                document.querySelector('h1').insertAdjacentHTML('afterend', `<p class="text-muted" id="teamDescription">${escapeHtml(description)}</p>`);
+            }
+        } else if (descEl) {
+            descEl.remove();
+        }
+
+        // Close modal
+        bootstrap.Modal.getInstance(document.getElementById('editTeamModal')).hide();
+        showToast('Team updated successfully', 'success');
+
+    } catch (error) {
+        errorDiv.textContent = error.message;
+        errorDiv.style.display = 'block';
+    }
+}
+
+// Invitation management
+async function sendInvitation() {
+    const email = document.getElementById('inviteEmail').value.trim();
+    const role = document.getElementById('inviteRole').value;
+    const errorDiv = document.getElementById('inviteError');
+    const successDiv = document.getElementById('inviteSuccess');
+
+    errorDiv.style.display = 'none';
+    successDiv.style.display = 'none';
+
+    if (!email) {
+        errorDiv.textContent = 'Email address is required';
+        errorDiv.style.display = 'block';
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/teams/${teamId}/invitations`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, role })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to send invitation');
+        }
+
+        const invitation = await response.json();
+
+        // Show success message
+        successDiv.textContent = `Invitation sent to ${email}`;
+        successDiv.style.display = 'block';
+
+        // Clear form
+        document.getElementById('inviteEmail').value = '';
+        document.getElementById('inviteRole').value = 'viewer';
+
+        // Reload invitations list
+        loadInvitations();
+
+        // Auto-close after 2 seconds
+        setTimeout(() => {
+            bootstrap.Modal.getInstance(document.getElementById('inviteMemberModal')).hide();
+            successDiv.style.display = 'none';
+        }, 2000);
+
+    } catch (error) {
+        errorDiv.textContent = error.message;
+        errorDiv.style.display = 'block';
+    }
+}
+
+async function loadInvitations() {
+    const container = document.getElementById('invitationsList');
+
+    try {
+        const response = await fetch(`/api/teams/${teamId}/invitations`);
+
+        if (!response.ok) {
+            throw new Error('Failed to load invitations');
+        }
+
+        const invitations = await response.json();
+
+        if (invitations.length === 0) {
+            container.innerHTML = '<p class="text-muted text-center py-3 mb-0">No pending invitations</p>';
+            return;
+        }
+
+        container.innerHTML = invitations.map(inv => `
+            <div class="list-group-item d-flex justify-content-between align-items-center">
+                <div>
+                    <strong>${inv.email}</strong>
+                    <br>
+                    <small class="text-muted">
+                        Role: ${inv.role} · Invited by ${inv.invited_by_username} ·
+                        Expires: ${new Date(inv.expires_at).toLocaleDateString()}
+                    </small>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-${inv.status === 'pending' ? 'warning' : 'secondary'}">
+                        ${inv.status}
+                    </span>
+                    ${inv.status === 'pending' ? `
+                        <button class="btn btn-sm btn-outline-danger" onclick="cancelInvitation(${inv.id}, '${inv.email}')">
+                            <i class="bi bi-x-circle"></i> Cancel
+                        </button>
+                    ` : ''}
+                </div>
+            </div>
+        `).join('');
+
+    } catch (error) {
+        container.innerHTML = `<p class="text-danger text-center py-3 mb-0">Failed to load invitations</p>`;
+    }
+}
+
+async function cancelInvitation(invitationId, email) {
+    if (!confirm(`Cancel invitation to ${email}?`)) return;
+
+    try {
+        const response = await fetch(`/api/teams/${teamId}/invitations/${invitationId}`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to cancel invitation');
+        }
+
+        // Reload invitations list
+        loadInvitations();
+
+    } catch (error) {
+        alert(error.message);
+    }
+}
+
+async function addMember() {
+    const username = document.getElementById('memberUsername').value.trim();
+    const role = document.getElementById('memberRole').value;
+    const errorDiv = document.getElementById('addMemberError');
+
+    if (!username) {
+        errorDiv.textContent = 'Username or email is required';
+        errorDiv.style.display = 'block';
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/teams/${teamId}/members`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, role })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to add member');
+        }
+
+        // Reload page to show new member
+        window.location.reload();
+
+    } catch (error) {
+        errorDiv.textContent = error.message;
+        errorDiv.style.display = 'block';
+    }
+}
+
+async function changeRole(userId, newRole) {
+    if (!confirm(`Change user's role to ${newRole}?`)) return;
+
+    try {
+        const response = await fetch(`/api/teams/${teamId}/members/${userId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ role: newRole })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to update role');
+        }
+
+        window.location.reload();
+
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+async function removeMember(userId, username) {
+    if (!confirm(`Remove ${username} from the team?`)) return;
+
+    try {
+        const response = await fetch(`/api/teams/${teamId}/members/${userId}`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to remove member');
+        }
+
+        window.location.reload();
+
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+async function deleteTeam() {
+    try {
+        const response = await fetch(`/api/teams/${teamId}`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to delete team');
+        }
+
+        // Redirect to teams list
+        window.location.href = '/teams';
+
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+async function leaveTeam() {
+    if (!confirm('Are you sure you want to leave this team?')) return;
+
+    try {
+        const response = await fetch(`/api/teams/${teamId}/leave`, {
+            method: 'POST'
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to leave team');
+        }
+
+        window.location.href = '/teams';
+
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+function escapeHtml(unsafe) {
+    if (!unsafe) return '';
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+function showToast(message, type = 'info') {
+    // Simple toast notification (you can enhance this with Bootstrap toasts)
+    const alertClass = type === 'success' ? 'alert-success' : 'alert-info';
+    const toast = document.createElement('div');
+    toast.className = `alert ${alertClass} position-fixed top-0 end-0 m-3`;
+    toast.style.zIndex = '9999';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+}
+
+// Activity Feed
+let activityOffset = 0;
+const activityLimit = 20;
+
+async function loadActivities(append = false) {
+    try {
+        const response = await fetch(`/api/teams/${teamId}/activity?limit=${activityLimit}&offset=${activityOffset}`);
+        if (!response.ok) throw new Error('Failed to load activities');
+
+        const data = await response.json();
+        const feed = document.getElementById('activityFeed');
+
+        if (!append) {
+            feed.innerHTML = '';
+        }
+
+        if (data.activities.length === 0 && activityOffset === 0) {
+            feed.innerHTML = '<div class="text-center text-muted py-4">No activity yet</div>';
+            document.getElementById('activityCount').textContent = '0 activities';
+            return;
+        }
+
+        data.activities.forEach(activity => {
+            const item = createActivityItem(activity);
+            feed.insertAdjacentHTML('beforeend', item);
+        });
+
+        // Update pagination
+        document.getElementById('activityCount').textContent = `${data.pagination.total} activities`;
+
+        if (data.pagination.has_more) {
+            document.getElementById('loadMoreContainer').style.display = 'block';
+            activityOffset += activityLimit;
+        } else {
+            document.getElementById('loadMoreContainer').style.display = 'none';
+        }
+
+    } catch (error) {
+        console.error('Error loading activities:', error);
+        document.getElementById('activityFeed').innerHTML =
+            '<div class="text-center text-danger py-4">Error loading activities</div>';
+    }
+}
+
+async function loadMoreActivities() {
+    await loadActivities(true);
+}
+
+function createActivityItem(activity) {
+    const date = new Date(activity.created_at);
+    const timeAgo = getTimeAgo(date);
+    const icon = getActivityIcon(activity.activity_type);
+    const message = getActivityMessage(activity);
+
+    return `
+        <div class="list-group-item">
+            <div class="d-flex align-items-start">
+                <div class="me-3">
+                    <i class="bi bi-${icon} text-primary" style="font-size: 1.5rem;"></i>
+                </div>
+                <div class="flex-grow-1">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <strong>${escapeHtml(activity.user?.username || 'Unknown')}</strong>
+                            ${message}
+                        </div>
+                        <small class="text-muted">${timeAgo}</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function getActivityIcon(type) {
+    const icons = {
+        'team_created': 'plus-circle',
+        'team_updated': 'pencil',
+        'team_deleted': 'trash',
+        'member_added': 'person-plus',
+        'member_removed': 'person-dash',
+        'member_left': 'box-arrow-right',
+        'member_role_changed': 'shield',
+        'project_created': 'file-earmark-plus',
+        'project_shared': 'share',
+        'project_unshared': 'x-circle',
+        'project_updated': 'pencil-square',
+        'project_deleted': 'file-earmark-x',
+        'preview_generated': 'play-circle',
+        'compilation_started': 'hourglass-split',
+        'compilation_completed': 'check-circle',
+        'compilation_failed': 'exclamation-circle'
+    };
+    return icons[type] || 'circle';
+}
+
+function getActivityMessage(activity) {
+    const ctx = activity.context || {};
+
+    switch (activity.activity_type) {
+        case 'team_created':
+            return `created the team`;
+        case 'team_updated':
+            return `updated team settings`;
+        case 'team_deleted':
+            return `deleted the team`;
+        case 'member_added':
+            return `added <strong>${escapeHtml(ctx.target_username)}</strong> as ${ctx.role}`;
+        case 'member_removed':
+            return `removed <strong>${escapeHtml(ctx.target_username)}</strong> from the team`;
+        case 'member_left':
+            return `left the team`;
+        case 'member_role_changed':
+            return `changed <strong>${escapeHtml(ctx.target_username)}</strong>'s role from ${ctx.old_role} to ${ctx.new_role}`;
+        case 'project_created':
+            return `created project <strong>${escapeHtml(ctx.project_name)}</strong>`;
+        case 'project_shared':
+            return `shared project <strong>${escapeHtml(ctx.project_name)}</strong> with the team`;
+        case 'project_unshared':
+            return `unshared project <strong>${escapeHtml(ctx.project_name)}</strong>`;
+        case 'project_updated':
+            return `updated project <strong>${escapeHtml(ctx.project_name)}</strong>`;
+        case 'project_deleted':
+            return `deleted project <strong>${escapeHtml(ctx.project_name)}</strong>`;
+        case 'preview_generated':
+            return `generated a preview for <strong>${escapeHtml(ctx.project_name)}</strong>`;
+        case 'compilation_started':
+            return `started compiling <strong>${escapeHtml(ctx.project_name)}</strong>`;
+        case 'compilation_completed':
+            return `completed compilation of <strong>${escapeHtml(ctx.project_name)}</strong>`;
+        case 'compilation_failed':
+            return `compilation failed for <strong>${escapeHtml(ctx.project_name)}</strong>`;
+        default:
+            return 'performed an action';
+    }
+}
+
+function getTimeAgo(date) {
+    const seconds = Math.floor((new Date() - date) / 1000);
+
+    if (seconds < 60) return 'just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+
+    return date.toLocaleDateString();
+}
+
+// Load activities and invitations on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadActivities();
+    {% if can_manage %}
+    loadInvitations();
+    {% endif %}
+});
+</script>
+{% endblock %}

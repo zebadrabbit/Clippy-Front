@@ -295,18 +295,23 @@ def media_stats_api():
 @api_bp.route("/media", methods=["GET"])
 @login_required
 def list_user_media_api():
-    """List current user's media library, optionally filtered by type.
+    """List current user's media library, optionally filtered by type and tags.
 
     Query params:
       - type: one of intro,outro,transition,clip (optional)
+      - tags: comma-separated tag IDs (optional)
+      - q: search query for filename/description (optional)
     Returns an array of media with preview/thumbnail URLs for selection UIs.
     """
     try:
         from flask_login import current_user
 
-        from app.models import MediaFile, MediaType
+        from app.models import MediaFile, MediaType, Tag
 
         type_q = (request.args.get("type") or "").strip().lower()
+        tag_ids_str = (request.args.get("tags") or "").strip()
+        search_query = (request.args.get("q") or "").strip()
+
         type_map = {
             "intro": MediaType.INTRO,
             "outro": MediaType.OUTRO,
@@ -315,20 +320,57 @@ def list_user_media_api():
         }
 
         q = MediaFile.query.filter_by(user_id=current_user.id)
+
+        # Filter by media type
         if type_q in type_map:
             q = q.filter_by(media_type=type_map[type_q])
+
+        # Filter by tags
+        if tag_ids_str:
+            try:
+                tag_ids = [
+                    int(tid.strip()) for tid in tag_ids_str.split(",") if tid.strip()
+                ]
+                if tag_ids:
+                    # Filter media that has ALL specified tags
+                    for tag_id in tag_ids:
+                        q = q.join(MediaFile.tag_objects).filter(Tag.id == tag_id)
+            except (ValueError, AttributeError):
+                pass  # Invalid tag IDs, ignore filter
+
+        # Search filter
+        if search_query:
+            search_pattern = f"%{search_query}%"
+            q = q.filter(
+                MediaFile.original_filename.ilike(search_pattern)
+                | MediaFile.description.ilike(search_pattern)
+            )
+
         q = q.order_by(MediaFile.uploaded_at.desc())
 
         items = []
         for mf in q.all():
+            # Get tags for this media file
+            media_tags = [
+                {
+                    "id": t.id,
+                    "name": t.name,
+                    "color": t.color,
+                    "full_path": t.full_path,
+                }
+                for t in mf.tag_objects.all()
+            ]
+
             items.append(
                 {
                     "id": mf.id,
                     "filename": mf.original_filename or mf.filename,
+                    "description": mf.description,
                     "duration": mf.duration,
                     "media_type": mf.media_type.value
                     if hasattr(mf.media_type, "value")
                     else str(mf.media_type),
+                    "tags": media_tags,
                     "thumbnail_url": url_for(
                         "main.media_thumbnail", media_id=mf.id, _external=True
                     )
