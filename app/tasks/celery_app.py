@@ -22,11 +22,11 @@ def make_celery(app_name=__name__):
     )
     # Conditionally register task modules
     celery_includes = [
-        "app.tasks.video_processing",
         "app.tasks.download_clip_v2",  # Phase 3: API-based download
         "app.tasks.compile_video_v2",  # Phase 4: API-based compilation
         "app.tasks.media_maintenance",
         "app.tasks.automation",
+        "app.tasks.video_processing",  # Utility functions only (no DB-based tasks)
     ]
 
     celery_app.conf.update(include=celery_includes)
