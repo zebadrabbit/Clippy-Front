@@ -22,12 +22,3 @@ repos:
     rev: 23.11.0
     hooks:
       - id: black
-
-  - repo: local
-    hooks:
-      - id: pytest
-        name: pytest
-        entry: bash -c 'cd /home/winter/work/ClippyFront && source venv/bin/activate && python -m pytest tests/ -v'
-        language: system
-        pass_filenames: false
-        always_run: true

@@ -921,64 +921,42 @@ def init_extensions(app):
         app.logger.warning(f"Failed applying system settings: {e}")
 
 
-def register_blueprints(app):
+def register_blueprints(flask_app):
     """
     Register Flask blueprints.
 
     Args:
-        app: Flask application instance
+        flask_app: Flask application instance
     """
-    # API routes
+    # API routes - All API endpoints are registered on the shared api_bp blueprint
+    # Import modules to register their routes, then register the blueprint once
     from app.api.routes import api_bp
 
-    app.register_blueprint(api_bp, url_prefix="/api")
+    # Import API modules to register their routes on api_bp
+    try:
+        import app.api.notifications  # noqa: F401 - registers routes on api_bp
+        import app.api.tags  # noqa: F401 - registers routes on api_bp (optional)
+        import app.api.teams  # noqa: F401 - registers routes on api_bp
+        import app.api.templates  # noqa: F401 - registers routes on api_bp (optional)
+    except ImportError as e:
+        flask_app.logger.warning(f"Some API modules not available: {e}")
+
+    flask_app.register_blueprint(api_bp, url_prefix="/api")
 
     # Authentication routes
     from app.auth.routes import auth_bp
 
-    app.register_blueprint(auth_bp, url_prefix="/auth")
+    flask_app.register_blueprint(auth_bp, url_prefix="/auth")
 
     # Main web interface routes
     from app.main.routes import main_bp
 
-    app.register_blueprint(main_bp)
+    flask_app.register_blueprint(main_bp)
 
     # Admin interface routes
     from app.admin.routes import admin_bp
 
-    app.register_blueprint(admin_bp, url_prefix="/admin")
-
-    # Teams API routes
-    try:
-        from app.api.teams import teams_bp
-
-        app.register_blueprint(teams_bp, url_prefix="/api")
-    except ImportError:
-        app.logger.warning("Teams blueprint not available")
-
-    # Notifications API routes
-    try:
-        from app.api.notifications import notifications_bp
-
-        app.register_blueprint(notifications_bp, url_prefix="/api")
-    except ImportError:
-        app.logger.warning("Notifications blueprint not available")
-
-    # Tags API routes (if exists)
-    try:
-        from app.api.tags import tags_bp
-
-        app.register_blueprint(tags_bp, url_prefix="/api")
-    except ImportError:
-        pass  # Optional
-
-    # Templates API routes (if exists)
-    try:
-        from app.api.templates import templates_bp
-
-        app.register_blueprint(templates_bp, url_prefix="/api")
-    except ImportError:
-        pass  # Optional
+    flask_app.register_blueprint(admin_bp, url_prefix="/admin")
 
 
 def register_template_filters(app: Flask) -> None:

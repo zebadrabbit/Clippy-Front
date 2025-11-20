@@ -46,7 +46,7 @@ def list_teams():
     List all teams the current user owns or is a member of.
 
     Returns:
-        JSON array of team objects with basic info
+        JSON object with teams array
     """
     # Get teams where user is owner or member
     owned_teams = db.session.execute(
@@ -90,7 +90,7 @@ def list_teams():
                 "created_at": team.created_at.isoformat(),
             }
 
-    return jsonify(list(teams_dict.values()))
+    return jsonify({"teams": list(teams_dict.values())})
 
 
 @api_bp.route("/teams", methods=["POST"])
@@ -416,16 +416,21 @@ def add_team_member(team_id):
         )
 
     data = request.get_json()
-    if not data or not data.get("username"):
-        return jsonify({"error": "Username or email is required"}), 400
 
-    # Find user by username or email
-    username_or_email = data["username"].strip()
-    user = db.session.execute(
-        select(User).where(
-            or_(User.username == username_or_email, User.email == username_or_email)
-        )
-    ).scalar_one_or_none()
+    # Support both username and user_id
+    if data.get("user_id"):
+        # Direct user_id provided
+        user = db.session.get(User, data["user_id"])
+    elif data.get("username"):
+        # Find user by username or email
+        username_or_email = data["username"].strip()
+        user = db.session.execute(
+            select(User).where(
+                or_(User.username == username_or_email, User.email == username_or_email)
+            )
+        ).scalar_one_or_none()
+    else:
+        return jsonify({"error": "Username, email, or user_id is required"}), 400
 
     if not user:
         return jsonify({"error": "User not found"}), 404
@@ -653,7 +658,7 @@ def leave_team(team_id):
     # Log activity
     log_member_left(team)
 
-    return "", 204
+    return jsonify({"message": "You have left the team"}), 200
 
 
 @api_bp.route("/projects/<int:project_id>/share", methods=["POST"])
@@ -1114,7 +1119,7 @@ def accept_invitation(token):
             invitation.team,
             current_user,
             invitation.role.value,
-            actor_id=invitation.inviter_id,
+            actor_id=invitation.invited_by_id,
         )
 
         return jsonify(

@@ -74,15 +74,9 @@ def auth(client):
 
 @pytest.fixture()
 def test_user(app):
-    """Create a test user for worker API tests."""
+    """Return the 'tester' user created by app fixture (aligns with auth.login default)."""
     with app.app_context():
-        user = User.query.filter_by(username="testuser").first()
-        if not user:
-            user = User(username="testuser", email="testuser@example.com")
-            user.set_password("testpass123")
-            db.session.add(user)
-            db.session.commit()
-        # Capture and return the ID while inside the app context to avoid detached instances
+        user = User.query.filter_by(username="tester").first()
         user_id = int(user.id)
         return user_id
 

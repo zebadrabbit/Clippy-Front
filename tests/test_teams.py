@@ -50,15 +50,15 @@ class TestTeamModel:
     def test_has_permission_hierarchy(self, app):
         """Should enforce role hierarchy for permissions."""
         with app.app_context():
-            owner = User(username="owner", email="owner@example.com")
+            owner = User(username="team_owner", email="team_owner@example.com")
             owner.set_password("password123")
-            admin = User(username="admin", email="admin@example.com")
-            admin.set_password("password123")
-            editor = User(username="editor", email="editor@example.com")
+            admin_user = User(username="team_admin", email="team_admin@example.com")
+            admin_user.set_password("password123")
+            editor = User(username="team_editor", email="team_editor@example.com")
             editor.set_password("password123")
-            viewer = User(username="viewer", email="viewer@example.com")
+            viewer = User(username="team_viewer", email="team_viewer@example.com")
             viewer.set_password("password123")
-            db.session.add_all([owner, admin, editor, viewer])
+            db.session.add_all([owner, admin_user, editor, viewer])
             db.session.commit()
 
             team = Team(name="Test Team", owner_id=owner.id)
@@ -67,7 +67,9 @@ class TestTeamModel:
 
             # Add members with different roles
             memberships = [
-                TeamMembership(team_id=team.id, user_id=admin.id, role=TeamRole.ADMIN),
+                TeamMembership(
+                    team_id=team.id, user_id=admin_user.id, role=TeamRole.ADMIN
+                ),
                 TeamMembership(
                     team_id=team.id, user_id=editor.id, role=TeamRole.EDITOR
                 ),
@@ -84,10 +86,12 @@ class TestTeamModel:
             assert team.has_permission(owner.id, TeamRole.EDITOR)
             assert team.has_permission(owner.id, TeamRole.VIEWER)
 
-            assert not team.has_permission(admin.id, TeamRole.OWNER)  # Admin < Owner
-            assert team.has_permission(admin.id, TeamRole.ADMIN)
-            assert team.has_permission(admin.id, TeamRole.EDITOR)
-            assert team.has_permission(admin.id, TeamRole.VIEWER)
+            assert not team.has_permission(
+                admin_user.id, TeamRole.OWNER
+            )  # Admin < Owner
+            assert team.has_permission(admin_user.id, TeamRole.ADMIN)
+            assert team.has_permission(admin_user.id, TeamRole.EDITOR)
+            assert team.has_permission(admin_user.id, TeamRole.VIEWER)
 
             assert not team.has_permission(editor.id, TeamRole.ADMIN)  # Editor < Admin
             assert team.has_permission(editor.id, TeamRole.EDITOR)
@@ -402,10 +406,11 @@ class TestProjectSharing:
             project_id = project.id
             team_id = team.id
 
-        # Login as non-owner
-        client.post(
-            "/auth/login", data={"username": "other", "password": "password123"}
-        )
+        # Login as non-owner using test client session
+        with client.session_transaction() as sess:
+            with app.app_context():
+                other_user = User.query.filter_by(username="other").first()
+                sess["_user_id"] = str(other_user.id)
 
         response = client.post(
             f"/api/projects/{project_id}/share", json={"team_id": team_id}

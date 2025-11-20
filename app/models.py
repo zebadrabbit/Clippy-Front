@@ -1553,9 +1553,15 @@ class TeamInvitation(db.Model):
         return {
             "id": self.id,
             "team_id": self.team_id,
-            "team_name": self.team.name if self.team else None,
+            "team": {
+                "id": self.team.id,
+                "name": self.team.name,
+            }
+            if self.team
+            else None,
             "email": self.email,
             "role": self.role.value,
+            "token": self.token,
             "status": self.status,
             "invited_by": {
                 "id": self.invited_by.id,
