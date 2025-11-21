@@ -125,13 +125,15 @@ def notification_stream():
 
     from flask import current_app
 
-    # Capture the current user ID before entering the generator
+    # Capture app and user_id before entering the generator
+    # These need to be captured while we're still in the request context
+    app = current_app._get_current_object()
     user_id = current_user.id
 
     def generate():
         """Generate SSE events for new notifications."""
         # Push application context for database access
-        with current_app.app_context():
+        with app.app_context():
             # Send initial connection message
             yield f"data: {{'type': 'connected', 'timestamp': '{datetime.utcnow().isoformat()}'}}\n\n"
 
@@ -161,7 +163,7 @@ def notification_stream():
 
                 except Exception as e:
                     # Log error but don't crash the stream
-                    current_app.logger.error(f"SSE stream error: {e}", exc_info=True)
+                    app.logger.error(f"SSE stream error: {e}", exc_info=True)
                     yield "data: {'type': 'error', 'message': 'Internal error'}\n\n"
 
                 # Sleep for 5 seconds before checking again
