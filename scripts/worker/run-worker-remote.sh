@@ -77,8 +77,10 @@ if [[ -z "$VERSION" ]]; then
 fi
 
 # Build worker hostname with version
+# Get actual hostname (don't rely on Celery's %h expansion in background mode)
+ACTUAL_HOSTNAME=$(hostname)
 WORKER_NAME="${WORKER_NAME:-tundra-gpu}"
-WORKER_HOSTNAME="${WORKER_NAME}-v${VERSION}@%h"
+WORKER_HOSTNAME="${WORKER_NAME}-v${VERSION}@${ACTUAL_HOSTNAME}"
 
 # Display config
 echo "========================================"
