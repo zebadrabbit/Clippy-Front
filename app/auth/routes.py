@@ -39,14 +39,46 @@ auth_bp = Blueprint("auth", __name__)
 
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
-    """
-    Handle user login.
+    """Handle user login with credential validation and session management.
 
-    GET: Display login form
-    POST: Process login credentials and authenticate user
+    This endpoint handles both displaying the login form and processing login
+    credentials. It supports authentication via username or email, checks
+    password validity, and manages user sessions.
+
+    Methods:
+        GET: Display the login form.
+        POST: Process login credentials and authenticate user.
+
+    Form Data (POST):
+        username_or_email (str): User's username or email address.
+        password (str): User's password.
+        remember (bool, optional): Whether to remember the user's session.
 
     Returns:
-        Response: Rendered login template or redirect to dashboard
+        Response: On GET, renders login template.
+                 On successful POST, redirects to dashboard or requested page.
+                 On failed POST, renders login template with error messages.
+
+    Raises:
+        Exception: Database errors are caught and logged. User sees friendly
+            error message: \"A database error occurred. Please retry in a moment.\"
+            Errors logged include:
+            - Database connection failures
+            - Query execution errors
+            - Transaction rollback failures
+
+    Security:
+        - CSRF protection via Flask-WTF
+        - Password verification via werkzeug.security
+        - Session fixation prevention
+        - Account status checking (is_active flag)
+
+    Example:
+        # Login with username
+        POST /login with form data: username_or_email=john, password=secret123
+
+        # Login with email
+        POST /login with form data: username_or_email=john@example.com, password=secret123
     """
     # Redirect already authenticated users
     if current_user.is_authenticated:
@@ -220,14 +252,43 @@ def logout():
 @auth_bp.route("/profile", methods=["GET", "POST"])
 @login_required
 def profile():
-    """
-    Handle user profile viewing and editing.
+    """Handle user profile viewing and editing with validation.
 
-    GET: Display user profile with current information
-    POST: Process profile updates
+    This endpoint allows users to view and update their profile information,
+    including personal details, connected service accounts, and preferences.
+
+    Methods:
+        GET: Display user profile with current information populated in form.
+        POST: Process and save profile updates.
+
+    Form Data (POST):
+        first_name (str, optional): User's first name.
+        last_name (str, optional): User's last name.
+        discord_user_id (str, optional): Discord user ID for integration.
+        twitch_username (str, optional): Twitch username for integration.
+        date_format (str, optional): Preferred date format (auto/US/EU/ISO).
+        timezone (str, optional): IANA timezone name (e.g., America/Los_Angeles).
 
     Returns:
-        Response: Rendered profile template
+        Response: Rendered profile template on GET or validation failure.
+                 Redirects to profile page on successful POST.
+
+    Raises:
+        Exception: Database errors are caught and logged. User sees error flash:
+            \"An error occurred while updating your profile.\"
+            Specific cases:
+            - Database commit failures (logged with user_id)
+            - Invalid timezone (caught separately, shows timezone-specific error)
+            - Form loading errors (caught separately, uses empty string)
+
+    Validation:
+        - Timezone must be valid IANA name (validated via zoneinfo.ZoneInfo)
+        - Invalid timezones show warning, don't prevent other updates
+
+    Example:
+        POST /profile with form data:
+            first_name=John, last_name=Doe,
+            timezone=America/New_York, date_format=US
     """
     form = ProfileForm(current_user)
 

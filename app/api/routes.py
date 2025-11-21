@@ -46,10 +46,38 @@ def twitch_clips_api():
     """Fetch Twitch clips for a given username or the current user's connected username.
 
     Query params:
-      - username: optional; defaults to current_user.twitch_username
-      - first: max 100
-      - started_at, ended_at: RFC3339 timestamps (e.g., 2025-01-01T00:00:00Z)
-      - after: pagination cursor
+        username (str, optional): Twitch username to fetch clips for.
+            Defaults to current_user.twitch_username if not provided.
+        first (int, optional): Maximum number of clips to return (max 100).
+            Defaults to 20.
+        started_at (str, optional): RFC3339 timestamp for clip start date.
+            Example: "2025-01-01T00:00:00Z"
+        ended_at (str, optional): RFC3339 timestamp for clip end date.
+            Example: "2025-12-31T23:59:59Z"
+        after (str, optional): Pagination cursor for fetching next page.
+
+    Returns:
+        tuple: JSON response and HTTP status code.
+            On success (200): {
+                "username": str,
+                "broadcaster_id": str,
+                "data": list[dict],  # Clip objects from Twitch API
+                "pagination": dict   # Cursor for next page
+            }
+            On error (400): {"error": "No Twitch username provided or connected."}
+            On error (404): {"error": "Twitch user not found"}
+            On error (502): {"error": "Failed to fetch Twitch clips"}
+
+    Raises:
+        Exception: Caught and logged. Returns 502 error response on:
+            - Twitch API connection failures
+            - Authentication errors with Twitch
+            - Rate limit exceeded
+            - Invalid API response format
+
+    Example:
+        GET /api/twitch/clips?username=streamer&first=50
+        GET /api/twitch/clips?started_at=2025-01-01T00:00:00Z&ended_at=2025-01-31T23:59:59Z
     """
     username = (
         request.args.get("username") or (current_user.twitch_username or "")
@@ -98,9 +126,31 @@ def discord_messages_api():
     """Fetch recent Discord messages and extract Twitch clip URLs.
 
     Query params:
-      - channel_id: optional; defaults to Config.DISCORD_CHANNEL_ID
-      - limit: 1-200, default 200
-    Returns: { items: [...messages...], clip_urls: [...], channel_id }
+        channel_id (str, optional): Discord channel ID to fetch messages from.
+            Defaults to Config.DISCORD_CHANNEL_ID from environment.
+        limit (int, optional): Number of messages to fetch (1-200).
+            Defaults to 200.
+
+    Returns:
+        tuple: JSON response and HTTP status code.
+            On success (200): {
+                "items": list[dict],      # Discord message objects
+                "clip_urls": list[str],  # Extracted Twitch clip URLs
+                "channel_id": str        # Channel ID used
+            }
+            On error (502): {"error": "Failed to fetch Discord messages"}
+
+    Raises:
+        Exception: Caught and logged. Returns 502 error response on:
+            - Discord API connection failures
+            - Invalid bot token or permissions
+            - Channel not found or inaccessible
+            - Rate limit exceeded
+            - Invalid message format
+
+    Example:
+        GET /api/discord/messages?limit=100
+        GET /api/discord/messages?channel_id=123456789&limit=50
     """
     limit = request.args.get("limit", default=200, type=int)
     channel_id = request.args.get("channel_id")
