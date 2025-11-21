@@ -4,6 +4,7 @@ Authentication routes for user login, registration, and profile management.
 This module handles all authentication-related routes including user registration,
 login, logout, password reset, and profile management.
 """
+import logging
 import os
 from datetime import datetime
 from urllib.parse import urlparse
@@ -29,6 +30,7 @@ from app.auth.forms import (
     ProfileForm,
     RegistrationForm,
 )
+from app.error_utils import safe_log_error
 from app.models import User, db
 
 # Create authentication blueprint
@@ -70,8 +72,13 @@ def login():
             # Defensive: ensure DB session is clean before querying
             try:
                 db.session.rollback()
-            except Exception:
-                pass
+            except Exception as rollback_err:
+                safe_log_error(
+                    current_app.logger,
+                    "Defensive rollback before login query failed",
+                    exc_info=rollback_err,
+                    level=logging.DEBUG,
+                )
             # Find user by username or email
             try:
                 user = User.query.filter(
@@ -82,9 +89,19 @@ def login():
                 # Clear aborted transaction and surface a friendly error
                 try:
                     db.session.rollback()
-                except Exception:
-                    pass
-                current_app.logger.error(f"Login query error: {e}")
+                except Exception as rollback_err:
+                    safe_log_error(
+                        current_app.logger,
+                        "Failed to rollback after login query error",
+                        exc_info=rollback_err,
+                        level=logging.WARNING,
+                    )
+                safe_log_error(
+                    current_app.logger,
+                    "Login query error",
+                    exc_info=e,
+                    username_or_email=form.username_or_email.data,
+                )
                 flash(
                     "A database error occurred. Please retry in a moment.",
                     "danger",
@@ -231,7 +248,15 @@ def profile():
 
                     _ = ZoneInfo(tz_input)
                     current_user.timezone = tz_input
-                except Exception:
+                except Exception as tz_err:
+                    safe_log_error(
+                        current_app.logger,
+                        "Invalid timezone validation",
+                        exc_info=tz_err,
+                        level=logging.WARNING,
+                        user_id=current_user.id,
+                        timezone_input=tz_input,
+                    )
                     flash(
                         "Invalid timezone. Please use a valid IANA name (e.g., America/Los_Angeles).",
                         "warning",
@@ -244,8 +269,11 @@ def profile():
 
         except Exception as e:
             db.session.rollback()
-            current_app.logger.error(
-                f"Profile update error for user {current_user.id}: {str(e)}"
+            safe_log_error(
+                current_app.logger,
+                "Profile update error",
+                exc_info=e,
+                user_id=current_user.id,
             )
             flash(
                 "An error occurred while updating your profile. Please try again.",
@@ -261,7 +289,14 @@ def profile():
         form.date_format.data = current_user.date_format or "auto"
         try:
             form.timezone.data = current_user.timezone or ""
-        except Exception:
+        except Exception as tz_err:
+            safe_log_error(
+                current_app.logger,
+                "Failed to load timezone for form",
+                exc_info=tz_err,
+                level=logging.WARNING,
+                user_id=current_user.id,
+            )
             form.timezone.data = ""
 
     return render_template("auth/profile.html", title="Profile", form=form)
@@ -356,15 +391,24 @@ def change_password():
             cols = {c["name"] for c in insp.get_columns("users")}
             if "password_changed_at" in cols:
                 current_user.password_changed_at = db.func.now()
-        except Exception:
+        except Exception as ts_err:
             # Non-fatal; proceed without timestamp
-            pass
+            safe_log_error(
+                current_app.logger,
+                "Failed to update password timestamp",
+                exc_info=ts_err,
+                level=logging.WARNING,
+                user_id=current_user.id,
+            )
         db.session.commit()
         flash("Your password has been changed.", "success")
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(
-            f"Password change failed for user {current_user.id}: {e}"
+        safe_log_error(
+            current_app.logger,
+            "Password change failed",
+            exc_info=e,
+            user_id=current_user.id,
         )
         flash("Failed to change password. Please try again.", "danger")
 
@@ -502,14 +546,26 @@ def upload_profile_image():
             prev = current_user.profile_image_path
             if prev and prev != dest_path and os.path.exists(prev):
                 os.remove(prev)
-        except Exception:
-            pass
+        except Exception as rm_err:
+            safe_log_error(
+                current_app.logger,
+                "Failed to remove old profile image",
+                exc_info=rm_err,
+                level=logging.WARNING,
+                user_id=current_user.id,
+                image_path=prev,
+            )
         current_user.profile_image_path = dest_path
         db.session.commit()
         flash("Profile image updated.", "success")
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Profile image upload failed: {e}")
+        safe_log_error(
+            current_app.logger,
+            "Profile image upload failed",
+            exc_info=e,
+            user_id=current_user.id,
+        )
         flash("Failed to upload profile image.", "danger")
     return redirect(url_for("auth.profile"))
 
@@ -523,14 +579,26 @@ def remove_profile_image():
         if path and os.path.exists(path):
             try:
                 os.remove(path)
-            except Exception:
-                pass
+            except Exception as rm_err:
+                safe_log_error(
+                    current_app.logger,
+                    "Failed to delete profile image file during removal",
+                    exc_info=rm_err,
+                    level=logging.WARNING,
+                    user_id=current_user.id,
+                    image_path=path,
+                )
         current_user.profile_image_path = None
         db.session.commit()
         flash("Profile image removed.", "info")
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Profile image remove failed: {e}")
+        safe_log_error(
+            current_app.logger,
+            "Profile image remove failed",
+            exc_info=e,
+            user_id=current_user.id,
+        )
         flash("Failed to remove profile image.", "danger")
     return redirect(url_for("auth.profile"))
 

@@ -14,6 +14,7 @@
 from flask import current_app, jsonify, request
 from flask_login import current_user, login_required
 
+from app.error_utils import safe_log_error
 from app.integrations.discord import extract_clip_urls, get_channel_messages
 from app.integrations.twitch import (
     get_clips as twitch_get_clips,
@@ -81,7 +82,13 @@ def twitch_clips_api():
             }
         )
     except Exception as e:
-        current_app.logger.error(f"Twitch API error for user {username}: {e}")
+        safe_log_error(
+            current_app.logger,
+            "Twitch API error",
+            exc_info=e,
+            username=username,
+            user_id=current_user.id,
+        )
         return jsonify({"error": "Failed to fetch Twitch clips"}), 502
 
 
@@ -108,5 +115,12 @@ def discord_messages_api():
             }
         )
     except Exception as e:
-        current_app.logger.error(f"Discord API error: {e}")
+        safe_log_error(
+            current_app.logger,
+            "Discord API error",
+            exc_info=e,
+            channel_id=channel_id,
+            limit=limit,
+            user_id=current_user.id,
+        )
         return jsonify({"error": "Failed to fetch Discord messages"}), 502
