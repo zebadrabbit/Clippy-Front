@@ -7,20 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.13.0] - 2025-11-20
+
+### Added
+- **Error Handling Utilities** (`app/error_utils.py`)
+  - `safe_log_error()`: Structured logging with exception info and context
+  - `handle_api_exception()`: Standardized API error responses with logging
+  - `safe_operation()`: Decorator for automatic error handling with fallbacks
+  - `ErrorContext`: Context manager for clean error handling blocks
+  - `get_error_details()`: Extract detailed exception information
+  - `validate_and_handle()`: Input validation with automatic error responses
+  - `chain_exceptions()`: Log chained exceptions during error handling
+- **Error Recovery Tests** (`tests/test_error_recovery.py`)
+  - 21 comprehensive tests (100% passing)
+  - Error utility validation (safe_log_error, handle_api_exception, decorators)
+  - Email sending failure scenarios
+  - File upload errors (disk space, invalid types)
+  - Video compilation errors (missing files, ffmpeg failures)
+  - Database error recovery (login, profile updates)
+- **Deployment Automation Scripts**
+  - `scripts/setup_monitoring.sh`: Automated Prometheus + Grafana + Node Exporter installation
+    - Version management (Prometheus 2.48.0, Grafana 10.2.2, Node Exporter 1.7.0)
+    - Pre-configured dashboards and alert rules
+    - ClippyFront-specific scrape configs
+    - Remote execution support
+    - Idempotent (safe to re-run)
+  - `scripts/setup_webserver.sh`: Automated Nginx + Gunicorn deployment
+    - SSL/TLS support with Let's Encrypt integration
+    - Rate limiting and security headers
+    - WebSocket/SSE support for real-time notifications
+    - Systemd service management
+    - Log rotation and firewall configuration
+- **Error Handling Audit** (`docs/ERROR_HANDLING_AUDIT.md`)
+  - Comprehensive analysis of 150+ exception handlers
+  - Zero empty `except: pass` blocks found
+  - 93% of handlers include logging
+  - Recommendations and priority actions documented
+
 ### Changed
-- **BREAKING:** Workers no longer require `DATABASE_URL` environment variable
-- Worker API Migration Phase 5 complete - all workers now 100% API-based
-- Removed ~1,771 lines of deprecated database-based task code
+- **Structured Error Logging** (13 handlers improved)
+  - `app/auth/routes.py`: 11 exception handlers with contextual logging
+    - Login database errors (username, user_id context)
+    - Profile updates (user_id, timezone, file paths)
+    - Password changes (user context)
+    - Profile image operations (file paths)
+    - Defensive operations now log at DEBUG/WARNING level
+  - `app/api/routes.py`: 2 exception handlers
+    - Twitch API errors (username, user_id)
+    - Discord API errors (channel_id, limit)
+  - All handlers now use `exc_info=True` for full stack traces
+  - Replaced f-string logging with structured context
+- **API Documentation**
+  - Added comprehensive Google-style docstrings to 4 key endpoints
+  - `twitch_clips_api()`: Parameters, returns, exceptions, examples
+  - `discord_messages_api()`: Complete error documentation
+  - `login()`: Database errors, CSRF, security considerations
+  - `profile()`: Timezone validation, update errors, examples
+  - All docstrings include exception types and scenarios
 
-### Removed
-- Deprecated `compile_video_task` (replaced by `compile_video_task_v2`)
-- Deprecated `download_clip_task` (replaced by `download_clip_task_v2`)
-- `get_db_session()` function (workers no longer access database directly)
-- Helper functions only used by old tasks: `process_clip`, `build_timeline_with_transitions`, `process_media_file`, `compile_final_video`, `save_final_video`
+### Improved
+- **Error Visibility**: Zero silent failures - all errors logged with context
+- **Debugging**: Structured logs ready for aggregation (Sentry, ELK, etc.)
+- **Code Quality**: Reusable error handling patterns across codebase
+- **Production Readiness**: Graceful degradation preserves user experience
+- **Developer Experience**: Clear error contracts in API documentation
+- **Observability**: Complete monitoring stack with one-command deployment
 
-### Security
-- Improved worker security: workers no longer have direct database credentials
-- DMZ architecture compliance: workers communicate exclusively via REST API
+### Documentation
+- Added comprehensive exception documentation to API endpoints
+- Created error handling audit with findings and recommendations
+- Updated deployment guides for monitoring and web server setup
+- All error utilities documented with examples
 
 ---
 

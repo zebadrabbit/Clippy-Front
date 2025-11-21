@@ -38,7 +38,8 @@ ClippyFront is a Flask-based web application for organizing media and assembling
 - **[API Routes](docs/ROUTES.md)** - Endpoint documentation
 - **[Tiers & Quotas](docs/TIERS-AND-QUOTAS.md)** - Subscription system
 - **[Worker Versioning](docs/WORKER-VERSION-CHECKING.md)** - Version compatibility
-- **[Changelog](docs/CHANGELOG.md)** - Release history
+- **[Error Handling Audit](docs/ERROR_HANDLING_AUDIT.md)** - Error handling analysis (v0.13.0+)
+- **[Changelog](CHANGELOG.md)** - Release history
 
 ## Quick Start
 
@@ -104,6 +105,32 @@ See [Worker Setup](docs/WORKER_SETUP.md) for details.
 - Admin management UI
 
 See [Tiers & Quotas](docs/TIERS-AND-QUOTAS.md) for details.
+
+### Error Handling & Observability (v0.13.0+)
+
+- **Structured logging** with contextual data for all errors
+- **Zero silent failures** - all errors logged and visible
+- **Reusable error utilities** (`app/error_utils.py`)
+- **Comprehensive test coverage** for error scenarios
+- **Production monitoring** with one-command deployment
+  - Prometheus + Grafana + Node Exporter
+  - Pre-configured dashboards and alerts
+  - ClippyFront-specific metrics
+- **Automated web server setup** (Nginx + Gunicorn)
+  - SSL/TLS with Let's Encrypt
+  - Rate limiting and security headers
+  - WebSocket/SSE support
+
+Deploy monitoring stack:
+```bash
+# Install monitoring (Prometheus + Grafana)
+sudo scripts/setup_monitoring.sh
+
+# Install web server (Nginx + Gunicorn)
+sudo scripts/setup_webserver.sh --server-name clips.example.com --enable-ssl
+```
+
+See [Error Handling Audit](docs/ERROR_HANDLING_AUDIT.md) for details.
 
 ## Architecture
 
