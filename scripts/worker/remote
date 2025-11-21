@@ -67,9 +67,8 @@ case "${COMMAND}" in
     echo "Starting worker on ${REMOTE_HOST}..."
     ssh -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} bash << 'ENDSSH'
 cd ~/ClippyFront
-source venv/bin/activate
-nohup celery -A app.tasks.celery_app worker -n tundra-worker-01-v0.12.0@tundra -Q gpu,cpu -c 3 --loglevel=info >> worker.log 2>&1 &
-sleep 1
+./scripts/worker/run-worker-remote.sh >> worker.log 2>&1 &
+sleep 2
 ps aux | grep celery | grep -v grep | head -2
 ENDSSH
     ;;
@@ -86,9 +85,8 @@ ENDSSH
 pkill -f 'celery.*worker' || true
 sleep 2
 cd ~/ClippyFront
-source venv/bin/activate
-nohup celery -A app.tasks.celery_app worker -n tundra-worker-01-v0.12.0@tundra -Q gpu,cpu -c 3 --loglevel=info >> worker.log 2>&1 &
-sleep 1
+./scripts/worker/run-worker-remote.sh >> worker.log 2>&1 &
+sleep 2
 ps aux | grep celery | grep -v grep | head -2
 ENDSSH
     ;;
