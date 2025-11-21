@@ -10,10 +10,10 @@ import os
 from app.tasks.celery_app import celery_app
 from app.version import __version__
 
-# Use standard logging for CLI tools to avoid structlog output pollution
+# Use standard logging to avoid kwargs issues
 logger = logging.getLogger(__name__)
 
-# Silence structlog for this module when called from scripts
+# Silence for CLI tools if needed
 if os.environ.get("WORKER_CHECK_CLI"):
     logger.setLevel(logging.ERROR)
 
@@ -51,7 +51,7 @@ def get_active_workers(timeout=2.0):
     """
     inspector = celery_app.control.inspect(timeout=timeout)
     if not inspector:
-        logger.warning("worker_inspection_failed", reason="inspector_unavailable")
+        logger.warning("Worker inspection failed: inspector unavailable")
         return {}
 
     active_queues = inspector.active_queues() or {}
@@ -79,21 +79,15 @@ def get_active_workers(timeout=2.0):
             # No version tag - incompatible (could be old/hidden worker)
             reason = "no_version_tag"
             logger.warning(
-                "worker_without_version",
-                worker=worker_name,
-                server_version=current_version,
-                queues=queue_names,
-                reason="Workers without version tags are considered incompatible",
+                f"Worker without version: {worker_name} (queues: {queue_names}) - "
+                f"Workers without version tags are incompatible with server v{current_version}"
             )
         elif version != current_version:
             # Explicit version mismatch
             reason = "version_mismatch"
             logger.warning(
-                "version_mismatch_detected",
-                worker=worker_name,
-                worker_version=version,
-                server_version=current_version,
-                queues=queue_names,
+                f"Version mismatch: {worker_name} has v{version}, "
+                f"server is v{current_version} (queues: {queue_names})"
             )
         else:
             # Version matches - compatible
@@ -178,10 +172,8 @@ def check_queue_health(queue_name, min_workers=1, timeout=2.0):
 
     if incompatible:
         logger.warning(
-            "incompatible_workers_detected",
-            queue=queue_name,
-            incompatible=incompatible,
-            compatible=compatible,
+            f"Incompatible workers on queue '{queue_name}': {incompatible} "
+            f"(compatible: {compatible})"
         )
 
     return result

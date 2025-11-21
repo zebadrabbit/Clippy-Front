@@ -68,16 +68,30 @@ if [[ ! -d "${CLIPPY_INSTANCE_PATH}" ]]; then
   exit 1
 fi
 
+# Get version from app
+VERSION=$(python -c "from app.version import __version__; print(__version__)")
+
+if [[ -z "$VERSION" ]]; then
+  echo "Error: Could not determine version from app.version" >&2
+  exit 1
+fi
+
+# Build worker hostname with version
+WORKER_NAME="${WORKER_NAME:-tundra-gpu}"
+WORKER_HOSTNAME="${WORKER_NAME}-v${VERSION}@%h"
+
 # Display config
 echo "========================================"
-echo "Starting Celery GPU Worker"
+echo "Starting Celery GPU Worker (Versioned)"
 echo "========================================"
+echo "Version:   ${VERSION}"
 echo "Broker:    ${CELERY_BROKER_URL}"
 echo "Backend:   ${CELERY_RESULT_BACKEND}"
 echo "Flask API: ${FLASK_APP_URL}"
 echo "Instance:  ${CLIPPY_INSTANCE_PATH}"
 echo "Queues:    ${CELERY_QUEUES}"
 echo "Concurrency: ${CELERY_CONCURRENCY}"
+echo "Hostname:  ${WORKER_HOSTNAME}"
 echo "========================================"
 
 # Start the worker
@@ -85,4 +99,4 @@ exec celery -A app.tasks.celery_app worker \
   --loglevel=info \
   --concurrency="${CELERY_CONCURRENCY}" \
   --queues="${CELERY_QUEUES}" \
-  --hostname="tundra-gpu@%h"
+  --hostname="${WORKER_HOSTNAME}"
