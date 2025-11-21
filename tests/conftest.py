@@ -74,11 +74,19 @@ def auth(client):
 
 @pytest.fixture()
 def test_user(app):
-    """Return the 'tester' user created by app fixture (aligns with auth.login default)."""
+    """Return the 'tester' user ID created by app fixture (aligns with auth.login default)."""
     with app.app_context():
         user = User.query.filter_by(username="tester").first()
         user_id = int(user.id)
         return user_id
+
+
+@pytest.fixture()
+def test_user_obj(app):
+    """Return the 'tester' User object for tests that need to call methods on it."""
+    with app.app_context():
+        user = User.query.filter_by(username="tester").first()
+        return user
 
 
 @pytest.fixture()

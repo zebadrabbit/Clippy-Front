@@ -565,12 +565,16 @@ def forgot_password():
                 from app.mailer import send_email
 
                 reset_url = url_for("auth.reset_password", token=token, _external=True)
-                send_email(
-                    to=user.email,
-                    subject="Password Reset Request",
-                    body=f"Click here to reset your password: {reset_url}\n\n"
+                reset_text = (
+                    f"Password Reset Request\n\n"
+                    f"Click here to reset your password: {reset_url}\n\n"
                     f"This link will expire in 1 hour.\n\n"
-                    f"If you did not request this, please ignore this email.",
+                    f"If you did not request this, please ignore this email."
+                )
+                send_email(
+                    to_address=user.email,
+                    subject="Password Reset Request",
+                    text=reset_text,
                 )
                 current_app.logger.info(f"Password reset requested for: {user.email}")
 
