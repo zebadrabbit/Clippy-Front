@@ -65,7 +65,9 @@ class Config:
     SESSION_COOKIE_SAMESITE = "Lax"
 
     # File Upload Configuration
-    MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100MB max file size
+    MAX_CONTENT_LENGTH = int(
+        os.environ.get("MAX_CONTENT_LENGTH", 500 * 1024 * 1024)
+    )  # Default 500MB
     UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER") or "uploads"
     ALLOWED_VIDEO_EXTENSIONS = {"mp4", "avi", "mov", "mkv", "webm"}
     ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}

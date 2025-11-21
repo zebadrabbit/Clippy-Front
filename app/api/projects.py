@@ -1242,6 +1242,7 @@ def get_project_details_api(project_id: int):
     return jsonify(
         {
             "id": project.id,
+            "public_id": project.public_id,
             "name": project.name,
             "status": project.status.value
             if hasattr(project.status, "value")

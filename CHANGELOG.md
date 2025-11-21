@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Project Wizard Enhancements**
+  - Platform presets dropdown with 9 popular platforms:
+    - YouTube (1080p 16:9 landscape)
+    - YouTube Shorts (1080p 9:16 vertical)
+    - TikTok (1080p 9:16 vertical)
+    - Instagram Feed (1080p 1:1 square)
+    - Instagram Reels (1080p 9:16 vertical)
+    - Instagram Stories (1080p 9:16 vertical)
+    - Twitter/X (1080p 16:9 landscape)
+    - Facebook (1080p 16:9 landscape)
+    - Twitch Clips (1080p 16:9 landscape)
+  - Orientation selector for manual output settings (Landscape/Portrait/Square)
+  - Automatic preset application - selecting a preset auto-fills orientation, resolution, format, and FPS
+
+### Changed
+- **Project Wizard Workflow**
+  - Removed Export step (Step 5) - now redirects directly to project details page after compilation
+  - Updated wizard chevron progress: Setup → Get Clips → Arrange → Compile (4 steps)
+  - Changed "Next: Export" button to "View Project" with success styling
+  - localStorage now only restores projects from URL parameter, preventing old projects from blocking new ones
+- **Render Summary Display**
+  - Added platform preset information (e.g., "Preset: YouTube Shorts")
+  - Updated output line to include orientation (e.g., "Output: 1080p, Portrait, 60fps, mp4")
+  - Orientation displayed with proper capitalization (Landscape/Portrait/Square)
+- **API Responses**
+  - Added `public_id` field to `GET /api/projects/<id>` response for direct project page navigation
+
+### Fixed
+- **localStorage Project Restoration**
+  - Fixed issue where old project IDs persisted across wizard sessions
+  - New projects now properly start fresh instead of loading previous project state
+  - Visiting `/projects/wizard` without URL params clears localStorage automatically
+  - Projects only restore when explicitly passed via `?project_id=` parameter
+
 ---
 
 ## [0.13.0] - 2025-11-20

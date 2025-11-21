@@ -80,12 +80,16 @@ See [Installation Guide](docs/INSTALLATION.md) for complete setup.
 
 ### Video Compilation
 
+- **4-step wizard** (Setup → Get Clips → Arrange → Compile)
+- **Platform presets** for YouTube, YouTube Shorts, TikTok, Instagram, Twitter, Facebook, Twitch
+- **Orientation support** for landscape, portrait (shorts/reels), and square videos
 - **Fetch clips** from Twitch/Discord with deduplication
 - **Drag-and-drop timeline** with visual reordering
 - **Intro/outro/transitions** from media library
 - **GPU rendering** with NVENC (auto-fallback to CPU)
 - **Branded overlays** with author/game text and avatars
 - **Progress tracking** with live logs
+- **Direct project navigation** - compiles redirect to project details page
 
 ### Worker System (v0.12.0+)
 

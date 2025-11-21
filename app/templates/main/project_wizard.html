@@ -15,14 +15,13 @@
   <div class="card">
     <div class="card-header card-header--primary mb-3">Project Wizard</div>
     <div class="card-body">
-      <!-- Wizard chevron progress: 1) Setup 2) Get Clips 3) Arrange 4) Compile 5) Export -->
+      <!-- Wizard chevron progress: 1) Setup 2) Get Clips 3) Arrange 4) Compile -->
       <div class="chevron-steps mb-3">
         <ul class="progress" id="wizard-chevrons">
           <li data-step="1" class="active"><a href="#">Setup</a></li>
           <li data-step="2"><a href="#">Get Clips</a></li>
           <li data-step="3"><a href="#">Arrange</a></li>
           <li data-step="4"><a href="#">Compile</a></li>
-          <li data-step="5"><a href="#">Export</a></li>
         </ul>
       </div>
   <div id="wizard-data" data-user-has-twitch="{{ '1' if current_user.is_authenticated and current_user.twitch_username else '0' }}" data-date-format="{{ current_user.date_format if current_user.is_authenticated else 'auto' }}" class="d-none"></div>
@@ -84,6 +83,15 @@
             <label class="form-label">Platform Preset</label>
             <select class="form-select" id="platformPreset" name="platform_preset">
               <option value="custom" selected>Custom</option>
+              <option value="youtube">YouTube (1080p 16:9)</option>
+              <option value="youtube_shorts">YouTube Shorts (1080p 9:16 vertical)</option>
+              <option value="tiktok">TikTok (1080p 9:16 vertical)</option>
+              <option value="instagram_feed">Instagram Feed (1080p 1:1 square)</option>
+              <option value="instagram_reel">Instagram Reels (1080p 9:16 vertical)</option>
+              <option value="instagram_story">Instagram Stories (1080p 9:16 vertical)</option>
+              <option value="twitter">Twitter/X (1080p 16:9)</option>
+              <option value="facebook">Facebook (1080p 16:9)</option>
+              <option value="twitch">Twitch Clips (1080p 16:9)</option>
             </select>
             <small class="text-muted">Automatically configure export settings for specific platforms</small>
           </div>
@@ -93,20 +101,27 @@
           <div class="col-4">
             <label class="form-label">Output</label>
             <div class="row g-2">
-              <div class="col-md-4">
+              <div class="col-md-3">
+                <select class="form-select" name="orientation" id="orientation">
+                  <option value="landscape" selected>Landscape</option>
+                  <option value="portrait">Portrait</option>
+                  <option value="square">Square</option>
+                </select>
+              </div>
+              <div class="col-md-3">
                 <select class="form-select" name="resolution" id="resolution">
                   <option value="720p">720p</option>
                   <option value="1080p" selected>1080p</option>
                   <option value="1440p">1440p</option>
                 </select>
               </div>
-              <div class="col-md-4">
+              <div class="col-md-3">
                 <select class="form-select" name="format" id="format">
                   <option value="mp4" selected>MP4</option>
                   <option value="webm">WebM</option>
                 </select>
               </div>
-              <div class="col-md-4">
+              <div class="col-md-3">
                 <select class="form-select" name="fps" id="fps">
                   <option value="30">30 fps</option>
                   <option value="60" selected>60 fps</option>
@@ -342,66 +357,10 @@
   <div id="compile-details" class="mt-3"></div>
   <div class="progress mt-3 compile-progress" role="progressbar" aria-label="Compile" aria-valuemin="0" aria-valuemax="100" style="height: 25px"><div class="progress-bar" id="compile-progress" style="width: 0%">0%</div></div>
         <div class="mt-3"><pre class="bg-dark p-3 rounded" id="compile-log" style="min-height: 140px; max-height: 240px; overflow:auto;">Ready to roll.</pre></div>
-  <div class="d-flex justify-content-between wizard-nav mt-4"><button class="btn btn-outline-secondary" data-prev="3">Back: Arrange</button><button class="btn btn-primary btn-glow btn-shadow-dark" id="next-4" disabled>Next: Export</button></div>
+  <div class="d-flex justify-content-between wizard-nav mt-4"><button class="btn btn-outline-secondary" data-prev="3">Back: Arrange</button><button class="btn btn-success btn-glow btn-shadow-dark" id="next-4" disabled><i class="bi bi-check-circle"></i> View Project</button></div>
       </div>
 
-      <!-- Step 5: Export -->
-      <div class="wizard-step d-none" data-step="5">
-        <!-- Export ingest banner (shown while importing final render) -->
-        <div id="export-ingest-banner" class="alert alert-info d-none d-flex align-items-center gap-2 mb-3" role="status" aria-live="polite">
-          <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
-          <div id="export-ingest-text">Importing final render…</div>
-        </div>
 
-        <!-- Success banner with celebration -->
-        <div class="alert alert-success d-none border-0 shadow-sm mb-4" id="export-ready">
-          <div class="d-flex align-items-center gap-3">
-            <div style="font-size: 3rem; line-height: 1;">&#127881;</div>
-            <div>
-              <h4 class="alert-heading mb-1">Your Compilation is Ready!</h4>
-              <p class="mb-0">Watch it below, download it, or share it with the world.</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Export layout: video preview + details + actions -->
-        <div class="export-pane mt-2">
-          <div class="export-left">
-            <div class="position-relative">
-              <video id="export-video" class="export-video" controls poster="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='600'%3E%3Crect width='800' height='600' fill='%23000'/%3E%3Ctext x='400' y='300' font-family='Arial' font-size='24' fill='%23666' text-anchor='middle'%3ELoading video...%3C/text%3E%3C/svg%3E"></video>
-            </div>
-          </div>
-          <div class="export-right d-flex flex-column">
-            <div class="flex-grow-1">
-              <h5 class="mb-3 d-flex align-items-center gap-2">
-                <i class="bi bi-info-circle"></i>
-                Compilation Details
-              </h5>
-              <ul class="list-unstyled export-details" id="export-details">
-                <li class="text-muted"><i class="bi bi-hourglass-split"></i> Loading project information...</li>
-              </ul>
-            </div>
-            <div class="mt-auto pt-3 border-top">
-              <h6 class="mb-2 text-muted">Actions</h6>
-              <div class="d-flex flex-wrap gap-2">
-                <a class="btn btn-success btn-lg disabled" aria-disabled="true" id="download-output">
-                  <i class="bi bi-download"></i> Download Video
-                </a>
-                <button class="btn btn-outline-danger disabled" id="upload-youtube" aria-disabled="true" title="Coming soon">
-                  <i class="bi bi-youtube"></i> Upload to YouTube
-                </button>
-                <button class="btn btn-outline-primary disabled" id="upload-discord" aria-disabled="true" title="Coming soon">
-                  <i class="bi bi-discord"></i> Upload to Discord
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-          <div class="d-flex justify-content-between mt-3">
-          <button class="btn btn-outline-secondary" data-prev="4">Back: Compile</button>
-          <a class="btn btn-primary btn-shadow-dark" href="{{ url_for('main.projects') }}">Finish</a>
-        </div>
-      </div>
     </div>
   </div>
 </div>

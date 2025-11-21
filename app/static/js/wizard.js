@@ -48,17 +48,6 @@
     const stepStr = String(n);
     steps.forEach(s => s.classList.toggle('d-none', s.dataset.step !== stepStr));
 
-    // Debug: log step 5 HTML immediately after toggle
-    if (stepStr === '5') {
-      const step5 = document.querySelector('.wizard-step[data-step="5"]');
-      console.log('Step 5 after toggle:', {
-        exists: !!step5,
-        hasClass: step5?.classList.contains('d-none'),
-        readyElement: !!document.getElementById('export-ready'),
-        innerHTML: step5?.innerHTML.substring(0, 1000)
-      });
-    }
-
     markWizardChevron(stepStr);
     if (stepStr === '3') {
       // Require explicit confirmation on Arrange each time user enters step 3
@@ -93,18 +82,6 @@
         try { renderTransitionsBadge(); } catch (_) {}
       });
     }
-    if (stepStr === '5') {
-      if (wizard.projectId) {
-        // Delay to ensure DOM is fully rendered and visible after d-none toggle
-        setTimeout(() => {
-          refreshExportInfo().catch((e) => {
-            console.error('Failed to refresh export info:', e);
-          });
-        }, 300);
-      } else {
-        console.warn('Cannot load export info: No project ID available');
-      }
-    }
   }
 
   // Arrange ingest banner helpers
@@ -124,23 +101,7 @@
       el.classList.add('d-none');
     } catch (_) {}
   }
-  // Export ingest banner helpers
-  function showExportIngestBanner(text){
-    try {
-      const el = document.getElementById('export-ingest-banner');
-      const label = document.getElementById('export-ingest-text');
-      if (!el) return;
-      if (label && typeof text === 'string' && text.trim() !== '') label.textContent = text;
-      el.classList.remove('d-none');
-    } catch (_) {}
-  }
-  function hideExportIngestBanner(){
-    try {
-      const el = document.getElementById('export-ingest-banner');
-      if (!el) return;
-      el.classList.add('d-none');
-    } catch (_) {}
-  }
+
   document.querySelectorAll('#wizard-chevrons li').forEach(li => li.addEventListener('click', (e) => {
     e.preventDefault();
     const target = Number(li.dataset.step);
@@ -348,7 +309,8 @@
     };
   }
 
-  // Try to restore project ID from URL params or localStorage
+  // Try to restore project ID ONLY from URL params, clear localStorage otherwise
+  // This prevents old projects from blocking new project creation
   try {
     const params = new URLSearchParams(window.location.search);
     const urlProjectId = params.get('project_id') || params.get('projectId');
@@ -358,12 +320,9 @@
       // Save to localStorage for persistence
       localStorage.setItem('wizard_project_id', wizard.projectId);
     } else {
-      // Try localStorage as fallback
-      const savedProjectId = localStorage.getItem('wizard_project_id');
-      if (savedProjectId) {
-        wizard.projectId = parseInt(savedProjectId, 10);
-        console.log('Restored project ID from localStorage:', wizard.projectId);
-      }
+      // No URL param = user wants to create a new project, clear old state
+      localStorage.removeItem('wizard_project_id');
+      console.log('Cleared localStorage, starting fresh project');
     }
   } catch (e) {
     console.warn('Failed to restore project ID:', e);
@@ -444,15 +403,41 @@
         });
         console.log('Verification response status:', checkResponse.status);
         if (checkResponse.ok) {
-          // Project exists, skip to step 2
-          console.log('Project verified, loading clips');
+          // Project exists, check if it has clips
+          console.log('Project verified, checking clip count');
+          const clipsData = await checkResponse.json();
+          const clipCount = (clipsData.items || []).length;
+
           wizard.route = route;
           wizard.maxClips = Math.max(1, Math.min(100, isNaN(maxClips) ? 20 : maxClips));
           gotoStep(2);
-          // Populate clips grid for existing project
-          await populateClipsGrid();
-          document.getElementById('next-2').disabled = false;
-          return;
+
+          if (clipCount === 0) {
+            // Empty project - run auto-fetch as if it's new
+            console.log('Project has no clips, running auto-fetch');
+            // Fall through to auto-run code below (don't return)
+          } else {
+            // Project has clips, check if they're downloaded
+            console.log('Project has', clipCount, 'clips, checking download status');
+            const downloadedCount = (clipsData.items || []).filter(c => c.is_downloaded).length;
+
+            if (downloadedCount === 0 && clipCount > 0) {
+              // Clips exist but none downloaded - this is a broken project
+              console.warn('Project has clips but none downloaded, clearing and starting fresh');
+              wizard.projectId = null;
+              localStorage.removeItem('wizard_project_id');
+              // Fall through to create new project
+            } else {
+              // Normal case: project has downloaded clips
+              await populateClipsGrid();
+              setGcStatus(`Loaded ${clipCount} clip${clipCount !== 1 ? 's' : ''}.`);
+              setGcFill(100);
+              setGcActive('done');
+              setGcDone('done');
+              document.getElementById('next-2').disabled = false;
+              return;
+            }
+          }
         } else {
           // Project doesn't exist, clear the ID and create new one
           console.warn('Project', wizard.projectId, 'not found, creating new project');
@@ -486,9 +471,11 @@
       route: route,
   name: payload.name || '',
       description: payload.description,
+      orientation: fd.get('orientation') || 'landscape',
       resolution: payload.output_resolution,
       format: payload.output_format,
   fps: parseInt(fd.get('fps') || '60', 10),
+      platform_preset: fd.get('platform_preset') || 'custom',
       max_clips: Math.max(1, Math.min(500, parseInt(fd.get('max_clips') || '20', 10))),
       min_len: parseInt(fd.get('min_len') || '5', 10),
       max_len: payload.max_clip_duration,
@@ -571,7 +558,7 @@
             try { await populateClipsGrid(); } catch (_) {}
           }
         }
-      } catch (_) {}
+      } catch (autoRunErr) { console.error("Auto-run Get Clips failed:", autoRunErr); setGcError("fetch"); setGcStatus(`Error: ${autoRunErr.message || "Unknown error"}`); }
     } catch (e) {
       alert('Couldn’t create the project: ' + e.message);
     }
@@ -942,9 +929,27 @@
     }
     const estimatedSeconds = Math.floor(clipSecs + introSec + outroSec + (transCount ? gaps * avgTrans : 0));
     function fmtSec(sec){ const s = Math.max(0, Math.floor(sec)); const m = Math.floor(s/60); const r = (s%60).toString().padStart(2,'0'); return `${m}:${r}`; }
-    // Build combined meta line: "1080p, 60fps, mp4, (-1db)"
+    // Build combined meta line: "1080p, landscape, 60fps, mp4, (-1db)"
+    const orientation = s.orientation || 'landscape';
+    const orientationLabel = orientation.charAt(0).toUpperCase() + orientation.slice(1);
     const norm = (typeof s.audio_norm_db === 'number' && !isNaN(s.audio_norm_db)) ? `, (${s.audio_norm_db.toString()}db)` : '';
-    const combined = `${s.resolution || ''}, ${s.fps || 60}fps, ${s.format || 'mp4'}${norm}`;
+    const combined = `${s.resolution || ''}, ${orientationLabel}, ${s.fps || 60}fps, ${s.format || 'mp4'}${norm}`;
+
+    // Platform preset label
+    const presetLabels = {
+      youtube: 'YouTube',
+      youtube_shorts: 'YouTube Shorts',
+      tiktok: 'TikTok',
+      instagram_feed: 'Instagram Feed',
+      instagram_reel: 'Instagram Reels',
+      instagram_story: 'Instagram Stories',
+      twitter: 'Twitter/X',
+      facebook: 'Facebook',
+      twitch: 'Twitch Clips',
+      custom: 'Custom'
+    };
+    const presetName = presetLabels[s.platform_preset] || 'Custom';
+
     const yes = '<span class="text-success fw-semibold">Yes</span>';
     const no = '<span class="text-danger fw-semibold">No</span>';
     // Clip mini list (thumb, title, length)
@@ -972,6 +977,7 @@
         <div class="compile-left small">
           <h6 class="mb-2">Render Summary</h6>
           <div class="mb-1"><strong>Project:</strong> ${escapeHtml(s.name || 'My Compilation')}</div>
+          <div class="mb-1"><strong>Preset:</strong> ${escapeHtml(presetName)}</div>
           <div class="mb-1"><strong>Output:</strong> ${escapeHtml(combined)}</div>
           <div class="mb-1"><strong>Estimated length:</strong> ${fmtSec(estimatedSeconds)}</div>
           <div class="mb-1"><strong>Intro/Outro:</strong> ${intro ? yes : no}, ${outro ? yes : no}</div>
@@ -1540,7 +1546,24 @@
     if (startBtn) startBtn.disabled = false;
     document.getElementById('cancel-compile').disabled = true;
   });
-  document.getElementById('next-4')?.addEventListener('click', () => gotoStep(5));
+  document.getElementById('next-4')?.addEventListener('click', async () => {
+    // Redirect to project details instead of Export step
+    if (!wizard.projectId) {
+      alert('No project loaded.');
+      return;
+    }
+    try {
+      const details = await api(`/api/projects/${wizard.projectId}`);
+      if (details.public_id) {
+        window.location.href = `/p/${details.public_id}`;
+      } else {
+        alert('Project does not have a public ID yet.');
+      }
+    } catch (e) {
+      console.error('Failed to get project details:', e);
+      alert('Failed to navigate to project.');
+    }
+  });
 
   // Default routing states on load
   gotoStep(1);
@@ -1550,101 +1573,7 @@
     setTimeout(renderCompileSummary, 0);
   });
 
-  async function refreshExportInfo(retryCount = 0){
-    if (!wizard.projectId) {
-      console.warn('refreshExportInfo: No project ID set');
-      return;
-    }
-    function fmtBytes(n){
-      const num = Number(n);
-      if (!isFinite(num) || num <= 0) return '—';
-      const u = ['B','KB','MB','GB','TB'];
-      let i = 0; let val = num;
-      while (val >= 1024 && i < u.length-1){ val /= 1024; i++; }
-      return `${val.toFixed(val >= 100 ? 0 : val >= 10 ? 1 : 2)} ${u[i]}`;
-    }
-    function fmtSec(sec){ const s = Math.max(0, Math.floor(Number(sec)||0)); const m = Math.floor(s/60); const r = (s%60).toString().padStart(2,'0'); return `${m}:${r}`; }
-    try {
-      console.log(`Fetching project details for project ${wizard.projectId}`);
-      const details = await api(`/api/projects/${wizard.projectId}`);
-      console.log('Project details:', details);
 
-      const dl = document.getElementById('download-output');
-      const ready = document.getElementById('export-ready');
-      const video = document.getElementById('export-video');
-      const list = document.getElementById('export-details');
-
-      // Debug: log what we found
-      console.log('DOM elements check:', {
-        dl: !!dl,
-        ready: !!ready,
-        video: !!video,
-        list: !!list,
-        step5Visible: document.querySelector('.wizard-step[data-step="5"]')?.classList.contains('d-none')
-      });
-
-      // Guard: ensure elements exist (with retry limit)
-      if (!dl || !ready || !video || !list) {
-        if (retryCount < 3) {
-          console.warn('Export DOM elements not found, retrying...', retryCount + 1);
-          setTimeout(() => refreshExportInfo(retryCount + 1).catch(console.error), 200);
-        } else {
-          console.error('Export DOM elements not found after retries. Check if step 5 is visible.');
-          // Try to show what's actually in the DOM
-          const step5 = document.querySelector('.wizard-step[data-step="5"]');
-          console.error('Step 5 element:', step5);
-          console.error('Step 5 HTML:', step5?.innerHTML.substring(0, 500));
-        }
-        return;
-      }
-
-      if (details && (details.download_url || details.preview_url)) {
-        // Enable download button
-        if (dl) {
-          dl.classList.remove('disabled');
-          dl.removeAttribute('aria-disabled');
-          if (details.download_url) dl.href = details.download_url;
-          dl.innerHTML = `<i class="bi bi-download"></i> Download Video${details.output_filename ? ` (${details.output_filename})` : ''}`;
-        }
-
-        // Show success banner
-        if (ready) ready.classList.remove('d-none');
-
-        // Load video player
-        if (video && details.preview_url) {
-          try {
-            video.src = details.preview_url;
-            video.load();
-            console.log('Video player loaded with:', details.preview_url);
-          } catch (e) {
-            console.error('Failed to load video:', e);
-          }
-        }
-
-        // Populate details list
-        if (list) {
-          list.innerHTML = '';
-          const rows = [
-            { label: 'Project', value: details.name || '—' },
-            { label: 'File', value: details.output_filename || '—' },
-            { label: 'Size', value: fmtBytes(details.output_file_size) },
-            { label: 'Duration', value: (typeof details.compiled_duration === 'number' ? fmtSec(details.compiled_duration) : '—') },
-            { label: 'Status', value: details.status || '—' },
-            { label: 'Audio Norm', value: (details.audio_norm_profile ? `${details.audio_norm_profile}${(typeof details.audio_norm_db==='number')?` (${details.audio_norm_db} dB)`:''}` : '—') },
-          ];
-          rows.forEach(r => {
-            const li = document.createElement('li');
-            li.innerHTML = `<span class="label">${escapeHtml(r.label)}:</span> <span class="value">${escapeHtml(String(r.value||'—'))}</span>`;
-            list.appendChild(li);
-          });
-        }
-      } else {
-        console.warn('Project details missing download/preview URLs:', details);
-      }
-    } catch (e) {
-      console.error('Failed to load export info:', e);
-    }
-  }
 
   // Intro/Outro listing and selection
   async function loadMediaList(kind){
@@ -1857,22 +1786,7 @@
     }
   }
 
-  // Initialize Export step if we're already on it (e.g., page reload or direct navigation)
-  (function initExportStep(){
-    const currentStep = document.querySelector('.wizard-step:not(.d-none)')?.dataset.step;
-    if (currentStep === '5') {
-      console.log('Initializing Export step on page load');
-      if (wizard.projectId) {
-        setTimeout(() => {
-          refreshExportInfo().catch((e) => {
-            console.error('Failed to load export info on init:', e);
-          });
-        }, 100);
-      } else {
-        console.warn('Export step active but no project ID available');
-      }
-    }
-  })();
+
 
   // Platform Preset Integration
   (function initPlatformPresets(){
@@ -1906,6 +1820,12 @@
 
       try {
         const settings = JSON.parse(selectedOption.dataset.settings || '{}');
+
+        // Update orientation dropdown
+        const orientationSelect = document.getElementById('orientation');
+        if (orientationSelect && settings.orientation) {
+          orientationSelect.value = settings.orientation;
+        }
 
         // Update resolution dropdown
         const resolutionSelect = document.getElementById('resolution');
