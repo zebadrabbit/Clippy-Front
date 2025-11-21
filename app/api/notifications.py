@@ -159,3 +159,116 @@ def notification_stream():
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
     }
+
+
+@api_bp.route("/notification-preferences", methods=["GET"])
+@login_required
+def get_notification_preferences():
+    """
+    Get notification preferences for the current user.
+
+    Returns:
+        {
+            "preferences": {
+                "email_compilation_complete": bool,
+                "email_compilation_failed": bool,
+                "email_team_invitation": bool,
+                "email_team_member_added": bool,
+                "email_project_shared": bool,
+                "email_mention": bool,
+                "email_digest_enabled": bool,
+                "email_digest_frequency": str,
+                "email_digest_time": str,
+                "inapp_all_enabled": bool
+            }
+        }
+    """
+    from app.models import NotificationPreferences
+
+    prefs = NotificationPreferences.get_or_create(current_user.id)
+    return jsonify({"preferences": prefs.to_dict()})
+
+
+@api_bp.route("/notification-preferences", methods=["PUT"])
+@login_required
+def update_notification_preferences():
+    """
+    Update notification preferences for the current user.
+
+    Request body:
+        {
+            "email_compilation_complete": bool (optional),
+            "email_compilation_failed": bool (optional),
+            "email_team_invitation": bool (optional),
+            "email_team_member_added": bool (optional),
+            "email_project_shared": bool (optional),
+            "email_mention": bool (optional),
+            "email_digest_enabled": bool (optional),
+            "email_digest_frequency": str (optional, "daily" or "weekly"),
+            "email_digest_time": str (optional, "HH:MM" format),
+            "inapp_all_enabled": bool (optional)
+        }
+
+    Returns:
+        {
+            "success": true,
+            "preferences": { ... }
+        }
+    """
+    from app.models import NotificationPreferences
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    prefs = NotificationPreferences.get_or_create(current_user.id)
+
+    # Update fields that were provided
+    updatable_fields = [
+        "email_compilation_complete",
+        "email_compilation_failed",
+        "email_team_invitation",
+        "email_team_member_added",
+        "email_project_shared",
+        "email_mention",
+        "email_digest_enabled",
+        "email_digest_frequency",
+        "email_digest_time",
+        "inapp_all_enabled",
+    ]
+
+    for field in updatable_fields:
+        if field in data:
+            # Validate email_digest_frequency
+            if field == "email_digest_frequency" and data[field] not in [
+                "daily",
+                "weekly",
+            ]:
+                return (
+                    jsonify(
+                        {
+                            "error": f"Invalid value for {field}, must be 'daily' or 'weekly'"
+                        }
+                    ),
+                    400,
+                )
+
+            # Validate email_digest_time format (HH:MM)
+            if field == "email_digest_time":
+                import re
+
+                if not re.match(r"^([01]\d|2[0-3]):([0-5]\d)$", data[field]):
+                    return (
+                        jsonify(
+                            {
+                                "error": f"Invalid value for {field}, must be in HH:MM format (00:00-23:59)"
+                            }
+                        ),
+                        400,
+                    )
+
+            setattr(prefs, field, data[field])
+
+    db.session.commit()
+
+    return jsonify({"success": True, "preferences": prefs.to_dict()})

@@ -160,52 +160,188 @@
                         <div class="col-md-6">
                             <h6>Email Notifications</h6>
                             <div class="form-check mb-2">
-                                <input class="form-check-input" type="checkbox" id="emailNotifications" checked>
-                                <label class="form-check-label" for="emailNotifications">
-                                    Email notifications
+                                <input class="form-check-input notification-pref" type="checkbox" id="emailCompilationComplete" data-field="email_compilation_complete">
+                                <label class="form-check-label" for="emailCompilationComplete">
+                                    Compilation completed
                                 </label>
                             </div>
                             <div class="form-check mb-2">
-                                <input class="form-check-input" type="checkbox" id="projectUpdates" checked>
-                                <label class="form-check-label" for="projectUpdates">
-                                    Project status updates
+                                <input class="form-check-input notification-pref" type="checkbox" id="emailCompilationFailed" data-field="email_compilation_failed">
+                                <label class="form-check-label" for="emailCompilationFailed">
+                                    Compilation failed
                                 </label>
                             </div>
                             <div class="form-check mb-2">
-                                <input class="form-check-input" type="checkbox" id="compilationComplete" checked>
-                                <label class="form-check-label" for="compilationComplete">
-                                    Compilation completion
+                                <input class="form-check-input notification-pref" type="checkbox" id="emailTeamInvitation" data-field="email_team_invitation">
+                                <label class="form-check-label" for="emailTeamInvitation">
+                                    Team invitations
+                                </label>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input notification-pref" type="checkbox" id="emailMemberAdded" data-field="email_team_member_added">
+                                <label class="form-check-label" for="emailMemberAdded">
+                                    Team member added
+                                </label>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input notification-pref" type="checkbox" id="emailProjectShared" data-field="email_project_shared">
+                                <label class="form-check-label" for="emailProjectShared">
+                                    Project shared with team
                                 </label>
                             </div>
                             <div class="form-check mb-3">
-                                <input class="form-check-input" type="checkbox" id="marketingEmails">
-                                <label class="form-check-label" for="marketingEmails">
-                                    Marketing and promotional emails
+                                <input class="form-check-input notification-pref" type="checkbox" id="emailMention" data-field="email_mention">
+                                <label class="form-check-label" for="emailMention">
+                                    Mentions and replies
                                 </label>
+                            </div>
+
+                            <hr class="my-3">
+
+                            <h6>Email Digest</h6>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input notification-pref" type="checkbox" id="emailDigestEnabled" data-field="email_digest_enabled">
+                                <label class="form-check-label" for="emailDigestEnabled">
+                                    Enable daily/weekly digest emails
+                                </label>
+                            </div>
+                            <div id="digestSettings" style="display: none;">
+                                <div class="mb-2">
+                                    <label for="digestFrequency" class="form-label small">Frequency</label>
+                                    <select class="form-select form-select-sm notification-pref" id="digestFrequency" data-field="email_digest_frequency">
+                                        <option value="daily">Daily</option>
+                                        <option value="weekly">Weekly</option>
+                                    </select>
+                                </div>
+                                <div class="mb-2">
+                                    <label for="digestTime" class="form-label small">Time (24-hour format)</label>
+                                    <input type="time" class="form-control form-control-sm notification-pref" id="digestTime" data-field="email_digest_time">
+                                </div>
                             </div>
                         </div>
                         <div class="col-md-6">
-                            <h6>Push Notifications</h6>
+                            <h6>In-App Notifications</h6>
                             <div class="form-check mb-2">
-                                <input class="form-check-input" type="checkbox" id="pushNotifications">
-                                <label class="form-check-label" for="pushNotifications">
-                                    Enable push notifications
+                                <input class="form-check-input notification-pref" type="checkbox" id="inappAllEnabled" data-field="inapp_all_enabled">
+                                <label class="form-check-label" for="inappAllEnabled">
+                                    Enable in-app notifications
                                 </label>
                             </div>
-                            <div class="form-check mb-2">
-                                <input class="form-check-input" type="checkbox" id="browserNotifications">
-                                <label class="form-check-label" for="browserNotifications">
-                                    Browser notifications
-                                </label>
-                            </div>
+                            <small class="text-muted">
+                                In-app notifications appear in the notification bell at the top of the page.
+                            </small>
                         </div>
                     </div>
                     <hr>
                     <div class="d-flex justify-content-end">
-                        <button class="btn btn-primary">Save Notification Preferences</button>
+                        <button class="btn btn-primary" id="saveNotificationPrefs">
+                            <i class="bi bi-check-lg"></i> Save Notification Preferences
+                        </button>
                     </div>
                 </div>
             </div>
+
+            <script>
+            // Load notification preferences on page load
+            document.addEventListener('DOMContentLoaded', function() {
+                loadNotificationPreferences();
+
+                // Show/hide digest settings based on checkbox
+                document.getElementById('emailDigestEnabled').addEventListener('change', function() {
+                    document.getElementById('digestSettings').style.display = this.checked ? 'block' : 'none';
+                });
+
+                // Save preferences
+                document.getElementById('saveNotificationPrefs').addEventListener('click', saveNotificationPreferences);
+            });
+
+            function loadNotificationPreferences() {
+                fetch('/api/notification-preferences')
+                    .then(response => response.json())
+                    .then(data => {
+                        const prefs = data.preferences;
+
+                        // Set all checkboxes and fields
+                        document.querySelectorAll('.notification-pref').forEach(elem => {
+                            const field = elem.dataset.field;
+                            if (field in prefs) {
+                                if (elem.type === 'checkbox') {
+                                    elem.checked = prefs[field];
+                                } else if (elem.type === 'time') {
+                                    elem.value = prefs[field] || '09:00';
+                                } else {
+                                    elem.value = prefs[field];
+                                }
+                            }
+                        });
+
+                        // Show digest settings if enabled
+                        document.getElementById('digestSettings').style.display =
+                            prefs.email_digest_enabled ? 'block' : 'none';
+                    })
+                    .catch(error => {
+                        console.error('Error loading preferences:', error);
+                        showToast('Error loading notification preferences', 'error');
+                    });
+            }
+
+            function saveNotificationPreferences() {
+                const preferences = {};
+
+                document.querySelectorAll('.notification-pref').forEach(elem => {
+                    const field = elem.dataset.field;
+                    if (elem.type === 'checkbox') {
+                        preferences[field] = elem.checked;
+                    } else {
+                        preferences[field] = elem.value;
+                    }
+                });
+
+                fetch('/api/notification-preferences', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(preferences)
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast('Notification preferences saved successfully', 'success');
+                    } else {
+                        showToast(data.error || 'Error saving preferences', 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error saving preferences:', error);
+                    showToast('Error saving notification preferences', 'error');
+                });
+            }
+
+            function showToast(message, type) {
+                // Create a simple toast notification
+                const toastHtml = `
+                    <div class="toast align-items-center text-white bg-${type === 'success' ? 'success' : 'danger'} border-0" role="alert">
+                        <div class="d-flex">
+                            <div class="toast-body">${message}</div>
+                            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                        </div>
+                    </div>
+                `;
+
+                // Append to body or toast container
+                const container = document.querySelector('.toast-container') || document.body;
+                container.insertAdjacentHTML('beforeend', toastHtml);
+
+                // Show toast
+                const toastEl = container.lastElementChild;
+                const toast = new bootstrap.Toast(toastEl);
+                toast.show();
+
+                // Remove after hidden
+                toastEl.addEventListener('hidden.bs.toast', () => toastEl.remove());
+            }
+            </script>
 
             <!-- Preferences Section -->
             <div class="card mb-4" id="preferences">

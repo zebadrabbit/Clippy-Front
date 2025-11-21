@@ -8,7 +8,69 @@ activities. Notifications are sent to relevant users when important events occur
 from flask_login import current_user
 from sqlalchemy import select
 
-from app.models import ActivityType, Notification, Team, TeamMembership, User, db
+from app.models import (
+    ActivityType,
+    Notification,
+    NotificationPreferences,
+    Team,
+    TeamMembership,
+    User,
+    db,
+)
+
+
+def send_email_notification(
+    user: User,
+    notification_type: ActivityType,
+    subject: str,
+    message: str,
+    context: dict | None = None,
+):
+    """
+    Send an email notification if user has enabled it for this event type.
+
+    Args:
+        user: User to notify
+        notification_type: Type of notification
+        subject: Email subject line
+        message: Email body text
+        context: Additional context (optional)
+    """
+    from app.mailer import send_email
+
+    # Get user's notification preferences
+    prefs = NotificationPreferences.get_or_create(user.id)
+
+    # Check if email is enabled for this notification type
+    should_send = False
+
+    if notification_type == ActivityType.COMPILATION_COMPLETED:
+        should_send = prefs.email_compilation_complete
+    elif notification_type == ActivityType.COMPILATION_FAILED:
+        should_send = prefs.email_compilation_failed
+    elif notification_type == ActivityType.MEMBER_ADDED:
+        should_send = prefs.email_team_member_added
+    elif notification_type == ActivityType.PROJECT_SHARED:
+        should_send = prefs.email_project_shared
+
+    if not should_send:
+        return
+
+    # Send the email
+    try:
+        send_email(
+            to_address=user.email,
+            subject=subject,
+            text=message,
+        )
+    except Exception as e:
+        # Log but don't fail - email is non-critical
+        try:
+            from flask import current_app
+
+            current_app.logger.warning(f"Failed to send email notification: {e}")
+        except Exception:
+            pass
 
 
 def create_notification(
@@ -109,6 +171,20 @@ def notify_team_members(
             context=context,
         )
 
+        # Send email notification for project sharing
+        if notification_type == ActivityType.PROJECT_SHARED:
+            user = db.session.get(User, user_id)
+            if user and context:
+                project_name = context.get("project_name", "a project")
+                team_name = context.get("team_name", team.name)
+                send_email_notification(
+                    user=user,
+                    notification_type=ActivityType.PROJECT_SHARED,
+                    subject=f"Project Shared: {project_name}",
+                    message=f"A project '{project_name}' has been shared with your team '{team_name}'.\n\n"
+                    f"You can now view and collaborate on this project.",
+                )
+
 
 # Team-related notification helpers
 
@@ -130,6 +206,15 @@ def notify_member_added(team, new_user: User, role: str, actor_id: int | None = 
         actor_id=actor_id,
         team_id=team.id,
         context={"role": role},
+    )
+
+    # Send email to new member
+    send_email_notification(
+        user=new_user,
+        notification_type=ActivityType.MEMBER_ADDED,
+        subject=f"Added to Team: {team.name}",
+        message=f"You have been added to the team '{team.name}' as a {role}.\n\n"
+        f"You can now collaborate with other team members and share projects.",
     )
 
     # Notify existing team members
@@ -236,6 +321,17 @@ def notify_compilation_completed(project, actor_id: int | None = None):
             project_id=project.id,
         )
 
+        # Send email notification
+        user = db.session.get(User, project.user_id)
+        if user:
+            send_email_notification(
+                user=user,
+                notification_type=ActivityType.COMPILATION_COMPLETED,
+                subject=f"Compilation Complete: {project.name}",
+                message=f"Your video compilation '{project.name}' has finished processing successfully.\n\n"
+                f"You can now download your compiled video from the project page.",
+            )
+
     # Notify team members if shared
     if project.team_id:
         notify_team_members(
@@ -262,6 +358,18 @@ def notify_compilation_failed(project, error: str, actor_id: int | None = None):
             project_id=project.id,
             context={"error": error},
         )
+
+        # Send email notification
+        user = db.session.get(User, project.user_id)
+        if user:
+            send_email_notification(
+                user=user,
+                notification_type=ActivityType.COMPILATION_FAILED,
+                subject=f"Compilation Failed: {project.name}",
+                message=f"Your video compilation '{project.name}' failed to process.\n\n"
+                f"Error: {error}\n\n"
+                f"Please check your project settings and try again.",
+            )
 
 
 # Query helpers

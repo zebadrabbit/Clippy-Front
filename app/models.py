@@ -1674,3 +1674,82 @@ class Notification(db.Model):
             if self.project
             else None,
         }
+
+
+class NotificationPreferences(db.Model):
+    """
+    User preferences for notification delivery.
+
+    Controls which events trigger in-app vs email notifications.
+    """
+
+    __tablename__ = "notification_preferences"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id"), nullable=False, unique=True
+    )
+
+    # Email notification preferences (per event type)
+    email_compilation_complete = db.Column(db.Boolean, default=True, nullable=False)
+    email_compilation_failed = db.Column(db.Boolean, default=True, nullable=False)
+    email_team_invitation = db.Column(db.Boolean, default=True, nullable=False)
+    email_team_member_added = db.Column(db.Boolean, default=True, nullable=False)
+    email_project_shared = db.Column(db.Boolean, default=True, nullable=False)
+    email_mention = db.Column(db.Boolean, default=True, nullable=False)
+
+    # Email digest preferences
+    email_digest_enabled = db.Column(db.Boolean, default=False, nullable=False)
+    email_digest_frequency = db.Column(
+        db.String(20), default="daily", nullable=False, doc="Frequency: daily|weekly"
+    )
+    email_digest_time = db.Column(
+        db.String(5),
+        default="09:00",
+        nullable=False,
+        doc="Time in HH:MM format (24-hour)",
+    )
+
+    # In-app notification preferences
+    inapp_all_enabled = db.Column(db.Boolean, default=True, nullable=False)
+
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    # Relationship
+    user = db.relationship(
+        "User", backref=db.backref("notification_preferences", uselist=False)
+    )
+
+    def __repr__(self) -> str:
+        return f"<NotificationPreferences user_id={self.user_id}>"
+
+    def to_dict(self) -> dict:
+        """Convert preferences to dictionary."""
+        return {
+            "email_compilation_complete": self.email_compilation_complete,
+            "email_compilation_failed": self.email_compilation_failed,
+            "email_team_invitation": self.email_team_invitation,
+            "email_team_member_added": self.email_team_member_added,
+            "email_project_shared": self.email_project_shared,
+            "email_mention": self.email_mention,
+            "email_digest_enabled": self.email_digest_enabled,
+            "email_digest_frequency": self.email_digest_frequency,
+            "email_digest_time": self.email_digest_time,
+            "inapp_all_enabled": self.inapp_all_enabled,
+        }
+
+    @staticmethod
+    def get_or_create(user_id: int) -> "NotificationPreferences":
+        """Get or create preferences for a user."""
+        prefs = (
+            db.session.query(NotificationPreferences).filter_by(user_id=user_id).first()
+        )
+        if not prefs:
+            prefs = NotificationPreferences(user_id=user_id)
+            db.session.add(prefs)
+            db.session.commit()
+        return prefs
