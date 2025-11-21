@@ -23,6 +23,7 @@ ClippyFront is a Flask-based web application for organizing media and assembling
 
 ### Operations
 
+- **[Deployment Guide](docs/DEPLOYMENT.md)** - Production deployment (monitoring + web server) (v0.13.0+)
 - **[Worker Setup](docs/WORKER_SETUP.md)** - Deploy background workers (v0.12.0+)
 - **[Remote Workers](docs/REMOTE_WORKER_SETUP.md)** - Multi-host deployment
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
@@ -130,7 +131,7 @@ sudo scripts/setup_monitoring.sh
 sudo scripts/setup_webserver.sh --server-name clips.example.com --enable-ssl
 ```
 
-See [Error Handling Audit](docs/ERROR_HANDLING_AUDIT.md) for details.
+See [Deployment Guide](docs/DEPLOYMENT.md) for complete documentation including remote installation, configuration options, and troubleshooting.
 
 ## Architecture
 
