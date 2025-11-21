@@ -1,19 +1,117 @@
-// Notification system for real-time updates
+// Notification system for real-time updates using Server-Sent Events (SSE)
 (function() {
     'use strict';
 
     // Configuration
-    const POLL_INTERVAL = 30000; // 30 seconds
     const MAX_NOTIFICATIONS_DISPLAY = 10;
+    const SSE_RECONNECT_INTERVAL = 5000; // 5 seconds
 
     // State
-    let pollTimer = null;
+    let eventSource = null;
+    let reconnectTimer = null;
     let unreadCount = 0;
 
     // DOM elements
     const badgeEl = document.getElementById('notifBadge');
     const listEl = document.getElementById('notificationsList');
     const markAllBtn = document.getElementById('markAllReadBtn');
+
+    // Initialize SSE connection for real-time notifications
+    function initSSE() {
+        // Close existing connection if any
+        if (eventSource) {
+            eventSource.close();
+        }
+
+        try {
+            eventSource = new EventSource('/api/notifications/stream');
+
+            eventSource.onopen = function() {
+                console.log('Notification stream connected');
+                // Clear reconnect timer if set
+                if (reconnectTimer) {
+                    clearTimeout(reconnectTimer);
+                    reconnectTimer = null;
+                }
+            };
+
+            eventSource.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+
+                    // Handle connection confirmation
+                    if (data.type === 'connected') {
+                        console.log('Notifications stream ready');
+                        // Fetch initial unread count
+                        fetchUnreadCount();
+                        return;
+                    }
+
+                    // Handle new notification
+                    if (data.id) {
+                        handleNewNotification(data);
+                    }
+                } catch (err) {
+                    console.error('Error parsing notification:', err);
+                }
+            };
+
+            eventSource.onerror = function(err) {
+                console.error('SSE connection error:', err);
+                eventSource.close();
+
+                // Attempt to reconnect after delay
+                if (!reconnectTimer) {
+                    reconnectTimer = setTimeout(() => {
+                        console.log('Attempting to reconnect notification stream...');
+                        initSSE();
+                    }, SSE_RECONNECT_INTERVAL);
+                }
+            };
+        } catch (err) {
+            console.error('Failed to initialize SSE:', err);
+            // Fallback to polling if SSE fails
+            fallbackToPolling();
+        }
+    }
+
+    // Handle incoming notification
+    function handleNewNotification(notification) {
+        // Update unread count if notification is unread
+        if (!notification.is_read) {
+            fetchUnreadCount();
+        }
+
+        // Show browser notification if user has granted permission
+        if ('Notification' in window && Notification.permission === 'granted') {
+            showBrowserNotification(notification);
+        }
+    }
+
+    // Show browser notification
+    function showBrowserNotification(notif) {
+        const icon = getNotificationIcon(notif.type);
+        const notification = new Notification('ClippyFront', {
+            body: notif.message,
+            icon: `/static/img/icon-${icon}.png`, // Optional: add icons
+            tag: `notif-${notif.id}`,
+        });
+
+        notification.onclick = function() {
+            window.focus();
+            notification.close();
+            // Optionally navigate to related page
+        };
+    }
+
+    // Fallback to polling if SSE is not supported or fails
+    function fallbackToPolling() {
+        console.warn('Falling back to polling for notifications');
+        const POLL_INTERVAL = 30000; // 30 seconds
+
+        fetchUnreadCount();
+        setInterval(fetchUnreadCount, POLL_INTERVAL);
+    }
 
     // Fetch unread count
     async function fetchUnreadCount() {
@@ -199,16 +297,27 @@
         }
     }
 
+    // Request browser notification permission
+    function requestNotificationPermission() {
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission().then(permission => {
+                console.log('Notification permission:', permission);
+            });
+        }
+    }
+
     // Initialize
     function init() {
         // Check if user is authenticated (notification elements exist)
         if (!badgeEl || !listEl) return;
 
-        // Fetch initial data
-        fetchUnreadCount();
-
-        // Poll for updates
-        pollTimer = setInterval(fetchUnreadCount, POLL_INTERVAL);
+        // Initialize Server-Sent Events for real-time updates
+        if (typeof EventSource !== 'undefined') {
+            initSSE();
+        } else {
+            console.warn('EventSource not supported, falling back to polling');
+            fallbackToPolling();
+        }
 
         // Fetch notifications when dropdown is opened
         const dropdown = document.getElementById('notificationsDropdown');
@@ -223,6 +332,10 @@
                 markAllAsRead();
             });
         }
+
+        // Request browser notification permission (optional)
+        // Uncomment to enable browser notifications
+        // requestNotificationPermission();
     }
 
     // Initialize on DOM ready
@@ -234,6 +347,11 @@
 
     // Cleanup on page unload
     window.addEventListener('beforeunload', () => {
-        if (pollTimer) clearInterval(pollTimer);
+        if (eventSource) {
+            eventSource.close();
+        }
+        if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+        }
     });
 })();
