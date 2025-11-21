@@ -185,7 +185,7 @@ celery -A app.tasks.celery_app inspect active_queues
 
 -> tundra-gpu-v0.13.0@tundra: OK
    * gpu queue
-   * cpu queue
+   * celery queue
 ```
 
 **Check via Python:**
@@ -202,6 +202,36 @@ for name, info in workers.items():
 main-v0.13.0@pandalab-01: version=0.13.0, compatible=True
 tundra-gpu-v0.13.0@tundra: version=0.13.0, compatible=True
 ```
+
+## Additional Issue: Network Configuration
+
+### Problem
+Tundra worker was using `192.168.1.100` for Redis/Flask API, which is not routable from remote workers.
+
+### Solution
+Use WireGuard VPN network (`10.8.0.0/24`):
+- Pandalab server: `10.8.0.1`
+- Tundra worker: `10.8.0.2`
+
+**Create `.env.worker` on tundra:**
+```bash
+# Copy template to tundra
+scp -P 2222 /tmp/tundra.env.worker winter@192.168.1.119:~/ClippyFront/.env.worker
+
+# Or create directly on tundra with correct WireGuard IPs:
+# CELERY_BROKER_URL=redis://10.8.0.1:6379/0
+# CELERY_RESULT_BACKEND=redis://10.8.0.1:6379/0
+# FLASK_APP_URL=http://10.8.0.1:5000
+```
+
+**Test connectivity:**
+```bash
+# From tundra, test Redis via WireGuard
+ssh -p 2222 winter@192.168.1.119 "cd ~/ClippyFront && source venv/bin/activate && python -c 'import redis; print(redis.Redis(host=\"10.8.0.1\").ping())'"
+# Should print: True
+```
+
+See `docs/WIREGUARD.md` for complete VPN setup instructions.
 
 ## Why This Matters
 
