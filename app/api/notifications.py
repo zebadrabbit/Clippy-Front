@@ -119,41 +119,53 @@ def notification_stream():
     Returns:
         SSE stream of notification events
     """
+    import json
     import time
     from datetime import datetime
 
+    from flask import current_app
+
+    # Capture the current user ID before entering the generator
+    user_id = current_user.id
+
     def generate():
         """Generate SSE events for new notifications."""
-        # Send initial connection message
-        yield f"data: {{'type': 'connected', 'timestamp': '{datetime.utcnow().isoformat()}'}}\n\n"
-
-        last_check = datetime.utcnow()
-
-        while True:
-            # Check for new notifications since last check
-            new_notifications = (
-                db.session.query(Notification)
-                .filter(
-                    Notification.user_id == current_user.id,
-                    Notification.created_at > last_check,
-                )
-                .order_by(Notification.created_at.asc())
-                .all()
-            )
-
-            for notification in new_notifications:
-                import json
-
-                data = json.dumps(notification.to_dict())
-                yield f"data: {data}\n\n"
+        # Push application context for database access
+        with current_app.app_context():
+            # Send initial connection message
+            yield f"data: {{'type': 'connected', 'timestamp': '{datetime.utcnow().isoformat()}'}}\n\n"
 
             last_check = datetime.utcnow()
 
-            # Send keepalive every 30 seconds
-            yield f": keepalive {datetime.utcnow().isoformat()}\n\n"
+            while True:
+                try:
+                    # Check for new notifications since last check
+                    new_notifications = (
+                        db.session.query(Notification)
+                        .filter(
+                            Notification.user_id == user_id,
+                            Notification.created_at > last_check,
+                        )
+                        .order_by(Notification.created_at.asc())
+                        .all()
+                    )
 
-            # Sleep for 5 seconds before checking again
-            time.sleep(5)
+                    for notification in new_notifications:
+                        data = json.dumps(notification.to_dict())
+                        yield f"data: {data}\n\n"
+
+                    last_check = datetime.utcnow()
+
+                    # Send keepalive every 30 seconds
+                    yield f": keepalive {datetime.utcnow().isoformat()}\n\n"
+
+                except Exception as e:
+                    # Log error but don't crash the stream
+                    current_app.logger.error(f"SSE stream error: {e}", exc_info=True)
+                    yield "data: {'type': 'error', 'message': 'Internal error'}\n\n"
+
+                # Sleep for 5 seconds before checking again
+                time.sleep(5)
 
     return generate(), {
         "Content-Type": "text/event-stream",
