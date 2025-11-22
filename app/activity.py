@@ -5,8 +5,6 @@ This module provides helper functions to log activities throughout
 the application for audit trails and activity feeds.
 """
 
-from typing import Optional
-
 from flask_login import current_user
 
 from app.models import ActivityLog, ActivityType, Project, Team, User, db
@@ -14,10 +12,10 @@ from app.models import ActivityLog, ActivityType, Project, Team, User, db
 
 def log_activity(
     activity_type: ActivityType,
-    user: Optional[User] = None,
-    team: Optional[Team] = None,
-    project: Optional[Project] = None,
-    context: Optional[dict] = None,
+    user: User | None = None,
+    team: Team | None = None,
+    project: Project | None = None,
+    context: dict | None = None,
 ) -> ActivityLog:
     """
     Log an activity to the activity log.
@@ -61,7 +59,7 @@ def log_activity(
     return activity
 
 
-def log_team_created(team: Team, user: Optional[User] = None) -> ActivityLog:
+def log_team_created(team: Team, user: User | None = None) -> ActivityLog:
     """Log team creation activity."""
     return log_activity(
         ActivityType.TEAM_CREATED,
@@ -72,7 +70,7 @@ def log_team_created(team: Team, user: Optional[User] = None) -> ActivityLog:
 
 
 def log_team_updated(
-    team: Team, changes: dict, user: Optional[User] = None
+    team: Team, changes: dict, user: User | None = None
 ) -> ActivityLog:
     """
     Log team update activity.
@@ -87,7 +85,7 @@ def log_team_updated(
     )
 
 
-def log_team_deleted(team: Team, user: Optional[User] = None) -> ActivityLog:
+def log_team_deleted(team: Team, user: User | None = None) -> ActivityLog:
     """Log team deletion activity."""
     return log_activity(
         ActivityType.TEAM_DELETED,
@@ -97,7 +95,7 @@ def log_team_deleted(team: Team, user: Optional[User] = None) -> ActivityLog:
 
 
 def log_member_added(
-    team: Team, target_user: User, role: str, user: Optional[User] = None
+    team: Team, target_user: User, role: str, user: User | None = None
 ) -> ActivityLog:
     """
     Log member addition to team.
@@ -121,7 +119,7 @@ def log_member_added(
 
 
 def log_member_removed(
-    team: Team, target_user: User, user: Optional[User] = None
+    team: Team, target_user: User, user: User | None = None
 ) -> ActivityLog:
     """
     Log member removal from team.
@@ -142,7 +140,7 @@ def log_member_removed(
     )
 
 
-def log_member_left(team: Team, user: Optional[User] = None) -> ActivityLog:
+def log_member_left(team: Team, user: User | None = None) -> ActivityLog:
     """Log member leaving team voluntarily."""
     return log_activity(ActivityType.MEMBER_LEFT, user=user, team=team)
 
@@ -152,7 +150,7 @@ def log_member_role_changed(
     target_user: User,
     old_role: str,
     new_role: str,
-    user: Optional[User] = None,
+    user: User | None = None,
 ) -> ActivityLog:
     """
     Log member role change.
@@ -177,7 +175,7 @@ def log_member_role_changed(
     )
 
 
-def log_project_created(project: Project, user: Optional[User] = None) -> ActivityLog:
+def log_project_created(project: Project, user: User | None = None) -> ActivityLog:
     """Log project creation."""
     return log_activity(
         ActivityType.PROJECT_CREATED,
@@ -189,7 +187,7 @@ def log_project_created(project: Project, user: Optional[User] = None) -> Activi
 
 
 def log_project_shared(
-    project: Project, team: Team, user: Optional[User] = None
+    project: Project, team: Team, user: User | None = None
 ) -> ActivityLog:
     """
     Log project being shared with a team.
@@ -209,7 +207,7 @@ def log_project_shared(
 
 
 def log_project_unshared(
-    project: Project, team_name: str, user: Optional[User] = None
+    project: Project, team_name: str, user: User | None = None
 ) -> ActivityLog:
     """
     Log project being unshared from a team.
@@ -228,7 +226,7 @@ def log_project_unshared(
 
 
 def log_project_updated(
-    project: Project, changes: dict, user: Optional[User] = None
+    project: Project, changes: dict, user: User | None = None
 ) -> ActivityLog:
     """
     Log project update.
@@ -247,7 +245,7 @@ def log_project_updated(
     )
 
 
-def log_project_deleted(project: Project, user: Optional[User] = None) -> ActivityLog:
+def log_project_deleted(project: Project, user: User | None = None) -> ActivityLog:
     """Log project deletion."""
     return log_activity(
         ActivityType.PROJECT_DELETED,
@@ -257,7 +255,7 @@ def log_project_deleted(project: Project, user: Optional[User] = None) -> Activi
     )
 
 
-def log_preview_generated(project: Project, user: Optional[User] = None) -> ActivityLog:
+def log_preview_generated(project: Project, user: User | None = None) -> ActivityLog:
     """Log preview video generation."""
     return log_activity(
         ActivityType.PREVIEW_GENERATED,
@@ -268,9 +266,7 @@ def log_preview_generated(project: Project, user: Optional[User] = None) -> Acti
     )
 
 
-def log_compilation_started(
-    project: Project, user: Optional[User] = None
-) -> ActivityLog:
+def log_compilation_started(project: Project, user: User | None = None) -> ActivityLog:
     """Log compilation start."""
     return log_activity(
         ActivityType.COMPILATION_STARTED,
@@ -282,7 +278,7 @@ def log_compilation_started(
 
 
 def log_compilation_completed(
-    project: Project, user: Optional[User] = None
+    project: Project, user: User | None = None
 ) -> ActivityLog:
     """Log successful compilation completion."""
     return log_activity(
@@ -295,7 +291,7 @@ def log_compilation_completed(
 
 
 def log_compilation_failed(
-    project: Project, error: str, user: Optional[User] = None
+    project: Project, error: str, user: User | None = None
 ) -> ActivityLog:
     """
     Log compilation failure.

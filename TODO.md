@@ -21,7 +21,50 @@ user: User | None = None
 
 ## 🟡 HIGH PRIORITY - Missing Core Features
 
-### 2. Email Invitation Sending (30 minutes)
+### 2. Discord Route Enhancement (4-6 hours)
+**Location:** Project Wizard, `app/api/routes.py`, `app/integrations/discord.py`
+**Current State:** Discord route exists but lacks community curation workflow
+**Issue:** Need to leverage Discord as a curation layer for Twitch clips
+**Workflow:**
+1. Community posts Twitch clip URLs in specified Discord channel
+2. Users react with emojis to curate best clips
+3. ClippyFront reads channel messages, filters by reaction count
+4. Downloads clips from Twitch using extracted URLs
+
+**Implementation Tasks:**
+- [ ] **Wizard UI Updates** (1 hour)
+  - Show Discord-specific parameters when Discord route selected
+  - Add "Minimum Reactions" number input (default: 1)
+  - Add "Reaction Emoji" filter (optional, e.g., 👍, ⭐, 🔥)
+  - Show/hide parameters based on route selection
+- [ ] **Discord Integration Enhancement** (2-3 hours)
+  - Extend `app/integrations/discord.py` to fetch message reactions
+  - Filter messages by reaction count threshold
+  - Extract Twitch clip URLs from message content
+  - Handle various URL formats (clips.twitch.tv, twitch.tv/*/clip/*)
+- [ ] **API Endpoint Updates** (1 hour)
+  - Update `POST /api/discord/messages` to accept reaction filters
+  - Add validation for min_reactions parameter
+  - Return reaction counts with clip data
+- [ ] **URL Extraction Logic** (30 minutes)
+  - Regex patterns for Twitch clip URLs in Discord messages
+  - Handle multiple URLs per message
+  - Validate extracted URLs before queuing downloads
+
+**Testing:**
+- Create Discord channel with test messages
+- Add reactions to messages
+- Test wizard with various min_reactions thresholds
+- Verify only clips meeting reaction threshold are downloaded
+- Test with different emoji types
+
+**Benefits:**
+- Community-curated content (higher quality)
+- Reduced manual clip selection time
+- Leverages existing Discord community engagement
+- Natural spam/low-quality clip filtering
+
+### 3. Email Invitation Sending (30 minutes)
 **Location:** `app/api/teams.py` - `POST /api/teams/<id>/invitations`
 **Issue:** Creates invitation tokens but doesn't send emails
 **Current State:** Line 575 in IMPLEMENTATION_SUMMARY notes "TODO: Send invitation email"
@@ -34,7 +77,7 @@ user: User | None = None
 - Check email received
 - Verify link works
 
-### 3. Email Verification for Email Changes (20 minutes)
+### 4. Email Verification for Email Changes (20 minutes)
 **Location:** `app/auth/routes.py` line 803
 **Issue:** Email change route exists but verification email not sent
 **Current Code:**
@@ -51,7 +94,7 @@ user: User | None = None
 - Check verification email received
 - Confirm new email via link
 
-### 4. Verify Project Templates Implementation (10 minutes)
+### 5. Verify Project Templates Implementation (10 minutes)
 **Location:** Migrations and routes
 **Issue:** Migration filename shown as placeholder `xxxx_add_project_templates.py`
 **Tasks:**
@@ -65,7 +108,7 @@ user: User | None = None
 
 ## 🟢 MEDIUM PRIORITY - Enhancements
 
-### 5. Notification System SSE Upgrade (2 hours)
+### 6. Notification System SSE Upgrade (2 hours)
 **Current:** 30-second polling in navbar bell icon
 **Available:** SSE endpoint at `/api/notifications/stream` (just fixed!)
 **Upgrade Path:**
@@ -79,7 +122,7 @@ user: User | None = None
 - Reduced server load (no constant polling)
 - Better UX (immediate feedback)
 
-### 6. Test Coverage Completion (8-12 hours)
+### 7. Test Coverage Completion (8-12 hours)
 **Missing Unit Tests:**
 - [ ] Preset application logic (`test_presets.py`)
 - [ ] Template creation/application (`test_templates.py`)
@@ -243,10 +286,10 @@ user: User | None = None
 | Priority | Tasks | Estimated Time |
 |----------|-------|----------------|
 | 🔴 Critical | 1 | 5 minutes |
-| 🟡 High | 3 | ~1 hour |
+| 🟡 High | 4 | ~6 hours |
 | 🟢 Medium | 3 | ~12 hours |
 | 🔵 Low | 4 | ~30 hours |
-| **TOTAL** | **11** | **~43 hours** |
+| **TOTAL** | **12** | **~48 hours** |
 
 ---
 
@@ -258,14 +301,17 @@ user: User | None = None
 3. Email verification (20 min)
 4. Verify templates (10 min)
 
-### Sprint 2: Core Enhancements (6-8 hours)
-5. SSE notification upgrade (2 hours)
-6. Basic test coverage (4-6 hours)
+### Sprint 2: Discord Enhancement (4-6 hours)
+5. Discord route with reaction-based curation (4-6 hours)
 
-### Sprint 3: Performance & Polish (8-12 hours)
-7. Worker documentation (1-2 hours)
-8. Caching implementation (3-4 hours)
-9. Complete test suite (4-6 hours)
+### Sprint 3: Core Enhancements (6-8 hours)
+6. SSE notification upgrade (2 hours)
+7. Basic test coverage (4-6 hours)
+
+### Sprint 4: Performance & Polish (8-12 hours)
+8. Worker documentation (1-2 hours)
+9. Caching implementation (3-4 hours)
+10. Complete test suite (4-6 hours)
 
 ### Sprint 4: Advanced Features (20-30 hours)
 10. Advanced notifications (8-12 hours)

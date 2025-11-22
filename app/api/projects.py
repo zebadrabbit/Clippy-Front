@@ -171,8 +171,7 @@ def create_and_download_clips_api(project_id: int):
         return (
             jsonify(
                 {
-                    "error": "No cpu/gpu workers available for downloads",
-                    "hint": "Start a worker with -Q cpu or -Q gpu",
+                    "error": "No workers are currently available to download clips. Please try again in a moment or contact support if this persists.",
                 }
             ),
             503,

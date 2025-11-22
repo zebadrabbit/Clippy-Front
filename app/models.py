@@ -334,6 +334,10 @@ class User(UserMixin, db.Model):
     # Password reset token and expiration
     reset_token = db.Column(db.String(255))
     reset_token_created_at = db.Column(db.DateTime)
+    # Email verification token and pending email
+    email_verification_token = db.Column(db.String(255))
+    email_verification_token_created_at = db.Column(db.DateTime)
+    pending_email = db.Column(db.String(120))
     # Optional path to user's profile image stored on disk
     profile_image_path = db.Column(db.String(500))
 
@@ -419,6 +423,38 @@ class User(UserMixin, db.Model):
         cutoff = datetime.utcnow() - timedelta(seconds=max_age)
         user = User.query.filter(
             User.reset_token == token, User.reset_token_created_at > cutoff
+        ).first()
+        return user
+
+    def generate_email_verification_token(self) -> str:
+        """
+        Generate a secure email verification token.
+
+        Returns:
+            str: URL-safe token (32 bytes hex = 64 chars)
+        """
+        return secrets.token_urlsafe(32)
+
+    @staticmethod
+    def verify_email_verification_token(
+        token: str, max_age: int = 86400
+    ) -> "User | None":
+        """
+        Verify an email verification token and return the user.
+
+        Args:
+            token: The verification token to verify
+            max_age: Token validity period in seconds (default 24 hours)
+
+        Returns:
+            User | None: User object if token is valid, None otherwise
+        """
+        from datetime import timedelta
+
+        cutoff = datetime.utcnow() - timedelta(seconds=max_age)
+        user = User.query.filter(
+            User.email_verification_token == token,
+            User.email_verification_token_created_at > cutoff,
         ).first()
         return user
 

@@ -794,18 +794,34 @@ def change_email():
             return redirect(url_for("auth.account_settings"))
 
         try:
+            from app.mailer import send_verification_email
+
             old_email = current_user.email
-            current_user.email = form.new_email.data
-            # Mark email as unverified until they confirm
-            current_user.email_verified = False
+            new_email = form.new_email.data
+
+            # Generate verification token
+            token = current_user.generate_email_verification_token()
+            current_user.email_verification_token = token
+            current_user.email_verification_token_created_at = datetime.utcnow()
+            current_user.pending_email = new_email
             db.session.commit()
 
-            # TODO: Send verification email to new address
+            # Send verification email to new address
+            verify_url = url_for(
+                "auth.verify_email_change", token=token, _external=True
+            )
+            send_verification_email(
+                to_address=new_email,
+                username=current_user.username,
+                verify_url=verify_url,
+            )
+
             current_app.logger.info(
-                f"Email changed for user {current_user.id}: {old_email} -> {current_user.email}"
+                f"Email change requested for user {current_user.id}: {old_email} -> {new_email}"
             )
             flash(
-                "Your email address has been updated. Please check your new email to verify.",
+                "A verification email has been sent to your new email address. "
+                "Please check your email and click the link to complete the change.",
                 "success",
             )
             return redirect(url_for("auth.account_settings"))
@@ -822,5 +838,56 @@ def change_email():
     for field, errors in form.errors.items():
         for error in errors:
             flash(f"{field.replace('_', ' ').title()}: {error}", "danger")
+
+    return redirect(url_for("auth.account_settings"))
+
+
+@auth_bp.route("/verify-email/<token>")
+def verify_email_change(token):
+    """
+    Verify email change using token sent to new address.
+
+    Args:
+        token: Email verification token
+
+    Returns:
+        Response: Redirect to login or account settings with flash message
+    """
+    from app.models import User
+
+    # Verify the token (valid for 24 hours)
+    user = User.verify_email_verification_token(token, max_age=86400)
+
+    if not user:
+        flash("Invalid or expired verification link.", "danger")
+        return redirect(url_for("auth.login"))
+
+    if not user.pending_email:
+        flash("No pending email change found.", "danger")
+        return redirect(url_for("auth.account_settings"))
+
+    try:
+        old_email = user.email
+        new_email = user.pending_email
+
+        # Update email and mark as verified
+        user.email = new_email
+        user.email_verified = True
+        user.pending_email = None
+        user.email_verification_token = None
+        user.email_verification_token_created_at = None
+        db.session.commit()
+
+        current_app.logger.info(
+            f"Email verified and changed for user {user.id}: {old_email} -> {new_email}"
+        )
+        flash(
+            "Your email address has been successfully updated and verified!", "success"
+        )
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Email verification error for user {user.id}: {e}")
+        flash("An error occurred. Please try again.", "danger")
 
     return redirect(url_for("auth.account_settings"))

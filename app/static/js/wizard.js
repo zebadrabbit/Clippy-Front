@@ -334,7 +334,25 @@
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include'
     }, opts));
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) {
+      let errorMessage = 'An error occurred';
+      try {
+        const text = await res.text();
+        // Try to parse as JSON
+        const errData = JSON.parse(text);
+        // Extract error message from JSON response
+        errorMessage = errData.error || errData.message || text;
+      } catch (parseErr) {
+        // If parsing fails, use response text directly
+        try {
+          const text = await res.text();
+          errorMessage = text;
+        } catch (textErr) {
+          errorMessage = 'Unknown error occurred';
+        }
+      }
+      throw new Error(errorMessage);
+    }
     return res.json();
   }
   const CSRF = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
