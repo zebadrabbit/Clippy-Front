@@ -124,10 +124,38 @@
 ✅ Better UX (immediate feedback)
 ✅ Automatic recovery from connection drops
 
-### 7. Test Coverage Completion (8-12 hours)
+### 9. Test Coverage Completion (8-12 hours) - IN PROGRESS
+**Status:** Partially complete
+**Progress:** 26 preset tests added and passing
+
+**Completed:**
+- ✅ Preset tests (`test_presets.py` - 26 tests)
+  - PlatformPreset enum settings validation
+  - API endpoint tests (list, auth, structure)
+  - Preset application logic (all 9 presets)
+  - Error handling and validation
+  - Integration tests
+
 **Missing Unit Tests:**
-- [ ] Preset application logic (`test_presets.py`)
 - [ ] Template creation/application (`test_templates.py`)
+- [ ] Preview generation and streaming
+- [ ] Keyboard shortcuts workflow
+
+**Missing Integration Tests:**
+- [ ] End-to-end wizard flow with presets (partially covered)
+- [ ] Tag autocomplete and filtering (basic tests exist in `test_media.py`)
+- [ ] Multi-tag media queries
+- [ ] Password reset email flow (✅ Already complete - `test_password_reset.py` exists)
+- [ ] Template cloning accuracy
+- [ ] Worker queue routing
+
+**Team Collaboration Tests** (Already Complete):
+- ✅ Team CRUD operations (`test_teams.py` - 419 lines)
+- ✅ Permission enforcement (viewer/editor/admin/owner)
+- ✅ Activity logging (`test_activity_invitations.py` - 17 tests)
+- ✅ Invitation workflow (create/accept/decline/expire)
+- ✅ Notification creation and delivery
+- ✅ Project sharing with teams
 - [ ] Preview task execution (`test_preview_generation.py`)
 - [ ] Command pattern undo/redo (`test_undo_redo.py`)
 - [ ] Upload async processing (`test_async_uploads.py`)
