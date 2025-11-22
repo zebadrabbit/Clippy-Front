@@ -360,12 +360,27 @@
   // Twitch warning toggle
   const routeSelect = document.getElementById('route-select');
   const twitchWarn = document.getElementById('twitch-warning');
+  const discordParams = document.getElementById('discord-params');
+
   function updateTwitchWarning(){
     const val = routeSelect.value;
     const show = (val === 'twitch') && !USER_HAS_TWITCH;
     if (twitchWarn) twitchWarn.classList.toggle('d-none', !show);
   }
-  routeSelect?.addEventListener('change', updateTwitchWarning);
+
+  function updateDiscordParams(){
+    const val = routeSelect.value;
+    if (discordParams) discordParams.classList.toggle('d-none', val !== 'discord');
+  }
+
+  routeSelect?.addEventListener('change', () => {
+    updateTwitchWarning();
+    updateDiscordParams();
+  });
+
+  // Initialize on page load
+  updateTwitchWarning();
+  updateDiscordParams();
 
   // Create project and go to Get Clips
   // Audio normalization slider wiring
@@ -665,16 +680,29 @@
   }
   async function fetchDiscordClips() {
     try {
-      const res = await fetch('/api/discord/messages?limit=200');
+      // Get Discord curation parameters from form
+      const minReactions = parseInt(document.getElementById('min-reactions')?.value || '1', 10);
+      const reactionEmoji = document.getElementById('reaction-emoji')?.value?.trim() || '';
+      const channelId = document.getElementById('discord-channel-id')?.value?.trim() || '';
+
+      // Build query parameters
+      const params = new URLSearchParams({ limit: '200' });
+      if (minReactions > 1) params.set('min_reactions', String(minReactions));
+      if (reactionEmoji) params.set('reaction_emoji', reactionEmoji);
+      if (channelId) params.set('channel_id', channelId);
+
+      const res = await fetch(`/api/discord/messages?${params.toString()}`);
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       const items = data.items || [];
       const urls = (data.clip_urls || []).filter(Boolean);
-      setGcStatus(`Sifted ${items.length} messages • found ${urls.length} clip link(s).`);
+      const filtered = data.filtered_count !== undefined ? data.filtered_count : items.length;
+
+      setGcStatus(`Sifted ${filtered} messages • found ${urls.length} clip link(s)${minReactions > 1 ? ` (≥${minReactions} reactions)` : ''}.`);
       return urls;
     } catch (e) {
       setGcError('fetch');
-      setGcStatus('Couldn’t fetch Discord messages. Check DISCORD config.');
+      setGcStatus('Couldn't fetch Discord messages. Check DISCORD config.');
       return [];
     }
   }

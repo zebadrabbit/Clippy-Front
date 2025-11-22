@@ -35,6 +35,39 @@
               <option value="discord">Discord</option>
             </select>
           </div>
+
+          <!-- Discord-specific parameters (hidden by default) -->
+          <div class="col-md-12 d-none" id="discord-params">
+            <div class="card border-primary">
+              <div class="card-header bg-primary text-white">
+                <i class="bi bi-discord"></i> Discord Curation Settings
+              </div>
+              <div class="card-body">
+                <div class="row g-3">
+                  <div class="col-md-4">
+                    <label class="form-label">Minimum Reactions</label>
+                    <input type="number" class="form-control" id="min-reactions" name="min_reactions" value="1" min="1" max="100">
+                    <small class="text-muted">Only fetch clips from messages with at least this many reactions</small>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label">Reaction Emoji (optional)</label>
+                    <input type="text" class="form-control" id="reaction-emoji" name="reaction_emoji" placeholder="👍 or :thumbsup:">
+                    <small class="text-muted">Filter by specific emoji (leave empty for any reaction)</small>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label">Channel ID (optional)</label>
+                    <input type="text" class="form-control" id="discord-channel-id" name="discord_channel_id" placeholder="Use default from config">
+                    <small class="text-muted">Override default Discord channel</small>
+                  </div>
+                </div>
+                <div class="alert alert-info mt-3 mb-0">
+                  <i class="bi bi-info-circle"></i> <strong>How it works:</strong> Community posts Twitch clips in Discord.
+                  Members react with emojis to curate. Only clips meeting the reaction threshold are imported.
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="row g-2">
           <div class="col-12">
             <div class="alert alert-warning d-none" id="twitch-warning">
