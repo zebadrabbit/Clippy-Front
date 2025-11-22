@@ -737,7 +737,7 @@
   // Download progress/polling
   let dlTimer = null;
   async function startDownloadPolling() {
-  setGcStatus('Pulling clips down…');
+    setGcStatus('Pulling clips down…');
     // Poll all download tasks (including those that will reuse/copy existing files)
     const realTasks = (wizard.downloadTasks || []).filter(t => t && t.task_id);
     const total = realTasks.length || 1;

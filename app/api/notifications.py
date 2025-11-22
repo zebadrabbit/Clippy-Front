@@ -135,7 +135,7 @@ def notification_stream():
         # Push application context for database access
         with app.app_context():
             # Send initial connection message
-            yield f"data: {{'type': 'connected', 'timestamp': '{datetime.utcnow().isoformat()}'}}\n\n"
+            yield f'data: {{"type": "connected", "timestamp": "{datetime.utcnow().isoformat()}"}}\n\n'
 
             last_check = datetime.utcnow()
 
@@ -164,7 +164,7 @@ def notification_stream():
                 except Exception as e:
                     # Log error but don't crash the stream
                     app.logger.error(f"SSE stream error: {e}", exc_info=True)
-                    yield "data: {'type': 'error', 'message': 'Internal error'}\n\n"
+                    yield 'data: {"type": "error", "message": "Internal error"}\n\n'
 
                 # Sleep for 5 seconds before checking again
                 time.sleep(5)
