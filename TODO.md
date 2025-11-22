@@ -35,71 +35,59 @@
 
 ## 🟡 HIGH PRIORITY - Missing Core Features
 
-### 2. Discord Route Enhancement (4-6 hours) - NEXT UP
-**Location:** Project Wizard, `app/api/routes.py`, `app/integrations/discord.py`
+### ✅ Sprint 2 Complete (4 hours) - 2025-11-21
+
+**2. Discord Route Enhancement** - IMPLEMENTED ✅
+
+**Implementation:**
+- ✅ **Wizard UI** (1 hour):
+  - Discord parameters card with min reactions, emoji filter, channel ID inputs
+  - Show/hide logic based on route selection (initialized on page load)
+  - Updated fetchDiscordClips() to pass parameters via query string
+  - Display filtered count and reaction threshold in status
+
+- ✅ **Discord Integration** (2 hours):
+  - Added reactions field to get_channel_messages() response
+  - Implemented filter_by_reactions() function with:
+    - Minimum total reaction count filtering
+    - Optional emoji-specific filtering (unicode and :name: support)
+    - Normalized emoji comparison (case-insensitive, colon-stripping)
+
+- ✅ **API Endpoint Updates** (1 hour):
+  - Added min_reactions parameter (default: 1, backward compatible)
+  - Added reaction_emoji parameter (optional)
+  - Returns filtered_count and total_count
+  - Enhanced error logging with reaction context
+  - Updated docstring with examples
+
+- ✅ **URL Extraction** (integrated):
+  - Extracts Twitch URLs from reaction-filtered messages only
+  - Existing regex handles clips.twitch.tv and twitch.tv/user/clip/ formats
+
+**Testing:**
+- ✅ Unit tests pass for reaction filtering logic
+- ✅ All imports successful
+- ✅ No linting errors
+- ✅ Backward compatible (default behavior unchanged)
+
+**Workflow:**
+1. Community posts Twitch clip URLs in Discord channel
+2. Users react with emojis (👍, ⭐, 🔥, etc.) to curate best clips
+3. ClippyFront fetches messages and filters by reaction threshold
+4. Only clips meeting minimum reactions are downloaded
+5. Reduces spam/low-quality content automatically
+
+---
+
+## 🟢 MEDIUM PRIORITY - Enhancements
 **Current State:** Discord route exists but lacks community curation workflow
 **Issue:** Need to leverage Discord as a curation layer for Twitch clips
 **Workflow:**
-1. Community posts Twitch clip URLs in specified Discord channel
-2. Users react with emojis to curate best clips
-3. ClippyFront reads channel messages, filters by reaction count
-4. Downloads clips from Twitch using extracted URLs
-
-**Implementation Tasks:**
-- [ ] **Wizard UI Updates** (1 hour)
-  - Show Discord-specific parameters when Discord route selected
-  - Add "Minimum Reactions" number input (default: 1)
-  - Add "Reaction Emoji" filter (optional, e.g., 👍, ⭐, 🔥)
-  - Show/hide parameters based on route selection
-- [ ] **Discord Integration Enhancement** (2-3 hours)
-  - Extend `app/integrations/discord.py` to fetch message reactions
-  - Filter messages by reaction count threshold
-  - Extract Twitch clip URLs from message content
-  - Handle various URL formats (clips.twitch.tv, twitch.tv/*/clip/*)
-- [ ] **API Endpoint Updates** (1 hour)
-  - Update `POST /api/discord/messages` to accept reaction filters
-  - Add validation for min_reactions parameter
-  - Return reaction counts with clip data
-- [ ] **URL Extraction Logic** (30 minutes)
-  - Regex patterns for Twitch clip URLs in Discord messages
-  - Handle multiple URLs per message
-  - Validate extracted URLs before queuing downloads
-
-**Testing:**
-- Create Discord channel with test messages
-- Add reactions to messages
-- Test wizard with various min_reactions thresholds
-- Verify only clips meeting reaction threshold are downloaded
-- Test with different emoji types
-
-**Benefits:**
-- Community-curated content (higher quality)
-- Reduced manual clip selection time
-- Leverages existing Discord community engagement
-- Natural spam/low-quality clip filtering
-
-### 3. Email Invitation Sending (30 minutes) - ✅ ALREADY DONE
-**Location:** `app/api/teams.py` - `POST /api/teams/<id>/invitations`
-**Status:** ✅ Feature already implemented and working correctly
-**Verification:** Email sending occurs at line 987, error handling at line 993
-
-### 4. Email Verification for Email Changes (20 minutes) - ✅ COMPLETED
-**Location:** `app/auth/routes.py` line 803
-**Status:** ✅ Fully implemented with migration and verification route
-**Implementation:**
-- Migration `c9e5d7f8a1b2` adds `email_verification_token`, `pending_email` columns
-- `generate_email_verification_token()` creates secure token
-- `verify_email_verification_token()` validates token (24 hour expiry)
-- `/verify-email/<token>` route completes email change
-- Email sent to new address before change applied
-
-### 5. Verify Project Templates Implementation (10 minutes) - ✅ VERIFIED
-**Status:** ✅ Templates feature fully implemented and working
-**Verification Results:**
-- Migration `9d86f89dd601_add_is_template_to_compilationtask.py` exists
-- All 7 `/api/templates` endpoints functional (GET, POST, PUT, DELETE, apply)
-- UI route `/templates` exists and loads without errors
-- Module imports successfully, no linting errors
+1. Community posts Twitch clip URLs in Discord channel
+2. Users react with emojis (👍, ⭐, 🔥, etc.) to curate best clips
+3. ClippyFront fetches messages and filters by reaction threshold
+4. Only clips meeting minimum reactions are downloaded
+5. Reduces spam/low-quality content automatically
 
 ---
 
@@ -283,10 +271,10 @@
 | Priority | Tasks | Completed | Remaining | Estimated Time |
 |----------|-------|-----------|-----------|----------------|
 | 🔴 Critical | 4 | 4 ✅ | 0 | ~~1 hour~~ DONE |
-| 🟡 High | 1 | 0 | 1 | 4-6 hours |
+| 🟡 High | 1 | 1 ✅ | 0 | ~~4-6 hours~~ DONE |
 | 🟢 Medium | 3 | 0 | 3 | ~12 hours |
 | 🔵 Low | 4 | 0 | 4 | ~30 hours |
-| **TOTAL** | **12** | **4** | **8** | **~42 hours remaining** |
+| **TOTAL** | **12** | **5** | **7** | **~38 hours remaining** |
 
 ---
 
@@ -298,8 +286,12 @@
 3. ✅ Email verification (35 min) - Migration + route + methods added
 4. ✅ Verify templates (10 min) - Confirmed working
 
-### Sprint 2: Discord Enhancement (4-6 hours)
-5. Discord route with reaction-based curation (4-6 hours)
+### ✅ Sprint 2: Discord Enhancement (4 hours) - COMPLETED 2025-11-21
+5. ✅ Discord route with reaction-based curation
+   - UI: Discord params card with min reactions, emoji filter
+   - Integration: filter_by_reactions() with emoji support
+   - API: min_reactions and reaction_emoji parameters
+   - Testing: Unit tests pass, backward compatible
 
 ### Sprint 3: Core Enhancements (6-8 hours)
 6. SSE notification upgrade (2 hours)
