@@ -867,10 +867,16 @@ def list_project_clips_api(project_id: int):
                 "source_url": c.source_url,
                 "is_downloaded": c.is_downloaded,
                 "duration": c.duration,
+                "view_count": c.view_count,
                 "creator_name": c.creator_name,
                 "game_name": c.game_name,
                 "created_at": c.clip_created_at.isoformat()
                 if c.clip_created_at
+                else None,
+                "avatar_url": url_for(
+                    "api.avatar_by_clip", clip_id=c.id, _external=True
+                )
+                if c.creator_name
                 else None,
                 "media": (
                     {

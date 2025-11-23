@@ -877,42 +877,67 @@ def worker_upload_clip(project_id: int, clip_id: int):
         # Download creator avatar if we have creator info and no avatar yet
         if clip.creator_id and clip.creator_name and not clip.creator_avatar_path:
             try:
+                import glob
+                import re
+
                 import requests as _requests
 
                 from app.integrations.twitch import get_user_profile_image_url
 
-                avatar_url = get_user_profile_image_url(clip.creator_id)
-                if avatar_url:
-                    # Sanitize creator name for filename
-                    import re
+                # Sanitize creator name for filename
+                safe_name = re.sub(
+                    r"[^a-z0-9_-]+", "_", clip.creator_name.strip().lower()
+                )
 
-                    safe_name = re.sub(
-                        r"[^a-z0-9_-]+", "_", clip.creator_name.strip().lower()
+                # Prepare avatars directory
+                avatars_dir = os.path.join(
+                    current_app.instance_path, "assets", "avatars"
+                )
+                os.makedirs(avatars_dir, exist_ok=True)
+
+                # Check if an avatar already exists for this creator (to avoid duplicates)
+                existing_avatar = None
+                for ext in (".png", ".jpg", ".jpeg", ".webp"):
+                    # First check exact match without suffix
+                    exact_match = os.path.join(avatars_dir, f"{safe_name}{ext}")
+                    if os.path.isfile(exact_match):
+                        existing_avatar = exact_match
+                        break
+                    # Then check for any files with random suffix pattern
+                    matches = glob.glob(
+                        os.path.join(avatars_dir, f"{safe_name}_*{ext}")
                     )
+                    if matches:
+                        # Use most recent one
+                        matches.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+                        existing_avatar = matches[0]
+                        break
 
-                    # Prepare avatars directory
-                    avatars_dir = os.path.join(
-                        current_app.instance_path, "assets", "avatars"
-                    )
-                    os.makedirs(avatars_dir, exist_ok=True)
-
-                    # Generate unique filename with random suffix
-                    import secrets
-
-                    ext = os.path.splitext(avatar_url.split("?")[0])[1] or ".jpg"
-                    avatar_filename = f"{safe_name}_{secrets.token_hex(4)}{ext}"
-                    avatar_path = os.path.join(avatars_dir, avatar_filename)
-
-                    # Download avatar
-                    r = _requests.get(avatar_url, timeout=10)
-                    r.raise_for_status()
-                    with open(avatar_path, "wb") as f:
-                        f.write(r.content)
-
-                    clip.creator_avatar_path = avatar_path
+                if existing_avatar:
+                    # Reuse existing avatar
+                    clip.creator_avatar_path = existing_avatar
                     current_app.logger.info(
-                        f"Downloaded avatar for {clip.creator_name} to {avatar_path}"
+                        f"Reusing existing avatar for {clip.creator_name}: {existing_avatar}"
                     )
+                else:
+                    # Download new avatar
+                    avatar_url = get_user_profile_image_url(clip.creator_id)
+                    if avatar_url:
+                        ext = os.path.splitext(avatar_url.split("?")[0])[1] or ".jpg"
+                        # Use simple filename without random suffix for first avatar
+                        avatar_filename = f"{safe_name}{ext}"
+                        avatar_path = os.path.join(avatars_dir, avatar_filename)
+
+                        # Download avatar
+                        r = _requests.get(avatar_url, timeout=10)
+                        r.raise_for_status()
+                        with open(avatar_path, "wb") as f:
+                            f.write(r.content)
+
+                        clip.creator_avatar_path = avatar_path
+                        current_app.logger.info(
+                            f"Downloaded new avatar for {clip.creator_name} to {avatar_path}"
+                        )
             except Exception as avatar_err:
                 current_app.logger.warning(
                     f"Failed to download avatar for clip {clip_id}: {avatar_err}"

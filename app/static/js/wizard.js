@@ -283,7 +283,9 @@
           clipId: this.clipId,
           durationSec: this.clipData.durationSec,
           kind: 'clip',
-          previewUrl: this.clipData.previewUrl
+          previewUrl: this.clipData.previewUrl,
+          viewCount: this.clipData.viewCount,
+          avatarUrl: this.clipData.avatarUrl
         });
 
         // Insert before outro if exists, otherwise append
@@ -1004,6 +1006,7 @@
       const dur = (el.querySelector('.badge-duration')?.textContent || '');
       const creator = (el.querySelector('.subtitle')?.textContent || el.querySelector('.creator')?.textContent || '').trim();
       const views = el.dataset.viewCount || '';
+      const avatarUrl = el.dataset.avatarUrl || '';
       const bg = el.querySelector('.thumb')?.style?.backgroundImage || '';
       const m = /url\(["']?([^"')]+)["']?\)/.exec(bg);
       const src = m ? m[1] : '';
@@ -1023,6 +1026,7 @@
       return `
         <div class="compile-clip-item" data-preview-url="${escapeHtml(prev)}">
           <div class="compile-clip-index">${idx + 1}</div>
+          ${avatarUrl ? `<img src="${escapeHtml(avatarUrl)}" alt="avatar" class="compile-clip-avatar">` : ''}
           <div class="compile-clip-thumb-wrap">
             <img class="compile-clip-thumb" src="${escapeHtml(src)}" alt="">
           </div>
@@ -1114,7 +1118,9 @@
           subtitle: [item.creator_name ? `By ${item.creator_name}` : '', item.game_name ? `• ${item.game_name}` : ''].filter(Boolean).join(' '),
           thumbUrl: (item.media && item.media.thumbnail_url) || '',
           durationSec: (typeof item.duration === 'number' ? item.duration : (item.media && (typeof item.media.duration === 'number') ? item.media.duration : undefined)),
-          previewUrl: (item.media && item.media.preview_url) || ''
+          previewUrl: (item.media && item.media.preview_url) || '',
+          viewCount: item.view_count,
+          avatarUrl: item.avatar_url
         };
 
         const addCmd = AddClipCommand(item.id, clipData, -1);
@@ -1139,7 +1145,7 @@
   });
 
   // Timeline helpers
-  function makeTimelineCard({title, subtitle, thumbUrl, clipId, kind, durationSec, previewUrl}){
+  function makeTimelineCard({title, subtitle, thumbUrl, clipId, kind, durationSec, previewUrl, viewCount, avatarUrl}){
     const card = document.createElement('div');
     card.className = 'timeline-card';
     // Lock intro/outro from dragging
@@ -1148,6 +1154,8 @@
     if (kind) card.dataset.kind = kind;
     if (typeof durationSec === 'number' && !isNaN(durationSec)) card.dataset.durationSec = String(durationSec);
     if (previewUrl) card.dataset.previewUrl = String(previewUrl);
+    if (typeof viewCount === 'number') card.dataset.viewCount = String(viewCount);
+    if (avatarUrl) card.dataset.avatarUrl = String(avatarUrl);
     // Add semantic class for styling by type
     if (kind) {
       card.classList.add(`timeline-${kind}`);

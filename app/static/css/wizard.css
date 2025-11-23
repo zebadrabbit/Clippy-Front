@@ -672,6 +672,14 @@
     min-width: 24px;
     text-align: right;
 }
+.compile-clip-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid rgba(255,255,255,0.1);
+    background: #222;
+}
 .compile-clip-thumb {
     width: 64px;
     height: 36px;
