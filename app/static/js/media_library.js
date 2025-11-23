@@ -72,6 +72,14 @@
         // Clear Dropzone preview/icon and reset state for a clean area
         try { dz.removeFile(file); } catch (_) {}
       });
+      this.on('error', function(file, errorMessage, xhr) {
+        console.error('Upload error:', errorMessage, xhr);
+        alert('Upload failed: ' + (typeof errorMessage === 'string' ? errorMessage : JSON.stringify(errorMessage)));
+        try { dz.removeFile(file); } catch (_) {}
+      });
+      this.on('complete', function(file) {
+        console.log('Upload complete for:', file.name);
+      });
     }
   });
 
