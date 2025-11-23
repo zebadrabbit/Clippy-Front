@@ -111,6 +111,9 @@
               {% if download_url %}
                 <a class="btn btn-primary" href="{{ download_url }}"><i class="bi bi-download"></i> Download</a>
               {% endif %}
+              <button class="btn btn-success" id="recompileBtn" data-project-id="{{ project.id }}">
+                <i class="bi bi-arrow-clockwise"></i> Recompile
+              </button>
               <button class="btn btn-outline-secondary" disabled title="Coming soon"><i class="bi bi-youtube"></i> Share to YouTube</button>
             </div>
             <div class="border-top pt-3 mt-3">
@@ -394,5 +397,52 @@ document.getElementById('saveAsTemplateBtn')?.addEventListener('click', async fu
         }
     });
 })();
+
+// Recompile button handler
+document.getElementById('recompileBtn')?.addEventListener('click', async function() {
+    const btn = this;
+    const projectId = btn.dataset.projectId;
+
+    if (!confirm('Recompile this project? This will create a new compilation with the current settings.')) {
+        return;
+    }
+
+    const originalHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Starting...';
+
+    try {
+        const response = await fetch(`/api/projects/${projectId}/compile`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+            }
+        });
+
+        if (response.ok) {
+            const result = await response.json();
+            btn.innerHTML = '<i class="bi bi-check-circle"></i> Compiling...';
+
+            // Show success message
+            alert(`Compilation started! Task ID: ${result.task_id || 'N/A'}\n\nYou can monitor progress in the background. The page will show the new compilation when ready.`);
+
+            // Optionally redirect to a task monitoring page or reload after delay
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        } else {
+            const error = await response.json();
+            alert(`Error: ${error.error || 'Failed to start compilation'}`);
+            btn.disabled = false;
+            btn.innerHTML = originalHTML;
+        }
+    } catch (err) {
+        console.error('Failed to recompile:', err);
+        alert('Failed to start compilation. Please try again.');
+        btn.disabled = false;
+        btn.innerHTML = originalHTML;
+    }
+});
 </script>
 {% endblock %}

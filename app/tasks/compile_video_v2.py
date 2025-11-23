@@ -828,28 +828,58 @@ def _compile_final_video_v2(
     except Exception:
         has_audio_stream = True  # Assume audio exists if detection fails
 
+    # Get music file duration to determine if we need to loop it
+    music_meta = extract_video_metadata(music_path)
+    music_file_duration = music_meta.get("duration", 0)
+
     # Build ffmpeg command to mix audio
     # If video has audio streams, use sidechaincompress to duck music when video audio is present
     # Otherwise, just mix normally
     music_duration = music_end_time - music_start_time
 
+    # Determine if we need to loop the music to cover the video duration
+    # We need music to last from start_time to end_time
+    needed_music_duration = music_duration + music_start_time
+    needs_loop = music_file_duration > 0 and music_file_duration < needed_music_duration
+
     if has_audio_stream:
         # Use sidechaincompress for automatic ducking when video audio is present
         # This reduces music volume by ~20dB when video audio is detected above -40dB threshold
-        filter_complex = (
-            f"[1:a]adelay={int(music_start_time * 1000)}|{int(music_start_time * 1000)},"
-            f"volume={volume},afade=t=out:st={music_duration - 2}:d=2[music];"
-            f"[0:a]asplit=2[va1][va2];"
-            f"[music][va2]sidechaincompress=threshold=0.02:ratio=20:attack=1:release=250[compressed];"
-            f"[va1][compressed]amix=inputs=2:duration=first:dropout_transition=2[aout]"
-        )
+        if needs_loop:
+            # Loop music to ensure it covers the full video duration
+            loop_count = int(needed_music_duration / music_file_duration) + 1
+            filter_complex = (
+                f"[1:a]aloop=loop={loop_count}:size={int(music_file_duration * 48000)},"
+                f"adelay={int(music_start_time * 1000)}|{int(music_start_time * 1000)},"
+                f"volume={volume},afade=t=out:st={music_duration - 2}:d=2[music];"
+                f"[0:a]asplit=2[va1][va2];"
+                f"[music][va2]sidechaincompress=threshold=0.02:ratio=20:attack=1:release=250[compressed];"
+                f"[va1][compressed]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+            )
+        else:
+            filter_complex = (
+                f"[1:a]adelay={int(music_start_time * 1000)}|{int(music_start_time * 1000)},"
+                f"volume={volume},afade=t=out:st={music_duration - 2}:d=2[music];"
+                f"[0:a]asplit=2[va1][va2];"
+                f"[music][va2]sidechaincompress=threshold=0.02:ratio=20:attack=1:release=250[compressed];"
+                f"[va1][compressed]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+            )
         audio_map = "[aout]"
     else:
         # No audio in video, use music as the only audio source
-        filter_complex = (
-            f"[1:a]adelay={int(music_start_time * 1000)}|{int(music_start_time * 1000)},"
-            f"volume={volume},afade=t=out:st={music_duration - 2}:d=2[music]"
-        )
+        # Loop music if needed to cover the video duration
+        if needs_loop:
+            loop_count = int(needed_music_duration / music_file_duration) + 1
+            filter_complex = (
+                f"[1:a]aloop=loop={loop_count}:size={int(music_file_duration * 48000)},"
+                f"adelay={int(music_start_time * 1000)}|{int(music_start_time * 1000)},"
+                f"volume={volume},afade=t=out:st={music_duration - 2}:d=2[music]"
+            )
+        else:
+            filter_complex = (
+                f"[1:a]adelay={int(music_start_time * 1000)}|{int(music_start_time * 1000)},"
+                f"volume={volume},afade=t=out:st={music_duration - 2}:d=2[music]"
+            )
         audio_map = "[music]"
 
     cmd = [
@@ -857,6 +887,8 @@ def _compile_final_video_v2(
         *_cfg_args(app, "ffmpeg", "encode"),
         "-i",
         concat_output,  # Video input
+        "-stream_loop",
+        "-1",  # Loop music input indefinitely
         "-i",
         music_path,  # Music input
         "-filter_complex",
