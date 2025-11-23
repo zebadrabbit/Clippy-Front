@@ -508,6 +508,13 @@ def compile_project_api(project_id: int):
 
     data = request.get_json(silent=True) or {}
 
+    # Log what we received for music debugging
+    current_app.logger.info(
+        f"Compile request for project {project_id}: "
+        f"background_music_id={data.get('background_music_id')}, "
+        f"music_volume={data.get('music_volume')}"
+    )
+
     # Optional subset timeline: clip_ids determines the exact
     # ordered list of clips to render. When omitted, all project clips will be used
     # (ordered by order_index then created_at).
