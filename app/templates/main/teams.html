@@ -86,7 +86,8 @@ async function loadTeams() {
         const response = await fetch('/api/teams');
         if (!response.ok) throw new Error('Failed to load teams');
 
-        teams = await response.json();
+        const data = await response.json();
+        teams = data.teams || data; // Handle both {"teams": [...]} and direct array
         renderTeams();
     } catch (error) {
         console.error('Error loading teams:', error);
