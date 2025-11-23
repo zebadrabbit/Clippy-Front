@@ -843,13 +843,14 @@ def _compile_final_video_v2(
             f"[music][va2]sidechaincompress=threshold=0.02:ratio=20:attack=1:release=250[compressed];"
             f"[va1][compressed]amix=inputs=2:duration=first:dropout_transition=2[aout]"
         )
+        audio_map = "[aout]"
     else:
-        # No audio in video, just mix music normally
+        # No audio in video, use music as the only audio source
         filter_complex = (
             f"[1:a]adelay={int(music_start_time * 1000)}|{int(music_start_time * 1000)},"
-            f"volume={volume},afade=t=out:st={music_duration - 2}:d=2[music];"
-            f"[0:a][music]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+            f"volume={volume},afade=t=out:st={music_duration - 2}:d=2[music]"
         )
+        audio_map = "[music]"
 
     cmd = [
         ffmpeg_bin,
@@ -863,7 +864,7 @@ def _compile_final_video_v2(
         "-map",
         "0:v",  # Use video from first input
         "-map",
-        "[aout]",  # Use mixed/ducked audio
+        audio_map,  # Use mixed/ducked audio or just music
         "-c:v",
         "copy",  # Copy video (already processed)
         "-c:a",
