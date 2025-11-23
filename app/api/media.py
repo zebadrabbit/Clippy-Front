@@ -413,6 +413,7 @@ def list_project_media_api(project_id: int):
             "outro": MediaType.OUTRO,
             "transition": MediaType.TRANSITION,
             "clip": MediaType.CLIP,
+            "music": MediaType.MUSIC,
         }
 
         q = MediaFile.query.filter_by(user_id=current_user.id)
