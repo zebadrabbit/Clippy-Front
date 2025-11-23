@@ -95,11 +95,14 @@ def resolve_fontfile() -> str | None:
 def parse_resolution(res_str: str | None, project_res: str | None) -> str:
     """Return WxH string from either explicit resolution or project setting.
 
-    project_res may be values like '720p', '1080p', '1440p', '2160p'.
+    project_res may be values like '720p', '1080p', '1440p', '2160p', or explicit 'WxH'.
     """
     if res_str and "x" in res_str:
         return res_str
     pr = (project_res or "").lower()
+    # Check if project_res is already in WxH format
+    if pr and "x" in pr:
+        return pr
     if pr == "720p":
         return "1280x720"
     if pr == "1080p":

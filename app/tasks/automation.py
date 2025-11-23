@@ -67,16 +67,21 @@ def _extract_key(u: str) -> str:
         return _normalize_url(u)
 
 
-def _resolve_queue() -> str:
+def _resolve_queue(app=None) -> str:
     """Pick an appropriate queue based on active queues and config.
 
     For render/compile tasks: gpu or cpu only (never celery).
     Fallback order: gpu -> cpu, defaulting to gpu if USE_GPU_QUEUE is set.
     """
-    from flask import current_app
-
     # Default to gpu or cpu based on config - NEVER use 'celery' for rendering
-    queue_name = "gpu" if bool(current_app.config.get("USE_GPU_QUEUE")) else "cpu"
+    if app:
+        queue_name = "gpu" if bool(app.config.get("USE_GPU_QUEUE")) else "cpu"
+        use_gpu = bool(app.config.get("USE_GPU_QUEUE"))
+    else:
+        # Fallback when no app context available
+        queue_name = "gpu"
+        use_gpu = True
+
     try:
         i = celery_app.control.inspect(timeout=1.0)
         active_queues = set()
@@ -89,7 +94,7 @@ def _resolve_queue() -> str:
                         active_queues.add(qname)
 
         # Prefer gpu if configured and available, otherwise cpu
-        if bool(current_app.config.get("USE_GPU_QUEUE")):
+        if use_gpu:
             if "gpu" in active_queues:
                 return "gpu"
             if "cpu" in active_queues:
@@ -325,7 +330,7 @@ def run_compilation_task(self, task_id: int) -> dict[str, Any]:
         session.add(project)
         session.commit()
 
-        # Create clips and download (reuse when possible); call the existing download task synchronously
+        # Create clips and download (reuse when possible); call the existing download task asynchronously
         from app.tasks.download_clip_v2 import (
             download_clip_task_v2 as download_clip_task,
         )
@@ -333,6 +338,8 @@ def run_compilation_task(self, task_id: int) -> dict[str, Any]:
         items: list[dict] = []
         seen = set()
         order_base = 0
+        download_task_ids = []
+
         if clip_urls:
             for idx, raw_url in enumerate(clip_urls[:clip_limit]):
                 url_s = (raw_url or "").strip()
@@ -359,10 +366,41 @@ def run_compilation_task(self, task_id: int) -> dict[str, Any]:
                 except Exception:
                     session.rollback()
                     continue
-                # Run download task inline in this worker process
-                res = download_clip_task.apply(args=(clip.id, url_s))
-                _ = res.result  # raise if failure
+                # Queue download task asynchronously
+                res = download_clip_task.apply_async(
+                    args=(clip.id, url_s), queue="celery"
+                )
+                download_task_ids.append(res.id)
                 items.append({"clip_id": clip.id, "task_id": res.id, "url": url_s})
+
+            # Poll for download completion (max 5 minutes)
+            if download_task_ids:
+                import time
+
+                max_wait = 300  # 5 minutes
+                poll_interval = 2  # 2 seconds
+                elapsed = 0
+
+                while elapsed < max_wait:
+                    all_done = True
+                    for task_id in download_task_ids:
+                        result = celery_app.AsyncResult(task_id)
+                        if not result.ready():
+                            all_done = False
+                            break
+                        if result.failed():
+                            # Download failed, but continue with others
+                            pass
+
+                    if all_done:
+                        break
+
+                    time.sleep(poll_interval)
+                    elapsed += poll_interval
+
+                # Refresh project and clips from DB to get updated media_file_id values
+                session.expire_all()
+                project = session.query(Project).get(project.id)
         else:
             # Use most recent library media files as clips (no download)
             for idx, mf in enumerate(library_media[:clip_limit]):
@@ -399,7 +437,7 @@ def run_compilation_task(self, task_id: int) -> dict[str, Any]:
         transition_ids = p.get("transition_ids") or []
         randomize_transitions = bool(p.get("randomize_transitions") or False)
 
-        qname = _resolve_queue()
+        qname = _resolve_queue(_app)
         task = compile_video_task.apply_async(
             args=(project.id,),
             kwargs={
@@ -548,7 +586,9 @@ def scheduled_tasks_tick(self) -> dict:
             if st.next_run_at and st.next_run_at <= now:
                 # Enqueue run
                 try:
-                    run_compilation_task.apply_async(args=(int(st.task_id),))
+                    run_compilation_task.apply_async(
+                        args=(int(st.task_id),), queue="celery"
+                    )
                     triggered += 1
                     st.last_run_at = now
                     # Compute next

@@ -67,7 +67,7 @@ case "${COMMAND}" in
     echo "Starting worker on ${REMOTE_HOST}..."
     ssh -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} bash << 'ENDSSH'
 cd ~/ClippyFront
-./scripts/worker/run-worker-remote.sh >> worker.log 2>&1 &
+nohup ./scripts/worker/start-celery-versioned.sh tundra-gpu "gpu,celery" 2 >> worker.log 2>&1 &
 sleep 2
 ps aux | grep celery | grep -v grep | head -2
 ENDSSH
@@ -81,14 +81,23 @@ ENDSSH
     ;;
   restart)
     echo "Restarting worker on ${REMOTE_HOST}..."
-    ssh -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} bash << 'ENDSSH'
-pkill -f 'celery.*worker' || true
-sleep 2
-cd ~/ClippyFront
-./scripts/worker/run-worker-remote.sh >> worker.log 2>&1 &
-sleep 2
-ps aux | grep celery | grep -v grep | head -2
-ENDSSH
+    # Kill existing workers
+    ssh -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} "pkill -9 -f 'celery.*worker' 2>/dev/null || true"
+    sleep 2
+
+    # Verify they're dead
+    echo "Verifying workers stopped..."
+    ssh -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} "pgrep -f 'celery.*worker' && echo 'ERROR: Workers still running!' || echo 'All workers stopped.'"
+
+    # Start new worker using the script (which handles backgrounding properly)
+    echo "Starting new worker..."
+    ssh -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} "cd ~/ClippyFront && bash ./scripts/worker/start-celery-versioned.sh tundra-gpu 'gpu,celery' 2 >> worker.log 2>&1 &"
+
+    sleep 3
+
+    # Show status
+    echo "Worker status:"
+    ssh -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} "ps aux | grep 'celery.*worker' | grep -v grep || echo 'No workers running'"
     ;;
   logs)
     echo "Tailing worker logs on ${REMOTE_HOST}..."

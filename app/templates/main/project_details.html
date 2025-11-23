@@ -36,20 +36,29 @@
           <div class="row row-cols-1 row-cols-md-2 g-3">
             {% for c in clips %}
             <div class="col">
-              <div class="border rounded p-2 h-100">
+              <div class="border rounded p-3 h-100 clip-card position-relative" data-preview-url="{% if c.media_file %}{{ url_for('main.media_preview', media_id=c.media_file.id) }}{% endif %}">
                 <div class="d-flex align-items-start">
                   {% if c.media_file and c.media_file.thumbnail_path %}
-                    <img src="{{ url_for('main.media_thumbnail', media_id=c.media_file.id) }}" class="me-2 rounded" style="width: 96px; height: 54px; object-fit: cover;" alt="thumb">
+                    <div class="position-relative me-3" style="width: 120px; height: 68px;">
+                      <img src="{{ url_for('main.media_thumbnail', media_id=c.media_file.id) }}" class="clip-thumb rounded" style="width: 120px; height: 68px; object-fit: cover;" alt="thumb">
+                      <video class="position-absolute top-0 start-0 clip-preview d-none rounded" muted loop playsinline preload="metadata" style="width: 120px; height: 68px; object-fit: cover;"></video>
+                      {% if c.duration %}
+                        {% set mins = (c.duration // 60)|int %}
+                        {% set secs = (c.duration % 60)|int %}
+                        <span class="badge bg-dark position-absolute bottom-0 end-0 m-1" style="opacity:0.9; font-size:0.7rem;">
+                          {{ '%d:%02d' | format(mins, secs) }}
+                        </span>
+                      {% endif %}
+                    </div>
                   {% endif %}
                   <div class="flex-grow-1">
-                    <div class="fw-semibold text-truncate" title="{{ c.title }}">{{ c.title }}</div>
-                    <ul class="small text-muted mb-0 ps-3">
-                      {% if c.creator_name %}<li><i class="bi bi-person"></i> {{ c.creator_name }}</li>{% endif %}
-                      {% if c.game_name %}<li><i class="bi bi-controller"></i> {{ c.game_name }}</li>{% endif %}
-                      {% if c.clip_created_at %}<li><i class="bi bi-calendar"></i> {{ c.clip_created_at.strftime('%Y-%m-%d') }}</li>{% endif %}
-                      <li><i class="bi bi-clock"></i> {{ c.duration_formatted }}</li>
+                    <div class="fw-semibold text-truncate mb-1" title="{{ c.title }}">{{ c.title }}</div>
+                    <ul class="small text-muted mb-0 list-unstyled">
+                      {% if c.creator_name %}<li class="mb-1"><i class="bi bi-person-fill me-1"></i>{{ c.creator_name }}</li>{% endif %}
+                      {% if c.clip_created_at %}<li class="mb-1"><i class="bi bi-calendar me-1"></i>{{ c.clip_created_at.strftime('%b %d, %Y') }}</li>{% endif %}
+                      {% if c.game_name %}<li class="mb-1"><i class="bi bi-controller me-1"></i>{{ c.game_name }}</li>{% endif %}
                       {% if c.source_platform %}
-                        <li>Source: {{ c.source_platform }}{% if c.source_url %} · <a href="{{ c.source_url }}" target="_blank">open</a>{% endif %}</li>
+                        <li><i class="bi bi-box-arrow-up-right me-1"></i>{{ c.source_platform|title }}{% if c.source_url %} · <a href="{{ c.source_url }}" target="_blank" class="text-decoration-none">view</a>{% endif %}</li>
                       {% endif %}
                     </ul>
                   </div>
@@ -71,17 +80,26 @@
         <div class="card-header card-header--primary"><strong>Compilation</strong></div>
         <div class="card-body d-flex flex-column">
           {% if project.output_filename %}
-            <div class="mb-2">
-              <div class="fw-semibold">{{ project.name }}</div>
-              <div class="small text-muted">
-                {% if compiled_media %}
-                  <span class="me-2"><i class="bi bi-clock"></i> {{ compiled_media.duration_formatted }}</span>
+            <div class="mb-3">
+              <div class="fw-semibold mb-2">{{ project.name }}</div>
+              <dl class="row small mb-0">
+                {% if compiled_media and compiled_media.duration %}
+                  {% set mins = (compiled_media.duration // 60)|int %}
+                  {% set secs = (compiled_media.duration % 60)|int %}
+                  <dt class="col-sm-4 text-muted"><i class="bi bi-clock"></i> Duration:</dt>
+                  <dd class="col-sm-8 mb-1">{{ '%d:%02d' | format(mins, secs) }}</dd>
                 {% endif %}
                 {% if project.output_file_size %}
-                  <span>Size: {{ '%.1f'|format(project.output_file_size / (1024*1024)) }} MB</span>
+                  <dt class="col-sm-4 text-muted"><i class="bi bi-file-earmark"></i> File Size:</dt>
+                  <dd class="col-sm-8 mb-1">{{ '%.1f'|format(project.output_file_size / (1024*1024)) }} MB</dd>
                 {% endif %}
-              </div>
-              <div class="small text-muted mt-1">File: {{ project.output_filename }}</div>
+                {% if compiled_media and compiled_media.width and compiled_media.height %}
+                  <dt class="col-sm-4 text-muted"><i class="bi bi-aspect-ratio"></i> Resolution:</dt>
+                  <dd class="col-sm-8 mb-1">{{ compiled_media.width }}×{{ compiled_media.height }}</dd>
+                {% endif %}
+                <dt class="col-sm-4 text-muted"><i class="bi bi-file-code"></i> Filename:</dt>
+                <dd class="col-sm-8 mb-0 text-break">{{ project.output_filename }}</dd>
+              </dl>
             </div>
             <div class="ratio ratio-16x9 mb-3">
               <video controls preload="metadata" {% if compiled_media %}poster="{{ url_for('main.media_thumbnail', media_id=compiled_media.id) }}"{% endif %}>
@@ -95,73 +113,80 @@
               {% endif %}
               <button class="btn btn-outline-secondary" disabled title="Coming soon"><i class="bi bi-youtube"></i> Share to YouTube</button>
             </div>
+            <div class="border-top pt-3 mt-3">
+              <h6 class="mb-3">Compilation Elements</h6>
+              <dl class="row small mb-0">
+                <dt class="col-sm-3 text-muted">Intro:</dt>
+                <dd class="col-sm-9 mb-2">
+                  {% if intros and intros|length > 0 %}
+                    {% set m = intros[0] %}
+                    <div class="d-flex align-items-center gap-2">
+                      <a href="#" tabindex="0"
+                         data-bs-toggle="popover"
+                         data-bs-trigger="hover focus"
+                         data-bs-placement="top"
+                         data-bs-container="body"
+                         data-bs-custom-class="media-popover"
+                         data-bs-html="true"
+                         data-bs-content="<img src='{{ url_for('main.media_thumbnail', media_id=m.id) }}' alt='preview'>"
+                         title="{{ m.original_filename|e }}">
+                        <img src="{{ url_for('main.media_thumbnail', media_id=m.id) }}" alt="intro" class="rounded" style="width:60px;height:34px;object-fit:cover;">
+                      </a>
+                      <span class="text-truncate" title="{{ m.original_filename }}">{{ m.original_filename }}</span>
+                    </div>
+                  {% else %}
+                    <span class="text-muted">None</span>
+                  {% endif %}
+                </dd>
+                <dt class="col-sm-3 text-muted">Outro:</dt>
+                <dd class="col-sm-9 mb-2">
+                  {% if outros and outros|length > 0 %}
+                    {% set m = outros[0] %}
+                    <div class="d-flex align-items-center gap-2">
+                      <a href="#" tabindex="0"
+                         data-bs-toggle="popover"
+                         data-bs-trigger="hover focus"
+                         data-bs-placement="top"
+                         data-bs-container="body"
+                         data-bs-custom-class="media-popover"
+                         data-bs-html="true"
+                         data-bs-content="<img src='{{ url_for('main.media_thumbnail', media_id=m.id) }}' alt='preview'>"
+                         title="{{ m.original_filename|e }}">
+                        <img src="{{ url_for('main.media_thumbnail', media_id=m.id) }}" alt="outro" class="rounded" style="width:60px;height:34px;object-fit:cover;">
+                      </a>
+                      <span class="text-truncate" title="{{ m.original_filename }}">{{ m.original_filename }}</span>
+                    </div>
+                  {% else %}
+                    <span class="text-muted">None</span>
+                  {% endif %}
+                </dd>
+                <dt class="col-sm-3 text-muted">Transitions:</dt>
+                <dd class="col-sm-9 mb-0">
+                  {% if transitions and transitions|length > 0 %}
+                    <div class="d-flex flex-wrap gap-2">
+                      {% for t in transitions %}
+                        <a href="#" tabindex="0"
+                           data-bs-toggle="popover"
+                           data-bs-trigger="hover focus"
+                           data-bs-placement="top"
+                           data-bs-container="body"
+                           data-bs-custom-class="media-popover"
+                           data-bs-html="true"
+                           data-bs-content="<img src='{{ url_for('main.media_thumbnail', media_id=t.id) }}' alt='preview'>"
+                           title="{{ t.original_filename|e }}">
+                          <img src="{{ url_for('main.media_thumbnail', media_id=t.id) }}" alt="transition" class="rounded" style="width:60px;height:34px;object-fit:cover;">
+                        </a>
+                      {% endfor %}
+                    </div>
+                  {% else %}
+                    <span class="text-muted">None</span>
+                  {% endif %}
+                </dd>
+              </dl>
+            </div>
           {% else %}
             <p class="text-muted mb-0">No compiled output yet. Click Compile to start.</p>
           {% endif %}
-        </div>
-        <div class="card-footer">
-          <div class="small text-muted">
-            <div class="d-flex align-items-center gap-2 flex-wrap">
-              <strong>Intro:</strong>
-              {% if intros and intros|length > 0 %}
-                {% set m = intros[0] %}
-                <a href="#" tabindex="0"
-                   data-bs-toggle="popover"
-                   data-bs-trigger="hover focus"
-                   data-bs-placement="top"
-                   data-bs-container="body"
-                   data-bs-custom-class="media-popover"
-                   data-bs-html="true"
-                   data-bs-content="<img src='{{ url_for('main.media_thumbnail', media_id=m.id) }}' alt='preview'>"
-                   title="{{ m.original_filename|e }}">
-                  <img src="{{ url_for('main.media_thumbnail', media_id=m.id) }}" alt="intro" class="rounded" style="width:40px;height:24px;object-fit:cover;">
-                </a>
-                <span class="text-truncate" style="max-width: 160px;" title="{{ m.original_filename }}">{{ m.original_filename }}</span>
-              {% else %}
-                <span>—</span>
-              {% endif %}
-            </div>
-            <div class="d-flex align-items-center gap-2 flex-wrap mt-2">
-              <strong>Outro:</strong>
-              {% if outros and outros|length > 0 %}
-                {% set m = outros[0] %}
-                <a href="#" tabindex="0"
-                   data-bs-toggle="popover"
-                   data-bs-trigger="hover focus"
-                   data-bs-placement="top"
-                   data-bs-container="body"
-                   data-bs-custom-class="media-popover"
-                   data-bs-html="true"
-                   data-bs-content="<img src='{{ url_for('main.media_thumbnail', media_id=m.id) }}' alt='preview'>"
-                   title="{{ m.original_filename|e }}">
-                  <img src="{{ url_for('main.media_thumbnail', media_id=m.id) }}" alt="outro" class="rounded" style="width:40px;height:24px;object-fit:cover;">
-                </a>
-                <span class="text-truncate" style="max-width: 160px;" title="{{ m.original_filename }}">{{ m.original_filename }}</span>
-              {% else %}
-                <span>—</span>
-              {% endif %}
-            </div>
-            <div class="d-flex align-items-center gap-2 flex-wrap mt-2">
-              <strong>Transitions:</strong>
-              {% if transitions and transitions|length > 0 %}
-                {% for t in transitions %}
-                  <a href="#" tabindex="0"
-                     data-bs-toggle="popover"
-                     data-bs-trigger="hover focus"
-                     data-bs-placement="top"
-                     data-bs-container="body"
-                     data-bs-custom-class="media-popover"
-                     data-bs-html="true"
-                     data-bs-content="<img src='{{ url_for('main.media_thumbnail', media_id=t.id) }}' alt='preview'>"
-                     title="{{ t.original_filename|e }}">
-                    <img src="{{ url_for('main.media_thumbnail', media_id=t.id) }}" alt="transition" class="rounded me-1" style="width:40px;height:24px;object-fit:cover;">
-                  </a>
-                {% endfor %}
-              {% else %}
-                <span>—</span>
-              {% endif %}
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -223,6 +248,40 @@
 </div>
 
 <script>
+// Clip hover preview functionality
+(function(){
+  const clipCards = document.querySelectorAll('.clip-card');
+  clipCards.forEach(function(card){
+    const previewUrl = card.getAttribute('data-preview-url');
+    if (!previewUrl) return;
+    const video = card.querySelector('video.clip-preview');
+    const img = card.querySelector('img.clip-thumb');
+    if (!video) return;
+    let loaded = false;
+    function showPreview(){
+      try {
+        if (!loaded) {
+          video.src = previewUrl;
+          loaded = true;
+        }
+        if (img) img.classList.add('d-none');
+        video.classList.remove('d-none');
+        video.play().catch(function(_){});
+      } catch (_) {}
+    }
+    function hidePreview(){
+      try {
+        video.pause();
+        video.currentTime = 0;
+        video.classList.add('d-none');
+        if (img) img.classList.remove('d-none');
+      } catch (_) {}
+    }
+    card.addEventListener('mouseenter', showPreview);
+    card.addEventListener('mouseleave', hidePreview);
+  });
+})();
+
 document.getElementById('saveAsTemplateBtn')?.addEventListener('click', async function() {
     const templateName = prompt('Enter a name for this template:', '{{ project.name }} Template');
     if (!templateName) return;

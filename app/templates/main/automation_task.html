@@ -22,6 +22,11 @@
         <div class="card-body">
           <div><span class="text-muted">Description:</span> <span id="taskDesc" class=""></span></div>
           <div class="mt-2 small text-muted">Last run: <span id="lastRun">-</span></div>
+          <div id="lastProjectContainer" class="mt-2 small" style="display:none;">
+            <span class="text-muted">Last project:</span>
+            <a id="lastProjectLink" href="#" target="_blank" class="fw-semibold"></a>
+            <span id="lastProjectStatus" class="badge ms-1"></span>
+          </div>
           <div class="mt-2 small text-muted">Created: <span id="createdAt">-</span></div>
           <div class="mt-2 small text-muted">Updated: <span id="updatedAt">-</span></div>
         </div>
@@ -65,6 +70,35 @@
       </div>
     </div>
   </div>
+
+  <div class="row g-3 mt-2">
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header d-flex align-items-center justify-content-between">
+          <span class="fw-semibold"><i class="bi bi-clock-history me-2"></i>Activity History</span>
+          <button class="btn btn-sm btn-outline-secondary" id="btnRefreshHistory"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>Date</th>
+                  <th>Project</th>
+                  <th>Downloads</th>
+                  <th>Compilation Status</th>
+                  <th class="text-end">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="historyTbody">
+                <tr><td colspan="5" class="text-center py-4 text-muted">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 {% include "main/partials/task_edit_modal.html" %}
@@ -97,6 +131,25 @@
     document.getElementById('lastRun').textContent = fmt(t.last_run_at);
     document.getElementById('createdAt').textContent = fmt(t.created_at);
     document.getElementById('updatedAt').textContent = fmt(t.updated_at);
+
+    // Show last project if available
+    const lastProjContainer = document.getElementById('lastProjectContainer');
+    const lastProjLink = document.getElementById('lastProjectLink');
+    const lastProjStatus = document.getElementById('lastProjectStatus');
+    if (t.last_project) {
+      lastProjLink.href = t.last_project.url;
+      lastProjLink.textContent = t.last_project.name;
+      lastProjStatus.textContent = t.last_project.status || 'unknown';
+      lastProjStatus.className = 'badge ms-1 ' + (
+        t.last_project.status === 'completed' ? 'bg-success' :
+        t.last_project.status === 'compiling' ? 'bg-primary' :
+        t.last_project.status === 'draft' ? 'bg-secondary' :
+        t.last_project.status === 'failed' ? 'bg-danger' : 'bg-secondary'
+      );
+      lastProjContainer.style.display = '';
+    } else {
+      lastProjContainer.style.display = 'none';
+    }
   }
 
   async function loadSchedules(){
@@ -197,6 +250,67 @@
   // Initial load
   loadTask();
   loadSchedules();
+  loadHistory();
+
+  async function loadHistory(){
+    const tbody = document.getElementById('historyTbody');
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">Loading…</td></tr>';
+    try{
+      const url = "{{ url_for('api.get_compilation_task_history_api', task_id=0) }}".replace('0', String(taskId));
+      const data = await fetchJSON(url);
+      const items = data.items || [];
+      if (!items.length){
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">No activity yet. Run this task to create projects.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = '';
+      for(const h of items){
+        const tr = document.createElement('tr');
+
+        // Status badge for compilation
+        let statusBadge = '';
+        let compileText = '-';
+        if (h.compilations && h.compilations.length > 0) {
+          const comp = h.compilations[0]; // Most recent compilation
+          if (comp.status === 'success') {
+            statusBadge = '<span class="badge bg-success">Completed</span>';
+            compileText = 'Success';
+          } else if (comp.status === 'failed') {
+            statusBadge = '<span class="badge bg-danger">Failed</span>';
+            compileText = comp.error_message ?
+              `<span class="text-danger" title="${comp.error_message}">Failed</span>` :
+              '<span class="text-danger">Failed</span>';
+          } else if (comp.status === 'pending' || comp.status === 'processing') {
+            statusBadge = '<span class="badge bg-primary">Processing</span>';
+            compileText = `${comp.status} (${comp.progress}%)`;
+          } else {
+            statusBadge = `<span class="badge bg-secondary">${comp.status}</span>`;
+            compileText = comp.status;
+          }
+        } else {
+          statusBadge = '<span class="badge bg-secondary">No compilation</span>';
+          compileText = 'Not compiled';
+        }
+
+        tr.innerHTML = `
+          <td class="text-nowrap">${fmt(h.created_at)}</td>
+          <td>
+            <a href="${h.project_url}" class="fw-semibold">${h.project_name}</a>
+            <div class="small text-muted">Project #${h.project_id}</div>
+          </td>
+          <td class="text-center">${h.downloads_count || 0}</td>
+          <td>${statusBadge}</td>
+          <td class="text-end">
+            <a href="${h.project_url}" class="btn btn-sm btn-outline-primary"><i class="bi bi-box-arrow-up-right"></i> View</a>
+          </td>`;
+        tbody.appendChild(tr);
+      }
+    }catch{
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-danger">Failed to load history</td></tr>';
+    }
+  }
+
+  document.getElementById('btnRefreshHistory')?.addEventListener('click', loadHistory);
 })();
 </script>
 {% endblock %}

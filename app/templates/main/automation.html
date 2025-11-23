@@ -21,16 +21,8 @@
     <div class="card-body p-0">
       <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
-          <thead class="table-light">
-            <tr>
-              <th>Name</th>
-              <th>Description</th>
-              <th class="text-nowrap">Last Run</th>
-              <th class="text-end">Actions</th>
-            </tr>
-          </thead>
           <tbody id="tasksTbody">
-            <tr><td colspan="4" class="text-center py-4 text-muted">Loading…</td></tr>
+            <tr><td colspan="2" class="text-center py-4 text-muted">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -40,23 +32,32 @@
   <template id="taskRowTpl">
     <tr>
       <td>
-        <div class="fw-semibold name"></div>
-        <div class="text-muted small id"></div>
-      </td>
-      <td class="desc text-muted small"></td>
-      <td class="last"></td>
-      <td class="text-end">
-        <div class="d-flex flex-wrap gap-1 justify-content-end">
-          <button class="btn btn-sm btn-outline-primary run-now"><i class="bi bi-play-fill"></i> Run</button>
-          <button class="btn btn-sm btn-outline-secondary schedules-toggle"><i class="bi bi-calendar3"></i> Schedules</button>
-          <button class="btn btn-sm btn-outline-info edit-task"><i class="bi bi-pencil"></i> Edit</button>
-          <button class="btn btn-sm btn-outline-danger delete-task"><i class="bi bi-trash"></i></button>
-          <button class="btn btn-sm btn-outline-secondary clone-task"><i class="bi bi-files"></i> Clone</button>
+        <div class="d-flex flex-column gap-2">
+          <div class="d-flex align-items-start justify-content-between">
+            <div class="flex-grow-1">
+              <div class="fw-semibold name mb-1"></div>
+              <div class="text-muted small desc mb-1"></div>
+              <div class="text-muted small">
+                <span class="me-3"><i class="bi bi-clock me-1"></i>Last run: <span class="last"></span></span>
+                <span class="id"></span>
+              </div>
+            </div>
+          </div>
+          <div class="d-flex align-items-center justify-content-between pt-2 border-top">
+            <div class="last-project d-flex align-items-center gap-2">
+              <span class="text-muted small">Last project:</span>
+              <a href="#" class="project-link small" style="display:none;"></a>
+              <span class="project-status badge" style="display:none;"></span>
+              <span class="no-project text-muted small" style="display:none;">-</span>
+            </div>
+            <div class="d-flex flex-wrap gap-1 justify-content-end task-actions"></div>
+          </div>
         </div>
       </td>
+      <td class="text-end align-top"></td>
     </tr>
     <tr class="schedules-row" style="display:none;">
-      <td colspan="4">
+      <td colspan="2">
         <div class="p-3 border-top">
           <div class="mb-2">
             <div class="d-flex flex-wrap align-items-end justify-content-between gap-2">
@@ -144,12 +145,12 @@
   }
 
   async function loadTasks(){
-    tasksTbody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-muted">Loading…</td></tr>';
+    tasksTbody.innerHTML = '<tr><td colspan="2" class="text-center py-4 text-muted">Loading…</td></tr>';
     try {
   const data = await fetchJSON("{{ url_for('api.list_compilation_tasks_api') }}");
       const items = data.items || [];
       if (!items.length){
-        tasksTbody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-muted">No tasks yet. Create your first task.</td></tr>';
+        tasksTbody.innerHTML = '<tr><td colspan="2" class="text-center py-4 text-muted">No tasks yet. Create your first task.</td></tr>';
         return;
       }
       tasksTbody.innerHTML = '';
@@ -166,10 +167,62 @@
           window.location.href = "{{ url_for('main.automation_task_details', task_id=0) }}".replace('0', String(t.id));
         });
         frag.querySelector('.id').textContent = `Task #${t.id}`;
-        frag.querySelector('.desc').textContent = t.description || '';
+        frag.querySelector('.desc').textContent = t.description || 'No description';
         frag.querySelector('.last').textContent = fmt(t.last_run_at);
+
+        // Show last project if available
+        const projectLink = frag.querySelector('.project-link');
+        const projectStatus = frag.querySelector('.project-status');
+        const noProject = frag.querySelector('.no-project');
+        if (t.last_project) {
+          projectLink.href = t.last_project.url;
+          projectLink.textContent = t.last_project.name;
+          projectLink.style.display = '';
+          projectStatus.textContent = t.last_project.status || 'unknown';
+          projectStatus.className = 'project-status badge ' + (
+            t.last_project.status === 'completed' ? 'bg-success' :
+            t.last_project.status === 'compiling' ? 'bg-primary' :
+            t.last_project.status === 'draft' ? 'bg-secondary' :
+            t.last_project.status === 'failed' ? 'bg-danger' : 'bg-secondary'
+          );
+          projectStatus.style.display = '';
+          noProject.style.display = 'none';
+        } else {
+          projectLink.style.display = 'none';
+          projectStatus.style.display = 'none';
+          noProject.style.display = '';
+        }
+
+        // Create action buttons container
+        const actionsContainer = frag.querySelector('.task-actions');
+
+        const runBtn = document.createElement('button');
+        runBtn.className = 'btn btn-sm btn-outline-primary';
+        runBtn.innerHTML = '<i class="bi bi-play-fill"></i> Run';
+        actionsContainer.appendChild(runBtn);
+
+        const schedBtn = document.createElement('button');
+        schedBtn.className = 'btn btn-sm btn-outline-secondary schedules-toggle';
+        schedBtn.innerHTML = '<i class="bi bi-calendar3"></i> Schedules';
+        actionsContainer.appendChild(schedBtn);
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn btn-sm btn-outline-info';
+        editBtn.innerHTML = '<i class="bi bi-pencil"></i> Edit';
+        actionsContainer.appendChild(editBtn);
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn btn-sm btn-outline-danger';
+        delBtn.innerHTML = '<i class="bi bi-trash"></i>';
+        actionsContainer.appendChild(delBtn);
+
+        const cloneBtn = document.createElement('button');
+        cloneBtn.className = 'btn btn-sm btn-outline-secondary';
+        cloneBtn.innerHTML = '<i class="bi bi-files"></i> Clone';
+        actionsContainer.appendChild(cloneBtn);
+
         // Run now
-        frag.querySelector('.run-now').addEventListener('click', async () => {
+        runBtn.addEventListener('click', async () => {
           try {
             const url = "{{ url_for('api.run_compilation_task_api', task_id=0) }}".replace('0', String(t.id));
             const resp = await fetch(url, { method:'POST', headers: { 'X-CSRFToken': csrf, 'Content-Type':'application/json' } });
@@ -183,7 +236,7 @@
           } catch (e) { alert('Failed to start task'); }
         });
         // Schedules
-  const schedToggle = frag.querySelector('.schedules-toggle');
+  const schedToggle = schedBtn;
   const schedRow = frag.querySelector('.schedules-row');
   const schedTbody = frag.querySelector('.sched-tbody');
   const typeSel = frag.querySelector('.sched-type');
@@ -206,9 +259,9 @@
   errBox.style.display = 'none';
   controls?.appendChild(errBox);
 
+
         // Edit task
-        const editBtn = frag.querySelector('.edit-task');
-        editBtn?.addEventListener('click', async () => {
+        editBtn.addEventListener('click', async () => {
           try {
             const url = "{{ url_for('api.get_compilation_task_api', task_id=0) }}".replace('0', String(t.id));
             const data = await fetchJSON(url);
@@ -218,8 +271,7 @@
           }
         });
         // Delete task
-        const delBtn = frag.querySelector('.delete-task');
-        delBtn?.addEventListener('click', async () => {
+        delBtn.addEventListener('click', async () => {
           if (!confirm('Delete this task and its schedules?')) return;
           try {
             const url = "{{ url_for('api.delete_compilation_task_api', task_id=0) }}".replace('0', String(t.id));
@@ -385,7 +437,7 @@
         tasksTbody.appendChild(frag);
       }
     } catch (e) {
-      tasksTbody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-danger">Failed to load tasks</td></tr>';
+      tasksTbody.innerHTML = '<tr><td colspan="2" class="text-center py-4 text-danger">Failed to load tasks</td></tr>';
     }
   }
 

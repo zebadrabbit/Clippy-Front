@@ -20,6 +20,8 @@ import tempfile
 from datetime import datetime
 from typing import Any
 
+import structlog
+
 from app import storage as storage_lib
 from app.ffmpeg_config import (
     audio_args,
@@ -38,6 +40,8 @@ from app.tasks.video_processing import (
     extract_video_metadata,
     resolve_binary,
 )
+
+logger = structlog.get_logger(__name__)
 
 
 def _resolve_avatar_path(
@@ -294,13 +298,40 @@ def _process_clip_v2(
         cmd.extend(["-t", str(max_clip_duration)])
 
     # Apply tier-based resolution cap
-    eff_label = _cap_resolution_label(
-        project_data.get("output_resolution", "1080p"),
-        tier_limits.get("max_res_label"),
+    project_output_res = project_data.get("output_resolution", "1080p")
+    tier_max_res = tier_limits.get("max_res_label")
+    logger.info(
+        "resolution_pipeline",
+        project_output_res=project_output_res,
+        tier_max_res=tier_max_res,
+        clip_id=clip_data.get("id"),
     )
-    target_res = parse_resolution(
-        None, eff_label or project_data.get("output_resolution", "1080p")
+    print(
+        f"[CLIP] Resolution debug - Project: {project_output_res}, Tier max: {tier_max_res}"
     )
+
+    eff_label = _cap_resolution_label(project_output_res, tier_max_res)
+    logger.info(
+        "resolution_after_cap", effective_label=eff_label, clip_id=clip_data.get("id")
+    )
+    print(f"[CLIP] Resolution debug - After cap: {eff_label}")
+
+    target_res = parse_resolution(None, eff_label or project_output_res)
+    logger.info("resolution_final", target_res=target_res, clip_id=clip_data.get("id"))
+    print(f"[CLIP] Resolution debug - Final target_res: {target_res}")
+
+    # Determine if we need letterboxing (portrait output with landscape input)
+    target_width, target_height = map(int, target_res.split("x"))
+    is_portrait_output = target_height > target_width
+
+    # Build scale filter with letterboxing for portrait outputs
+    if is_portrait_output:
+        # For portrait: scale up by 20%, crop to fit, then pad to canvas size
+        # This zooms in slightly to reduce black bars while maintaining 16:9 content
+        scale_filter = f"scale=iw*1.2:ih*1.2,crop={target_width}:ih,pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:black"
+    else:
+        # For landscape/square: scale normally
+        scale_filter = f"scale={target_width}:{target_height}:flags=lanczos"
 
     # Overlay text (creator + game name)
     font = resolve_fontfile()
@@ -335,9 +366,10 @@ def _process_clip_v2(
             author_text = (creator_name or "").replace("'", "'")
             game_text = (game_name or "").replace("'", "'") if game_name else ""
 
-            # Start with main video, apply drawbox and text overlays, then overlay scaled avatar last
+            # Scale video first (with letterboxing if portrait), then apply overlays
             filter_chain = (
-                f"[0:v]drawbox=enable='between(t,3,10)':x=0:y=(ih)-238:h=157:w=1000:color=black@0.7:t=fill,"
+                f"[0:v]{scale_filter},"
+                f"drawbox=enable='between(t,3,10)':x=0:y=(ih)-238:h=157:w=1000:color=black@0.7:t=fill,"
                 f"drawtext=enable='between(t,3,10)':x=198:y=(h)-210:fontfile='{font}':fontsize=28:fontcolor=white@0.4:text='clip by',"
                 f"drawtext=enable='between(t,3,10)':x=198:y=(h)-180:fontfile='{font}':fontsize=48:fontcolor=white@0.9:text='{author_text}'"
             )
@@ -354,14 +386,11 @@ def _process_clip_v2(
             has_avatar_flag, overlay_chain = build_overlay_filter(
                 author=creator_name, game=game_name, fontfile=font, avatar_path=None
             )
-            filter_complex = (
-                f"[0:v]scale={target_res.split('x')[0]}:{target_res.split('x')[1]}:flags=lanczos,"
-                + overlay_chain
-                + "[v]"
-            )
+            filter_complex = f"[0:v]{scale_filter}," + overlay_chain + "[v]"
     else:
-        filter_complex = f"[0:v]scale={target_res.split('x')[0]}:{target_res.split('x')[1]}:flags=lanczos[v]"
+        filter_complex = f"[0:v]{scale_filter}[v]"
 
+    print(f"[CLIP] Built filter_complex: {filter_complex[:200]}...")
     cmd.extend(["-filter_complex", filter_complex])
 
     # Map the filtered video output
@@ -458,13 +487,25 @@ def _process_media_file_v2(
         None, eff_label or project_data.get("output_resolution", "1080p")
     )
 
+    target_width, target_height = map(int, target_res.split("x"))
+    is_portrait_output = target_height > target_width
+
+    # For intro/outro/transitions/static: scale and crop to fit portrait canvas
+    if is_portrait_output:
+        # Scale to ensure we have enough height, then crop to exact dimensions
+        # For 1920x1080 -> 1080x1920: scale to -1:1920 (auto width), then crop to 1080:1920
+        scale_filter = f"scale=-1:{target_height},crop={target_width}:{target_height}"
+    else:
+        # For landscape/square: scale normally
+        scale_filter = f"scale={target_width}:{target_height}:flags=lanczos"
+
     cmd = [
         ffmpeg_bin,
         *_cfg_args(app, "ffmpeg", "encode"),
         "-i",
         media_path,
         "-vf",
-        f"scale={target_res.split('x')[0]}:{target_res.split('x')[1]}:flags=lanczos",
+        scale_filter,
         *encoder_args(ffmpeg_bin),
         "-y",
         output_path,
@@ -559,6 +600,16 @@ def _build_timeline_with_transitions_v2(
             if os.path.exists(instance_static):
                 static_bumper_path = instance_static
 
+    # Process static bumper if present
+    processed_static_path = None
+    if static_bumper_path and os.path.exists(static_bumper_path):
+        processed_static_path = os.path.join(temp_dir, "static_processed.mp4")
+        # Create a minimal media_data dict for static.mp4
+        static_media_data = {"file_path": static_bumper_path}
+        _process_media_file_v2(
+            static_media_data, processed_static_path, project_data, tier_limits
+        )
+
     # Build timeline with transitions between segments
     import random as _random
 
@@ -576,8 +627,8 @@ def _build_timeline_with_transitions_v2(
         segments.append(intro_path)
 
     # Static after intro
-    if intro_path and static_bumper_path:
-        segments.append(static_bumper_path)
+    if intro_path and processed_static_path:
+        segments.append(processed_static_path)
 
     # Add clips with transitions and static bumpers
     transition_idx = 0
@@ -590,15 +641,15 @@ def _build_timeline_with_transitions_v2(
                 transition_idx += 1
 
         # Static before clip (after transition, or at start if no intro)
-        if static_bumper_path:
-            segments.append(static_bumper_path)
+        if processed_static_path:
+            segments.append(processed_static_path)
 
         # The clip itself
         segments.append(clip_path)
 
         # Static after clip
-        if static_bumper_path:
-            segments.append(static_bumper_path)
+        if processed_static_path:
+            segments.append(processed_static_path)
 
     # Outro
     if outro_path:

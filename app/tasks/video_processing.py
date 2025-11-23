@@ -37,7 +37,7 @@ def _normalize_res_label(val: str | None) -> str | None:
     """Normalize a resolution label from various inputs.
 
     Accepts labels like '720p', '1080p', '1440p' ('2k'), '2160p' ('4k'), or WxH strings.
-    Returns one of: '720p' | '1080p' | '1440p' | '2160p' or None if unknown.
+    Returns one of: '720p' | '1080p' | '1440p' | '2160p' | 'WxH' or None if unknown.
     """
     if not val:
         return None
@@ -48,26 +48,51 @@ def _normalize_res_label(val: str | None) -> str | None:
         return "1440p"
     if s in {"4k"}:
         return "2160p"
+    # Pass through explicit WxH strings without normalization
     if "x" in s:
         try:
             parts = s.split("x")
+            w = int(parts[0]) if len(parts) > 0 else None
             h = int(parts[1]) if len(parts) > 1 else None
-            if h:
-                if h <= 720:
-                    return "720p"
-                if h <= 1080:
-                    return "1080p"
-                if h <= 1440:
-                    return "1440p"
-                return "2160p"
+            if w and h:
+                return f"{w}x{h}"
         except Exception:
             return None
     return None
 
 
 def _res_rank(label: str | None) -> int:
+    """Return ranking for resolution comparison. Higher = better quality.
+
+    Handles both label format ('720p', '1080p') and explicit WxH format.
+    For WxH, ranks by pixel count (width * height).
+    """
     order = {None: -1, "720p": 0, "1080p": 1, "1440p": 2, "2160p": 3}
-    return order.get(label, -1)
+    if label in order:
+        return order[label]
+    # Handle explicit WxH format by calculating pixel count
+    if label and "x" in str(label):
+        try:
+            parts = str(label).split("x")
+            w = int(parts[0])
+            h = int(parts[1])
+            pixels = w * h
+            # Map to equivalent label ranks for comparison
+            # 720p = 1280x720 = 921,600
+            # 1080p = 1920x1080 = 2,073,600
+            # 1440p = 2560x1440 = 3,686,400
+            # 2160p = 3840x2160 = 8,294,400
+            if pixels <= 921600:
+                return 0  # 720p equivalent
+            elif pixels <= 2073600:
+                return 1  # 1080p equivalent
+            elif pixels <= 3686400:
+                return 2  # 1440p equivalent
+            else:
+                return 3  # 2160p+ equivalent
+        except Exception:
+            return -1
+    return -1
 
 
 def _cap_resolution_label(

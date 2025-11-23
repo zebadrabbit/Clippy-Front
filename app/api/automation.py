@@ -5,7 +5,7 @@ Registers routes on the shared `api_bp` blueprint.
 """
 import re
 
-from flask import jsonify, request
+from flask import jsonify, request, url_for
 from flask_login import current_user, login_required
 
 from app.api import api_bp
@@ -42,29 +42,58 @@ def create_compilation_task_api():
 @api_bp.route("/automation/tasks", methods=["GET"])
 @login_required
 def list_compilation_tasks_api():
-    from app.models import CompilationTask
+    from sqlalchemy import desc
+
+    from app.models import CompilationTask, Project
 
     items = (
         CompilationTask.query.filter_by(user_id=current_user.id)
         .order_by(CompilationTask.updated_at.desc())
         .all()
     )
-    return jsonify(
-        {
-            "items": [
-                {
-                    "id": t.id,
-                    "name": t.name,
-                    "description": t.description,
-                    "last_run_at": t.last_run_at.isoformat() if t.last_run_at else None,
-                    "created_at": t.created_at.isoformat() if t.created_at else None,
-                    "updated_at": t.updated_at.isoformat() if t.updated_at else None,
-                }
-                for t in items
-            ],
-            "count": len(items),
+
+    result_items = []
+    for t in items:
+        item_data = {
+            "id": t.id,
+            "name": t.name,
+            "description": t.description,
+            "last_run_at": t.last_run_at.isoformat() if t.last_run_at else None,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+            "updated_at": t.updated_at.isoformat() if t.updated_at else None,
         }
-    )
+
+        # Find most recent project created by this automation task
+        if t.name:
+            recent_project = (
+                Project.query.filter(
+                    Project.user_id == current_user.id, Project.name.like(f"{t.name}%")
+                )
+                .order_by(desc(Project.created_at))
+                .first()
+            )
+            if recent_project:
+                item_data["last_project"] = {
+                    "id": recent_project.id,
+                    "name": recent_project.name,
+                    "status": (
+                        recent_project.status.value if recent_project.status else None
+                    ),
+                    "created_at": (
+                        recent_project.created_at.isoformat()
+                        if recent_project.created_at
+                        else None
+                    ),
+                    "url": url_for(
+                        "main.project_details",
+                        project_id=recent_project.id,
+                        _external=False,
+                    ),
+                }
+
+        result_items.append(item_data)
+
+    return jsonify({"items": result_items, "count": len(result_items)})
 
 
 @api_bp.route("/automation/tasks/<int:task_id>/run", methods=["POST"])
@@ -78,7 +107,8 @@ def run_compilation_task_api(task_id: int):
     try:
         from app.tasks.automation import run_compilation_task as _run
 
-        res = _run.apply_async(args=(ctask.id,))
+        # Route automation tasks to celery queue explicitly
+        res = _run.apply_async(args=(ctask.id,), queue="celery")
         return jsonify({"status": "started", "task_id": res.id}), 202
     except Exception:
         return jsonify({"error": "Failed to start run"}), 500
@@ -87,22 +117,118 @@ def run_compilation_task_api(task_id: int):
 @api_bp.route("/automation/tasks/<int:task_id>", methods=["GET"])
 @login_required
 def get_compilation_task_api(task_id: int):
-    from app.models import CompilationTask
+    from sqlalchemy import desc
+
+    from app.models import CompilationTask, Project
 
     t = CompilationTask.query.filter_by(id=task_id, user_id=current_user.id).first()
     if not t:
         return jsonify({"error": "Task not found"}), 404
-    return jsonify(
-        {
-            "id": t.id,
-            "name": t.name,
-            "description": t.description,
-            "params": t.params or {},
-            "last_run_at": t.last_run_at.isoformat() if t.last_run_at else None,
-            "created_at": t.created_at.isoformat() if t.created_at else None,
-            "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+
+    # Find most recent project created by this automation task
+    recent_project = None
+    if t.name:
+        recent_project = (
+            Project.query.filter(
+                Project.user_id == current_user.id, Project.name.like(f"{t.name}%")
+            )
+            .order_by(desc(Project.created_at))
+            .first()
+        )
+
+    result = {
+        "id": t.id,
+        "name": t.name,
+        "description": t.description,
+        "params": t.params or {},
+        "last_run_at": t.last_run_at.isoformat() if t.last_run_at else None,
+        "created_at": t.created_at.isoformat() if t.created_at else None,
+        "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+    }
+
+    if recent_project:
+        result["last_project"] = {
+            "id": recent_project.id,
+            "name": recent_project.name,
+            "status": recent_project.status.value if recent_project.status else None,
+            "created_at": recent_project.created_at.isoformat()
+            if recent_project.created_at
+            else None,
+            "url": url_for(
+                "main.project_details", project_id=recent_project.id, _external=False
+            ),
         }
-    )
+
+    return jsonify(result)
+
+
+@api_bp.route("/automation/tasks/<int:task_id>/history", methods=["GET"])
+@login_required
+def get_compilation_task_history_api(task_id: int):
+    from sqlalchemy import desc
+
+    from app.models import CompilationTask, ProcessingJob, Project
+
+    t = CompilationTask.query.filter_by(id=task_id, user_id=current_user.id).first()
+    if not t:
+        return jsonify({"error": "Task not found"}), 404
+
+    # Find all projects created by this automation task
+    projects = []
+    if t.name:
+        projects = (
+            Project.query.filter(
+                Project.user_id == current_user.id, Project.name.like(f"{t.name}%")
+            )
+            .order_by(desc(Project.created_at))
+            .limit(50)
+            .all()
+        )
+
+    history = []
+    for p in projects:
+        # Get compilation jobs for this project
+        compile_jobs = (
+            ProcessingJob.query.filter_by(project_id=p.id, job_type="compile_video")
+            .order_by(desc(ProcessingJob.created_at))
+            .all()
+        )
+
+        # Get download jobs count
+        download_jobs_count = ProcessingJob.query.filter_by(
+            project_id=p.id, job_type="download_clip"
+        ).count()
+
+        entry = {
+            "project_id": p.id,
+            "project_name": p.name,
+            "project_url": url_for(
+                "main.project_details", project_id=p.id, _external=False
+            ),
+            "created_at": p.created_at.isoformat() if p.created_at else None,
+            "status": p.status.value if p.status else None,
+            "downloads_count": download_jobs_count,
+            "compilations": [],
+        }
+
+        for job in compile_jobs:
+            entry["compilations"].append(
+                {
+                    "job_id": job.id,
+                    "status": job.status,
+                    "progress": job.progress or 0,
+                    "created_at": job.created_at.isoformat()
+                    if job.created_at
+                    else None,
+                    "error_message": job.error_message
+                    if job.status == "failed"
+                    else None,
+                }
+            )
+
+        history.append(entry)
+
+    return jsonify({"items": history, "count": len(history)})
 
 
 @api_bp.route("/automation/tasks/<int:task_id>", methods=["PATCH", "PUT"])

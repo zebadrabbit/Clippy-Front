@@ -489,9 +489,8 @@
     const payload = {
       name: (fd.get('name') || '').toString(),
       description: (fd.get('description') || '').toString(),
-      output_resolution: (fd.get('resolution') || '1080p').toString(),
-      output_format: (fd.get('format') || 'mp4').toString(),
       max_clip_duration: parseInt(fd.get('max_len') || '300', 10),
+      platform_preset: (fd.get('platform_preset') || 'youtube').toString(),
       // audio normalization will be conditionally appended below
     };
     if (audioNormEnabled) {
@@ -501,28 +500,32 @@
         payload.audio_norm_db = parseFloat(dbVal);
       }
     }
-    // Persist settings for Compile summary
-    wizard.settings = {
-      route: route,
-  name: payload.name || '',
-      description: payload.description,
-      orientation: fd.get('orientation') || 'landscape',
-      resolution: payload.output_resolution,
-      format: payload.output_format,
-  fps: parseInt(fd.get('fps') || '60', 10),
-      platform_preset: fd.get('platform_preset') || 'custom',
-      max_clips: Math.max(1, Math.min(500, parseInt(fd.get('max_clips') || '20', 10))),
-      min_len: parseInt(fd.get('min_len') || '5', 10),
-      max_len: payload.max_clip_duration,
-      start_date: fd.get('start_date') || '',
-      end_date: fd.get('end_date') || '',
-      min_views: fd.get('min_views') || '',
-      audio_norm_profile: audioNormEnabled ? payload.audio_norm_profile : undefined,
-      audio_norm_db: audioNormEnabled ? payload.audio_norm_db : undefined
-    };
+    // Create project first, then fetch full settings from API response
     try {
       const r = await api('/api/projects', { method: 'POST', body: JSON.stringify(payload) });
       wizard.projectId = r.project_id;
+
+      // Fetch the created project to get actual output settings applied by preset
+      const project = await api(`/api/projects/${r.project_id}`);
+
+      // Persist settings for Compile summary from actual project data
+      wizard.settings = {
+        route: route,
+        name: payload.name || '',
+        description: payload.description,
+        output_resolution: project.output_resolution,
+        output_format: project.output_format,
+        fps: project.fps || 60,
+        platform_preset: fd.get('platform_preset') || 'custom',
+        max_clips: Math.max(1, Math.min(500, parseInt(fd.get('max_clips') || '20', 10))),
+        min_len: parseInt(fd.get('min_len') || '5', 10),
+        max_len: payload.max_clip_duration,
+        start_date: fd.get('start_date') || '',
+        end_date: fd.get('end_date') || '',
+        min_views: fd.get('min_views') || '',
+        audio_norm_profile: audioNormEnabled ? payload.audio_norm_profile : undefined,
+        audio_norm_db: audioNormEnabled ? payload.audio_norm_db : undefined
+      };
       // Save project ID to localStorage for persistence across page reloads
       try {
         localStorage.setItem('wizard_project_id', wizard.projectId);
@@ -950,10 +953,30 @@
   function setGcError(key){ const el = getGcStepEl(key); if (el){ el.classList.remove('active','done'); el.classList.add('error'); } }
 
   // Compile summary renderer
-  function renderCompileSummary(){
+  async function renderCompileSummary(){
     const details = document.getElementById('compile-details');
     if (!details) return;
-    const s = wizard.settings || {};
+
+    // Fetch project data if we don't have settings cached
+    let s = wizard.settings || {};
+    if (wizard.projectId && (!s.output_resolution || !s.output_format)) {
+      try {
+        const project = await api(`/api/projects/${wizard.projectId}`);
+        s = {
+          ...s,
+          output_resolution: project.output_resolution,
+          output_format: project.output_format,
+          fps: project.fps,
+          platform_preset: project.platform_preset,
+          audio_norm_profile: project.audio_norm_profile,
+          audio_norm_db: project.audio_norm_db
+        };
+        wizard.settings = s; // Cache for next time
+      } catch (e) {
+        console.warn('Failed to fetch project settings for summary:', e);
+      }
+    }
+
     const list = document.getElementById('timeline-list');
     const intro = list.querySelector('.timeline-card.timeline-intro');
     const outro = list.querySelector('.timeline-card.timeline-outro');
@@ -977,11 +1000,22 @@
     }
     const estimatedSeconds = Math.floor(clipSecs + introSec + outroSec + (transCount ? gaps * avgTrans : 0));
     function fmtSec(sec){ const s = Math.max(0, Math.floor(sec)); const m = Math.floor(s/60); const r = (s%60).toString().padStart(2,'0'); return `${m}:${r}`; }
-    // Build combined meta line: "1080p, landscape, 60fps, mp4, (-1db)"
-    const orientation = s.orientation || 'landscape';
-    const orientationLabel = orientation.charAt(0).toUpperCase() + orientation.slice(1);
+
+    // Derive orientation from resolution (WxH format)
+    let orientationLabel = 'Landscape';
+    const res = s.output_resolution || s.resolution || '';
+    if (res && res.includes('x')) {
+      const [w, h] = res.split('x').map(Number);
+      if (w && h) {
+        if (w < h) orientationLabel = 'Portrait';
+        else if (w === h) orientationLabel = 'Square';
+        else orientationLabel = 'Landscape';
+      }
+    }
+
+    // Build combined meta line
     const norm = (typeof s.audio_norm_db === 'number' && !isNaN(s.audio_norm_db)) ? `, (${s.audio_norm_db.toString()}db)` : '';
-    const combined = `${s.resolution || ''}, ${orientationLabel}, ${s.fps || 60}fps, ${s.format || 'mp4'}${norm}`;
+    const combined = `${orientationLabel}, ${s.fps || 60}fps, ${s.format || 'mp4'}${norm}`;
 
     // Platform preset label
     const presetLabels = {

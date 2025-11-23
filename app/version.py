@@ -2,8 +2,8 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "1.0.0"
-__version_info__ = (1, 0, 0)
+__version__ = "1.0.1"
+__version_info__ = (1, 0, 1)
 
 # Version history tracking
 VERSION_HISTORY = {
@@ -154,6 +154,14 @@ VERSION_HISTORY = {
         "Self-service auth (password reset, email verification). SQLAlchemy 2.0 migration complete. "
         "Comprehensive error handling with structured logging. Production infrastructure (monitoring, deployment automation). "
         "70+ tests passing. ~7,400 lines added, ~1,771 deprecated lines removed. All critical/high/medium priority features complete."
+    ),
+    "1.0.1": (
+        "Automation task system enhancements: fixed automation task execution with async download polling (2s intervals, 5min timeout), "
+        "resolved Flask app context issue in _resolve_queue(), and added celery queue routing fix for automation tasks. "
+        "Automation UI improvements: two-line task layout, activity history tracking with compilation status badges, "
+        "last project links with status indicators, and real-time last_run_at updates. "
+        "New API endpoint /api/automation/tasks/<id>/history for viewing past runs (50 most recent). "
+        "Automation tasks now complete fully end-to-end: fetch clips → download → compile → update last_run timestamp."
     ),
 }
 

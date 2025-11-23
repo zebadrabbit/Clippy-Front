@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.1] - 2025-11-23
+
+### Fixed
+- **Automation Task Execution**: Fixed automation tasks to complete fully end-to-end (fetch clips → download → compile → update timestamp)
+  - Resolved Flask app context error in `_resolve_queue()` that caused RuntimeError when accessing `current_app.config`
+  - Fixed celery queue routing for automation tasks (now explicitly routes to 'celery' queue)
+  - Rewrote download phase to use async polling (2s intervals, 5min timeout) instead of blocking execution
+  - Removed invalid `ProcessingJob.updated_at` reference in history API endpoint
+
+### Added
+- **Activity History Tracking**: New `/api/automation/tasks/<id>/history` endpoint returns up to 50 most recent runs
+  - Includes download counts, compilation status/progress, and error messages
+  - Powers new Activity History UI card on automation task details page
+- **Last Project Links**: Automation task list and details pages now show most recent project with status badges
+  - Color-coded status indicators: success (green), compiling (blue), draft (gray), failed (red)
+- **Real-time Updates**: `last_run_at` timestamp now updates correctly when automation tasks complete
+
+### Improved
+- **UI Layout**: Redesigned automation task list page with two-line layout for better readability
+  - Line 1: Task name (clickable), description, last run time, task ID
+  - Line 2: Last project link with status badge, action buttons
+  - Removed table headers for cleaner appearance
+
+---
+
 ## [1.0.0] - 2025-11-22 🎉
 
 **ClippyFront is now production-ready!** This major release represents the culmination of 15 major feature implementations, comprehensive testing, and production-ready infrastructure. All critical, high, and medium priority features are complete with 75% of the original TODO list finished.

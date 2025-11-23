@@ -30,12 +30,47 @@ def create_project_api():
             name = "Compilation of Today"
 
     description = (data.get("description") or "").strip() or None
-    output_resolution = data.get("output_resolution") or current_app.config.get(
-        "DEFAULT_OUTPUT_RESOLUTION", "1080p"
-    )
-    output_format = data.get("output_format") or current_app.config.get(
-        "DEFAULT_OUTPUT_FORMAT", "mp4"
-    )
+
+    # Check if a platform preset was specified
+    platform_preset_value = data.get("platform_preset")
+    preset_settings = None
+
+    if platform_preset_value and platform_preset_value != "custom":
+        try:
+            from app.models import PlatformPreset
+
+            preset = PlatformPreset(platform_preset_value)
+            preset_settings = preset.get_settings()
+        except (ValueError, AttributeError):
+            # Invalid preset, ignore and use defaults
+            platform_preset_value = None
+
+    # Use preset settings if available, otherwise use provided values or defaults
+    if preset_settings:
+        output_resolution = preset_settings["resolution"]
+        output_format = preset_settings["format"]
+        fps = preset_settings["fps"]
+        # Set quality based on bitrate
+        if preset_settings["bitrate"] and "M" in preset_settings["bitrate"]:
+            bitrate_mb = int(preset_settings["bitrate"].replace("M", ""))
+            if bitrate_mb >= 8:
+                quality = "high"
+            elif bitrate_mb >= 5:
+                quality = "medium"
+            else:
+                quality = "low"
+        else:
+            quality = "high"
+    else:
+        output_resolution = data.get("output_resolution") or current_app.config.get(
+            "DEFAULT_OUTPUT_RESOLUTION", "1080p"
+        )
+        output_format = data.get("output_format") or current_app.config.get(
+            "DEFAULT_OUTPUT_FORMAT", "mp4"
+        )
+        fps = data.get("fps") or 30
+        quality = data.get("quality") or "high"
+
     max_clip_duration = int(
         data.get("max_clip_duration")
         or current_app.config.get("DEFAULT_MAX_CLIP_DURATION", 30)
@@ -53,7 +88,7 @@ def create_project_api():
         audio_norm_db = None
 
     try:
-        from app.models import Project, db
+        from app.models import PlatformPreset, Project, db
 
         pid = None
         try:
@@ -67,10 +102,20 @@ def create_project_api():
             max_clip_duration=max_clip_duration,
             output_resolution=output_resolution,
             output_format=output_format,
+            fps=fps,
+            quality=quality,
             public_id=pid,
             audio_norm_profile=audio_norm_profile,
             audio_norm_db=audio_norm_db,
         )
+
+        # Set platform preset if specified
+        if platform_preset_value:
+            try:
+                project.platform_preset = PlatformPreset(platform_preset_value)
+            except (ValueError, AttributeError):
+                pass
+
         db.session.add(project)
         db.session.commit()
         return jsonify({"project_id": project.id, "status": "created"}), 201
@@ -1281,5 +1326,11 @@ def get_project_details_api(project_id: int):
             "compiled_duration": compiled_duration,
             "audio_norm_profile": getattr(project, "audio_norm_profile", None),
             "audio_norm_db": getattr(project, "audio_norm_db", None),
+            "platform_preset": project.platform_preset.value
+            if hasattr(project.platform_preset, "value")
+            else str(project.platform_preset),
+            "output_resolution": project.output_resolution,
+            "output_format": project.output_format,
+            "fps": project.fps,
         }
     )
