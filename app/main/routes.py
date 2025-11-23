@@ -818,7 +818,12 @@ def media_library():
     query = current_user.media_files
 
     # Always exclude CLIP and COMPILATION from the default library view (user uploads only)
-    allowed_types = {MediaType.INTRO, MediaType.OUTRO, MediaType.TRANSITION}
+    allowed_types = {
+        MediaType.INTRO,
+        MediaType.OUTRO,
+        MediaType.TRANSITION,
+        MediaType.MUSIC,
+    }
     if type_filter and type_filter in [t.value for t in allowed_types]:
         query = query.filter_by(media_type=MediaType(type_filter))
     else:
