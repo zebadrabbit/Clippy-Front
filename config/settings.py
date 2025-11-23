@@ -69,9 +69,60 @@ class Config:
         os.environ.get("MAX_CONTENT_LENGTH", 500 * 1024 * 1024)
     )  # Default 500MB
     UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER") or "uploads"
-    ALLOWED_VIDEO_EXTENSIONS = {"mp4", "avi", "mov", "mkv", "webm"}
-    ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
-    ALLOWED_AUDIO_EXTENSIONS = {"mp3", "wav", "ogg", "m4a", "flac", "aac"}
+    ALLOWED_VIDEO_EXTENSIONS = {
+        "mp4",
+        "avi",
+        "mov",
+        "mkv",
+        "webm",
+        "flv",
+        "wmv",
+        "mpg",
+        "mpeg",
+        "m4v",
+        "3gp",
+        "3g2",
+        "f4v",
+        "ts",
+        "mts",
+        "m2ts",
+        "vob",
+        "ogv",
+        "divx",
+        "xvid",
+    }
+    ALLOWED_IMAGE_EXTENSIONS = {
+        "png",
+        "jpg",
+        "jpeg",
+        "gif",
+        "webp",
+        "bmp",
+        "tiff",
+        "tif",
+        "svg",
+    }
+    ALLOWED_AUDIO_EXTENSIONS = {
+        "mp3",
+        "wav",
+        "ogg",
+        "m4a",
+        "flac",
+        "aac",
+        "wma",
+        "opus",
+        "oga",
+        "webm",
+        "ac3",
+        "dts",
+        "ape",
+        "alac",
+        "amr",
+        "aiff",
+        "au",
+        "mp2",
+        "mka",
+    }
     # Thumbnails
     THUMBNAIL_TIMESTAMP_SECONDS = int(os.environ.get("THUMBNAIL_TIMESTAMP_SECONDS", 3))
     THUMBNAIL_WIDTH = int(os.environ.get("THUMBNAIL_WIDTH", 480))
