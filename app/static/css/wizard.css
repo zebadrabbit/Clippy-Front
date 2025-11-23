@@ -649,7 +649,7 @@
     padding: 10px 12px;
 }
 .compile-clip-list {
-    max-height: 220px; /* scroll but don't push page down too far */
+    max-height: 320px; /* increased for better visibility */
     overflow: auto;
     margin-top: 8px;
 }
@@ -657,22 +657,67 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 6px 2px;
-    border-bottom: 1px dashed rgba(255,255,255,0.06);
+    padding: 8px 4px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    transition: background-color 0.2s;
+}
+.compile-clip-item:hover {
+    background-color: rgba(255,255,255,0.04);
 }
 .compile-clip-item:last-child { border-bottom: 0; }
+.compile-clip-index {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: rgba(255,255,255,0.5);
+    min-width: 24px;
+    text-align: right;
+}
 .compile-clip-thumb {
     width: 64px;
     height: 36px;
     object-fit: cover;
     border-radius: 6px;
     background: #222;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
 }
 .compile-clip-thumb-wrap { position: relative; width: 64px; height: 36px; border-radius: 6px; overflow: hidden; }
 .compile-clip-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 6px; pointer-events: none; }
 .compile-clip-meta { flex: 1 1 auto; min-width: 0; }
-.compile-clip-title { font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.compile-clip-len { font-size: 0.8rem; opacity: 0.8; }
+.compile-clip-title {
+    font-weight: 600;
+    font-size: 0.9rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+}
+.compile-clip-info {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 0.75rem;
+    color: rgba(255,255,255,0.6);
+}
+.compile-clip-duration {
+    font-weight: 500;
+    color: rgba(255,255,255,0.7);
+}
+.compile-clip-creator {
+    display: inline-flex;
+    align-items: center;
+}
+.compile-clip-creator::before {
+    content: "•";
+    margin-right: 8px;
+}
+.compile-clip-views {
+    display: inline-flex;
+    align-items: center;
+}
+.compile-clip-views::before {
+    content: "•";
+    margin-right: 8px;
+}
 
 /* Thicker compile progress bar that aligns visually with the clip box */
 .progress.compile-progress { height: 14px; border-radius: 10px; }

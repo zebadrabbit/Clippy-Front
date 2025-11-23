@@ -998,22 +998,41 @@
 
     const yes = '<span class="text-success fw-semibold">Yes</span>';
     const no = '<span class="text-danger fw-semibold">No</span>';
-    // Clip mini list (thumb, title, length)
-    const itemsHtml = clips.map(el => {
+    // Clip mini list (thumb, title, length, creator, views)
+    const itemsHtml = clips.map((el, idx) => {
       const title = (el.querySelector('.title')?.textContent || 'Clip');
       const dur = (el.querySelector('.badge-duration')?.textContent || '');
+      const creator = (el.querySelector('.subtitle')?.textContent || el.querySelector('.creator')?.textContent || '').trim();
+      const views = el.dataset.viewCount || '';
       const bg = el.querySelector('.thumb')?.style?.backgroundImage || '';
       const m = /url\(["']?([^"')]+)["']?\)/.exec(bg);
       const src = m ? m[1] : '';
       const prev = el.dataset.previewUrl || '';
+
+      // Format view count
+      let viewsLabel = '';
+      if (views) {
+        const v = parseInt(views, 10);
+        if (!isNaN(v)) {
+          viewsLabel = v >= 1000000 ? `${(v/1000000).toFixed(1)}M views` :
+                       v >= 1000 ? `${(v/1000).toFixed(1)}K views` :
+                       `${v} views`;
+        }
+      }
+
       return `
         <div class="compile-clip-item" data-preview-url="${escapeHtml(prev)}">
+          <div class="compile-clip-index">${idx + 1}</div>
           <div class="compile-clip-thumb-wrap">
             <img class="compile-clip-thumb" src="${escapeHtml(src)}" alt="">
           </div>
           <div class="compile-clip-meta">
             <div class="compile-clip-title">${escapeHtml(title)}</div>
-            <div class="compile-clip-len text-muted">${escapeHtml(dur)}</div>
+            <div class="compile-clip-info">
+              <span class="compile-clip-duration">${escapeHtml(dur)}</span>
+              ${creator ? `<span class="compile-clip-creator">${escapeHtml(creator)}</span>` : ''}
+              ${viewsLabel ? `<span class="compile-clip-views">${escapeHtml(viewsLabel)}</span>` : ''}
+            </div>
           </div>
         </div>`;
     }).join('');
@@ -1383,121 +1402,7 @@
     await api(`/api/projects/${wizard.projectId}/clips/order`, { method: 'POST', body: JSON.stringify({ clip_ids: ids }) });
   }
 
-  // Preview generation and poll
-  let previewTimer = null;
-  document.getElementById('generate-preview')?.addEventListener('click', async () => {
-    if (!wizard.projectId) { alert('No project loaded yet.'); return; }
-
-    const previewBtn = document.getElementById('generate-preview');
-    const previewFeedback = document.getElementById('preview-feedback');
-    const previewProgress = document.getElementById('preview-progress');
-    const previewProgressContainer = document.getElementById('preview-progress-container');
-    const previewPlayerContainer = document.getElementById('preview-player-container');
-    const previewPlayer = document.getElementById('preview-player');
-
-    if (previewBtn) previewBtn.disabled = true;
-    previewFeedback.textContent = 'Starting preview generation...';
-    previewFeedback.className = 'text-muted ms-2';
-    previewPlayerContainer.classList.add('d-none');
-    previewProgressContainer.classList.remove('d-none');
-    previewProgress.style.width = '0%';
-    previewProgress.textContent = '0%';
-
-    try {
-      const body = {};
-      if (wizard.selectedIntroId) body.intro_id = wizard.selectedIntroId;
-      if (wizard.selectedOutroId) body.outro_id = wizard.selectedOutroId;
-
-      // Get timeline clips
-      const list = document.getElementById('timeline-list');
-      const ids = Array.from(list.querySelectorAll('.timeline-card[data-clip-id]'))
-        .map(el => parseInt(el.dataset.clipId, 10))
-        .filter(v => Number.isFinite(v));
-
-      if (!ids.length) {
-        alert('Add at least one clip to the timeline.');
-        if (previewBtn) previewBtn.disabled = false;
-        previewFeedback.textContent = '';
-        previewProgressContainer.classList.add('d-none');
-        return;
-      }
-      body.clip_ids = ids;
-
-      const r = await api(`/api/projects/${wizard.projectId}/preview`, {
-        method: 'POST',
-        body: JSON.stringify(body)
-      });
-
-      const taskId = r.task_id;
-      if (!taskId) {
-        previewFeedback.textContent = 'Failed to start preview generation';
-        previewFeedback.className = 'text-danger ms-2';
-        if (previewBtn) previewBtn.disabled = false;
-        previewProgressContainer.classList.add('d-none');
-        return;
-      }
-
-      async function pollPreview() {
-        try {
-          const s = await api(`/api/tasks/${taskId}`);
-          const st = s.state || s.status;
-          const meta = s.info || {};
-          const pct = Math.max(0, Math.min(100, Math.floor(meta.progress || 0)));
-          previewProgress.style.width = pct + '%';
-          previewProgress.textContent = pct + '%';
-
-          const msg = meta.status || meta.message || '';
-          if (msg) {
-            previewFeedback.textContent = msg;
-          }
-
-          if (st === 'SUCCESS') {
-            clearInterval(previewTimer);
-            previewProgressContainer.classList.add('d-none');
-            previewFeedback.textContent = '✓ Preview ready!';
-            previewFeedback.className = 'text-success ms-2';
-
-            // Load preview video
-            const previewUrl = `/projects/${wizard.projectId}/preview?t=${Date.now()}`;
-            previewPlayer.src = previewUrl;
-            previewPlayerContainer.classList.remove('d-none');
-
-            if (previewBtn) previewBtn.disabled = false;
-          } else if (st === 'FAILURE') {
-            clearInterval(previewTimer);
-            previewProgressContainer.classList.add('d-none');
-            previewFeedback.textContent = 'Preview generation failed: ' + (meta.error || 'Unknown error');
-            previewFeedback.className = 'text-danger ms-2';
-            if (previewBtn) previewBtn.disabled = false;
-          }
-        } catch (e) {
-          clearInterval(previewTimer);
-          previewProgressContainer.classList.add('d-none');
-          previewFeedback.textContent = 'Error polling preview status';
-          previewFeedback.className = 'text-danger ms-2';
-          if (previewBtn) previewBtn.disabled = false;
-        }
-      }
-
-      previewTimer = setInterval(pollPreview, 2000);
-      pollPreview(); // Start immediately
-
-    } catch (e) {
-      console.error('Preview generation error:', e);
-
-      // Handle 501 Not Implemented response
-      if (e.message && e.message.includes('temporarily unavailable')) {
-        previewFeedback.textContent = 'Preview generation is temporarily unavailable. Please use full compilation instead.';
-        previewFeedback.className = 'text-warning ms-2';
-      } else {
-        previewFeedback.textContent = 'Failed to start preview generation';
-        previewFeedback.className = 'text-danger ms-2';
-      }
-
-      if (previewBtn) previewBtn.disabled = false;
-      previewProgressContainer.classList.add('d-none');
-    }
-  });
+  // Preview generation removed - feature temporarily disabled during worker migration
 
   // Compile and poll
   let compTimer = null;
@@ -1965,20 +1870,6 @@
 
       // Check if we're on Step 3 (Arrange) - only enable shortcuts there
       const currentStep = document.querySelector('.wizard-step:not(.d-none)')?.dataset.step;
-
-      // Space - Play/Pause preview (works on Step 4)
-      if (e.code === 'Space' && currentStep === '4') {
-        e.preventDefault();
-        const previewPlayer = document.getElementById('preview-player');
-        if (previewPlayer && !previewPlayer.classList.contains('d-none')) {
-          if (previewPlayer.paused) {
-            previewPlayer.play();
-          } else {
-            previewPlayer.pause();
-          }
-        }
-        return;
-      }
 
       // Only process timeline shortcuts on Step 3
       if (currentStep !== '3') {
