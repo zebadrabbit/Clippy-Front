@@ -532,8 +532,8 @@
       wizard.maxClips = Math.max(1, Math.min(100, isNaN(maxClips) ? 20 : maxClips));
       gotoStep(2);
       // Auto-run Get Clips behind the scenes
-  setGcActive('fetch');
-  setGcStatus('Casting a net for clips…');
+      setGcActive('fetch');
+      setGcStatus('Casting a net for clips…');
       setGcFill(5);
       try {
         let urls = [];
@@ -702,7 +702,7 @@
       return urls;
     } catch (e) {
       setGcError('fetch');
-      setGcStatus('Couldn't fetch Discord messages. Check DISCORD config.');
+      setGcStatus("Couldn't fetch Discord messages. Check DISCORD config.");
       return [];
     }
   }
