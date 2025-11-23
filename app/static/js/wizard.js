@@ -486,11 +486,13 @@
       }
     }
 
+    const compilationLengthValue = (fd.get('compilation_length') || 'auto').toString();
     const payload = {
       name: (fd.get('name') || '').toString(),
       description: (fd.get('description') || '').toString(),
       max_clip_duration: parseInt(fd.get('max_len') || '300', 10),
       platform_preset: (fd.get('platform_preset') || 'youtube').toString(),
+      compilation_length: compilationLengthValue,
       // audio normalization will be conditionally appended below
     };
     if (audioNormEnabled) {
@@ -517,6 +519,7 @@
         output_format: project.output_format,
         fps: project.fps || 60,
         platform_preset: fd.get('platform_preset') || 'custom',
+        compilation_length: compilationLengthValue,
         max_clips: Math.max(1, Math.min(500, parseInt(fd.get('max_clips') || '20', 10))),
         min_len: parseInt(fd.get('min_len') || '5', 10),
         max_len: payload.max_clip_duration,
@@ -716,7 +719,26 @@
   async function queueDownloads(urls) {
     if (!wizard.projectId) { throw new Error('Project not created yet.'); }
     if (!urls || urls.length === 0) { throw new Error('No clip URLs to download.'); }
-    const limit = Math.max(1, Math.min(100, wizard.maxClips || urls.length));
+
+    // Calculate effective limit based on compilation_length
+    let effectiveLimit = wizard.maxClips || urls.length;
+
+    const compilationLength = wizard.settings?.compilation_length || 'auto';
+    if (compilationLength !== 'auto') {
+      const targetSeconds = parseInt(compilationLength, 10);
+      if (!isNaN(targetSeconds) && targetSeconds > 0) {
+        // Estimate average clip duration (45 seconds is typical for Twitch clips)
+        const avgClipDuration = 45;
+        const estimatedClipsNeeded = Math.ceil(targetSeconds / avgClipDuration);
+
+        // Use the smaller of: calculated clips needed or max_clips hard limit
+        effectiveLimit = Math.min(estimatedClipsNeeded, wizard.maxClips || estimatedClipsNeeded);
+
+        console.log(`Compilation length target: ${targetSeconds}s, estimated clips needed: ${estimatedClipsNeeded}, effective limit: ${effectiveLimit}`);
+      }
+    }
+
+    const limit = Math.max(1, Math.min(100, effectiveLimit));
     let payload = { urls: urls.slice(0, limit), limit };
     if (Array.isArray(wizard.fetchedClips) && wizard.fetchedClips.length) {
       const source = wizard.fetchedClips.slice(0, limit);
@@ -1085,7 +1107,7 @@
           <div class="mb-1"><strong>Estimated length:</strong> ${fmtSec(estimatedSeconds)}</div>
           <div class="mb-1"><strong>Intro/Outro:</strong> ${intro ? yes : no}, ${outro ? yes : no}</div>
           <div class="mb-1"><strong>Transitions:</strong> ${transCount ? `${transCount} (${transMode})` : 'None'}</div>
-          <div class="text-muted">Clip limits: min ${s.min_len || 0}s • max ${s.max_len || 0}s • max clips ${s.max_clips || 0}${s.start_date || s.end_date ? ` • Dates: ${escapeHtml(s.start_date || '—')} → ${escapeHtml(s.end_date || '—')}` : ''}${s.min_views ? ` • Min views: ${escapeHtml(String(s.min_views))}` : ''}</div>
+          <div class="text-muted">Clip limits: min ${s.min_len || 0}s • max ${s.max_len || 0}s • max clips ${s.max_clips || 0}${s.compilation_length && s.compilation_length !== 'auto' ? ` • Target length: ${Math.floor(parseInt(s.compilation_length)/60)}m` : ''}${s.start_date || s.end_date ? ` • Dates: ${escapeHtml(s.start_date || '—')} → ${escapeHtml(s.end_date || '—')}` : ''}${s.min_views ? ` • Min views: ${escapeHtml(String(s.min_views))}` : ''}</div>
         </div>
         <div class="compile-right">
           <div class="d-flex justify-content-between align-items-center">

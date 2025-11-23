@@ -169,8 +169,23 @@
             <label class="form-label">Search Parameters</label>
             <div class="row g-2">
               <div class="col-md-3">
+                <label class="form-label">Compilation Length</label>
+                <select class="form-select" name="compilation_length" id="compilation-length">
+                  <option value="auto" selected>Auto (all clips)</option>
+                  <option value="60">1 minute</option>
+                  <option value="120">2 minutes</option>
+                  <option value="180">3 minutes</option>
+                  <option value="300">5 minutes</option>
+                  <option value="600">10 minutes</option>
+                  <option value="900">15 minutes</option>
+                  <option value="1200">20 minutes</option>
+                </select>
+                <small class="text-muted">Fetches enough clips to reach target length</small>
+              </div>
+              <div class="col-md-3">
                 <label class="form-label">Max Clips</label>
-                <input type="number" min="1" max="500" step="1" class="form-control" name="max_clips" value="10">
+                <input type="number" min="1" max="500" step="1" class="form-control" name="max_clips" value="5">
+                <small class="text-muted">Hard limit on clip count</small>
               </div>
               <div class="col-md-3">
                 <label class="form-label">Min Clip Length (sec)</label>
