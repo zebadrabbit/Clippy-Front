@@ -1607,13 +1607,23 @@
 
   // Intro/Outro listing and selection
   async function loadMediaList(kind){
-    if (!wizard.projectId) return [];
+    console.log('[loadMediaList] kind:', kind, 'projectId:', wizard.projectId);
+    if (!wizard.projectId) {
+      console.log('[loadMediaList] No projectId, returning empty array');
+      return [];
+    }
     try {
-      const res = await fetch(`/api/projects/${wizard.projectId}/media?type=${encodeURIComponent(kind)}`);
+      const url = `/api/projects/${wizard.projectId}/media?type=${encodeURIComponent(kind)}`;
+      console.log('[loadMediaList] Fetching:', url);
+      const res = await fetch(url);
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
+      console.log('[loadMediaList] Response data:', data);
       return data.items || [];
-    } catch (_) { return []; }
+    } catch (e) {
+      console.error('[loadMediaList] Error:', e);
+      return [];
+    }
   }
   function renderMediaList(containerId, items, selectHandler){
     const el = document.getElementById(containerId);
@@ -1714,11 +1724,17 @@
     });
   }
   async function refreshMusic(){
+    console.log('[refreshMusic] Starting, wizard.projectId:', wizard.projectId);
     const items = await loadMediaList('music');
+    console.log('[refreshMusic] Loaded items:', items);
     const container = document.getElementById('music-list');
     container.innerHTML = '';
     wizard.selectedMusicId = wizard.selectedMusicId || null;
-    if (!items.length){ container.innerHTML = '<div class="text-muted">No music tracks found.</div>'; return; }
+    if (!items.length){
+      container.innerHTML = '<div class="text-muted">No music tracks found. Upload under Upload Media.</div>';
+      console.log('[refreshMusic] No items found');
+      return;
+    }
     items.forEach(it => {
       const card = document.createElement('div');
       card.className = 'card';
