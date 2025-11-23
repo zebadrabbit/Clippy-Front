@@ -708,6 +708,7 @@ class Clip(db.Model):
     )  # cached avatar file path if downloaded
     game_name = db.Column(db.String(120))  # game title if available
     clip_created_at = db.Column(db.DateTime)  # when clip was created on platform
+    view_count = db.Column(db.Integer)  # number of views on platform
 
     # Project association
     project_id = db.Column(db.Integer, db.ForeignKey("projects.id"), nullable=False)

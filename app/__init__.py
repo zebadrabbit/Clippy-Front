@@ -455,6 +455,10 @@ def init_extensions(app):
                     statements.append(
                         text("ALTER TABLE clips ADD COLUMN clip_created_at TIMESTAMP")
                     )
+                if "view_count" not in clip_cols:
+                    statements.append(
+                        text("ALTER TABLE clips ADD COLUMN view_count INTEGER")
+                    )
 
                 # Schedules table: add monthly_day if missing, and ensure enum has 'monthly'
                 sched_statements = []
