@@ -1352,3 +1352,81 @@ def worker_download_media(media_id):
     except Exception as e:
         current_app.logger.error(f"Error downloading media {media_id}: {e}")
         return jsonify({"error": "Internal error"}), 500
+
+
+@api_bp.route("/worker/avatar/<creator_name>", methods=["GET"])
+@require_worker_key
+def worker_download_avatar(creator_name):
+    """Download an avatar file by creator name.
+
+    Remote workers use this to download creator avatars for video overlays
+    when they don't have shared filesystem access.
+
+    Response:
+        - 200: Avatar file content with proper Content-Type and Content-Disposition headers
+        - 404: Avatar not found
+    """
+    try:
+        import glob
+        import re
+
+        # Sanitize creator name
+        safe_name = re.sub(r"[^\w\-_]", "_", creator_name.lower())
+
+        # Check AVATARS_PATH environment variable first
+        avatars_path = os.environ.get("AVATARS_PATH", "")
+        avatar_file = None
+
+        if avatars_path:
+            for ext in (".png", ".jpg", ".jpeg", ".webp"):
+                candidate = os.path.join(avatars_path, f"{safe_name}{ext}")
+                if os.path.isfile(candidate):
+                    avatar_file = candidate
+                    break
+
+        # Check instance/assets/avatars (standard location)
+        if not avatar_file:
+            instance_path = (
+                current_app.config.get("INSTANCE_PATH") or current_app.instance_path
+            )
+            default_avatars = os.path.join(instance_path, "assets", "avatars")
+            if os.path.isdir(default_avatars):
+                for ext in (".png", ".jpg", ".jpeg", ".webp"):
+                    # Try exact match first
+                    exact_match = os.path.join(default_avatars, f"{safe_name}{ext}")
+                    if os.path.isfile(exact_match):
+                        avatar_file = exact_match
+                        break
+                    # Try wildcard pattern (handles old random suffix format)
+                    matches = glob.glob(
+                        os.path.join(default_avatars, f"{safe_name}_*{ext}")
+                    )
+                    if matches:
+                        # Use most recent
+                        matches.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+                        avatar_file = matches[0]
+                        break
+
+        if not avatar_file:
+            current_app.logger.warning(f"Avatar not found for creator '{creator_name}'")
+            return jsonify({"error": "Avatar not found"}), 404
+
+        # Determine MIME type
+        mimetype = mimetypes.guess_type(avatar_file)[0] or "image/png"
+        filename = os.path.basename(avatar_file)
+
+        current_app.logger.info(
+            f"Worker downloading avatar for '{creator_name}' ({filename})"
+        )
+
+        # Send file with proper headers
+        return send_file(
+            avatar_file,
+            mimetype=mimetype,
+            as_attachment=True,
+            download_name=filename,
+        )
+
+    except Exception as e:
+        current_app.logger.error(f"Error downloading avatar for '{creator_name}': {e}")
+        return jsonify({"error": "Internal error"}), 500

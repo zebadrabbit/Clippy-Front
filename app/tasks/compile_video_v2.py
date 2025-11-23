@@ -40,6 +40,105 @@ from app.tasks.video_processing import (
 )
 
 
+def _resolve_avatar_path(
+    app, clip_id: int | None, creator_name: str | None
+) -> str | None:
+    """Resolve the avatar file path for a clip's creator.
+
+    Checks multiple locations in this order:
+    1. AVATARS_PATH directory for <sanitized_creator_name>.*
+    2. instance/assets/avatars directory for <sanitized_creator_name>.*
+    3. Download from main server via worker API (if configured)
+
+    Args:
+        app: Flask app instance
+        clip_id: Optional clip ID to lookup in database
+        creator_name: Creator name to search for avatar files
+
+    Returns:
+        str: Path to avatar file, or None if not found
+    """
+    if not creator_name:
+        return None
+
+    # Sanitize creator name for filesystem
+    import re
+
+    safe_name = re.sub(r"[^\w\-_]", "_", creator_name.lower())
+
+    # Check environment variable location first
+    avatars_path = os.environ.get("AVATARS_PATH", "")
+    if avatars_path:
+        for ext in (".png", ".jpg", ".jpeg", ".webp"):
+            avatar_file = os.path.join(avatars_path, f"{safe_name}{ext}")
+            if os.path.isfile(avatar_file):
+                app.logger.info(f"Found avatar in AVATARS_PATH: {avatar_file}")
+                return avatar_file
+
+    # Check instance/assets/avatars (standard location)
+    instance_path = app.config.get("INSTANCE_PATH") or app.instance_path
+    default_avatars = os.path.join(instance_path, "assets", "avatars")
+    if os.path.isdir(default_avatars):
+        import glob
+
+        for ext in (".png", ".jpg", ".jpeg", ".webp"):
+            # Try exact match first
+            exact_match = os.path.join(default_avatars, f"{safe_name}{ext}")
+            if os.path.isfile(exact_match):
+                app.logger.info(f"Found avatar (exact): {exact_match}")
+                return exact_match
+            # Try wildcard pattern (handles old random suffix format)
+            matches = glob.glob(os.path.join(default_avatars, f"{safe_name}_*{ext}"))
+            if matches:
+                app.logger.info(f"Found avatar (pattern): {matches[0]}")
+                return matches[0]
+
+    # Try downloading from main server if API is configured
+    api_base = app.config.get("MEDIA_BASE_URL", "").rstrip("/")
+    api_key = app.config.get("WORKER_API_KEY", "")
+
+    if api_base and api_key:
+        try:
+            import requests
+
+            # Ensure avatars directory exists
+            os.makedirs(default_avatars, exist_ok=True)
+
+            url = f"{api_base}/api/worker/avatar/{creator_name}"
+            headers = {"Authorization": f"Bearer {api_key}"}
+
+            app.logger.info(f"Downloading avatar for '{creator_name}' from {url}")
+            response = requests.get(url, headers=headers, timeout=30)
+
+            if response.status_code == 200:
+                # Determine file extension from Content-Type or filename
+                content_type = response.headers.get("Content-Type", "")
+                ext = ".png"  # default
+                if "jpeg" in content_type or "jpg" in content_type:
+                    ext = ".jpg"
+                elif "webp" in content_type:
+                    ext = ".webp"
+
+                # Save to local cache
+                avatar_file = os.path.join(default_avatars, f"{safe_name}{ext}")
+                with open(avatar_file, "wb") as f:
+                    f.write(response.content)
+
+                app.logger.info(
+                    f"Downloaded avatar for '{creator_name}' to {avatar_file}"
+                )
+                return avatar_file
+            else:
+                app.logger.warning(
+                    f"Avatar download failed for '{creator_name}': HTTP {response.status_code}"
+                )
+        except Exception as e:
+            app.logger.error(f"Failed to download avatar for '{creator_name}': {e}")
+
+    app.logger.warning(f"Avatar not found for creator '{creator_name}'")
+    return None
+
+
 def _download_media_file(media_id: int, user_id: int, cache_dir: str) -> str:
     """Download a media file from the main server via worker API.
 
@@ -208,26 +307,68 @@ def _process_clip_v2(
     creator_name = (clip_data.get("creator_name") or "").strip()
     game_name = (clip_data.get("game_name") or "").strip()
 
+    # Resolve avatar path for overlay
+    avatar_path = None
+    if creator_name:
+        avatar_path = _resolve_avatar_path(app, clip_data.get("id"), creator_name)
+
     # Build filter complex with overlay if enabled
+    # Add main video input first
+    cmd.extend(["-i", input_path])
+
+    # Then add avatar as second input if present
+    has_avatar = False
+    if (
+        overlay_enabled()
+        and creator_name
+        and avatar_path
+        and os.path.isfile(avatar_path)
+    ):
+        has_avatar = True
+        cmd.extend(["-i", avatar_path])
+
+    # Build filter complex
     if overlay_enabled() and (creator_name or game_name):
-        # build_overlay_filter returns [0:v]drawbox...drawtext...[v]
-        # We need to insert the scale before the drawbox
-        overlay_filter = build_overlay_filter(
-            author=creator_name, game=game_name, fontfile=font
-        )
-        # Replace [0:v] with [0:v]scale...,
-        scale_part = f"[0:v]scale={target_res.split('x')[0]}:{target_res.split('x')[1]}:flags=lanczos,"
-        filter_complex = overlay_filter.replace("[0:v]", scale_part)
+        if has_avatar:
+            # Build filter matching original ffmpegApplyOverlay template
+            # [0:v] is main video, [1:v] is avatar (if present)
+            author_text = (creator_name or "").replace("'", "'")
+            game_text = (game_name or "").replace("'", "'") if game_name else ""
+
+            # Start with main video, apply drawbox and text overlays, then overlay scaled avatar last
+            filter_chain = (
+                f"[0:v]drawbox=enable='between(t,3,10)':x=0:y=(ih)-238:h=157:w=1000:color=black@0.7:t=fill,"
+                f"drawtext=enable='between(t,3,10)':x=198:y=(h)-210:fontfile='{font}':fontsize=28:fontcolor=white@0.4:text='clip by',"
+                f"drawtext=enable='between(t,3,10)':x=198:y=(h)-180:fontfile='{font}':fontsize=48:fontcolor=white@0.9:text='{author_text}'"
+            )
+
+            if game_text:
+                filter_chain += f",drawtext=enable='between(t,3,10)':x=198:y=(h)-130:fontfile='{font}':fontsize=26:fontcolor=white@0.5:text='{game_text}'"
+
+            # Scale avatar to 128x128 and overlay on top
+            filter_chain += "[overlay];[1:v]scale=128:128[avatar];[overlay][avatar]overlay=enable='between(t,3,10)':x=50:y=H-223[v]"
+
+            filter_complex = filter_chain
+        else:
+            # No avatar - use build_overlay_filter for text only
+            has_avatar_flag, overlay_chain = build_overlay_filter(
+                author=creator_name, game=game_name, fontfile=font, avatar_path=None
+            )
+            filter_complex = (
+                f"[0:v]scale={target_res.split('x')[0]}:{target_res.split('x')[1]}:flags=lanczos,"
+                + overlay_chain
+                + "[v]"
+            )
     else:
         filter_complex = f"[0:v]scale={target_res.split('x')[0]}:{target_res.split('x')[1]}:flags=lanczos[v]"
 
-    cmd.extend(["-i", input_path, "-filter_complex", filter_complex])
+    cmd.extend(["-filter_complex", filter_complex])
 
     # Map the filtered video output
     cmd.extend(["-map", "[v]"])
 
     # Add encoder args
-    cmd.extend(encoder_args(app))
+    cmd.extend(encoder_args(ffmpeg_bin))
 
     # Add audio normalization if configured
     audio_profile = project_data.get("audio_norm_profile")
@@ -235,7 +376,9 @@ def _process_clip_v2(
     if audio_profile or audio_db:
         cmd.extend(audio_args(app, audio_profile, audio_db))
     else:
-        # Map audio stream from input (0:a means first audio stream from input 0)
+        # Map audio stream from the main video input
+        # When avatar is present: input 0=video (with audio), input 1=avatar.png (no audio)
+        # When no avatar: input 0=video (with audio)
         cmd.extend(["-map", "0:a"])
 
     # Output
@@ -322,7 +465,7 @@ def _process_media_file_v2(
         media_path,
         "-vf",
         f"scale={target_res.split('x')[0]}:{target_res.split('x')[1]}:flags=lanczos",
-        *encoder_args(app),
+        *encoder_args(ffmpeg_bin),
         "-y",
         output_path,
     ]

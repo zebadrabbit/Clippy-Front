@@ -112,17 +112,61 @@ def parse_resolution(res_str: str | None, project_res: str | None) -> str:
     return DEFAULTS["resolution"]
 
 
-def build_overlay_filter(author: str | None, game: str | None, fontfile: str) -> str:
-    """Compose a filter chain that draws a box and two text lines.
+def build_overlay_filter(
+    author: str | None,
+    game: str | None,
+    fontfile: str,
+    avatar_path: str | None = None,
+) -> tuple[bool, str]:
+    """Compose a filter chain that draws a box, avatar image, and text lines.
 
     Draws between t=3 and t=10 seconds to match CLI behavior. If author is empty,
     we still render the box to provide a subtle branded area; game is drawn below
     the author in a muted color when provided.
+
+    Args:
+        author: Creator/author name to display
+        game: Game name to display below author
+        fontfile: Path to font file for text rendering
+        avatar_path: Optional path to avatar image file (will be overlaid as circle)
+
+    Returns:
+        Tuple of (has_avatar: bool, filter_chain: str)
+        - If has_avatar is True, filter_chain is: "movie='...':...[avatar];drawbox=...,[base];[base][avatar]overlay=...,drawtext=..."
+        - If has_avatar is False, filter_chain is: "drawbox=...,drawtext=..."
+        Does NOT include [0:v] prefix or [v] suffix - caller adds those with scale.
     """
+    has_avatar = False
+    avatar_prefix = ""
+
+    # Avatar overlay (square) if provided - must be first in filter_complex
+    # Note: Using square for performance. The geq filter for circular mask is too slow.
+    if avatar_path and os.path.isfile(avatar_path):
+        has_avatar = True
+        # Escape path for ffmpeg
+        escaped_avatar = avatar_path.replace("\\", "/").replace(":", "\\:")
+        # Movie filter loads avatar, scales to 128x128
+        avatar_prefix = (
+            f"movie='{escaped_avatar}':loop=0,setpts=N/(FRAME_RATE*TB),"
+            f"scale=128:128,format=yuva420p[avatar];"
+        )
+
+    # Build main video filter chain
+    chain = []
+
     # Base drawbox at bottom area
-    chain = [
-        "drawbox=enable='between(t,3,10)':x=0:y=(ih)-268:h=157:w=1000:color=black@0.7:t=fill",
-    ]
+    chain.append(
+        "drawbox=enable='between(t,3,10)':x=0:y=(ih)-268:h=157:w=1000:color=black@0.7:t=fill"
+    )
+
+    # If we have avatar, we need to split: output as [base], then overlay [avatar] onto [base]
+    if has_avatar:
+        # Complete the drawbox output as [base], then start overlay filter
+        # This will produce: drawbox=...[base];[base][avatar]overlay=...
+        chain[
+            -1
+        ] += "[base];[base][avatar]overlay=enable='between(t,3,10)':x=50:y=(h)-250"
+
     # 'clip by' label
     chain.append(
         f"drawtext=enable='between(t,3,10)':x=198:y=(h)-250:fontfile='{fontfile}':fontsize=28:fontcolor=white@0.4:text='clip by'"
@@ -138,8 +182,9 @@ def build_overlay_filter(author: str | None, game: str | None, fontfile: str) ->
         chain.append(
             f"drawtext=enable='between(t,3,10)':x=198:y=(h)-160:fontfile='{fontfile}':fontsize=26:fontcolor=white@0.5:text='{game_text}'"
         )
-    # Merge to a single filter_complex [0:v]... -> [v]
-    return "[0:v]" + ",".join(chain) + "[v]"
+
+    # Return avatar flag and complete filter (movie prefix + main chain)
+    return has_avatar, avatar_prefix + ",".join(chain)
 
 
 # Cache NVENC availability per ffmpeg binary path. This avoids stale results

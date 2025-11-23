@@ -2,8 +2,8 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "0.13.0"
-__version_info__ = (0, 13, 0)
+__version__ = "0.14.0"
+__version_info__ = (0, 14, 0)
 
 # Version history tracking
 VERSION_HISTORY = {
@@ -135,6 +135,14 @@ VERSION_HISTORY = {
         "Comprehensive exception documentation in API docstrings (Google-style). Added deployment automation: scripts/setup_monitoring.sh (Prometheus + Grafana + Node Exporter) "
         "and scripts/setup_webserver.sh (Nginx + Gunicorn with SSL, security hardening). Error handling audit: 0 silent failures, 93% with logging. "
         "All errors now have structured context for log aggregation. Production-ready observability stack."
+    ),
+    "0.14.0": (
+        "Avatar overlay rendering overhaul and compilation UI improvements: fixed avatar rendering in compiled videos using API-only workflow "
+        "(no shared filesystem required). Avatar overlay now matches original design: proper scaling to 128x128px, positioned at x=50 y=H-223, "
+        "rendered after drawbox/text overlays for correct layering. Text positioning refined: 'clip by' and author moved up 20px, game title up 10px. "
+        "Compile wizard step cleaned up: removed preview area, enhanced clip list with avatar thumbnails and view counts. Added view_count column to Clip model. "
+        "Fixed worker Redis broker to use WireGuard (10.8.0.1) instead of LAN IP. Resolved movie filter hang by switching to -loop input method. "
+        "Workers run 100% API-based with NVENC GPU encoding enabled."
     ),
 }
 

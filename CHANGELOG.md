@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.14.0] - 2025-11-22
+
 ### Added
 - **Project Wizard Enhancements**
   - Platform presets dropdown with 9 popular platforms:
@@ -18,11 +22,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Instagram Stories (1080p 9:16 vertical)
     - Twitter/X (1080p 16:9 landscape)
     - Facebook (1080p 16:9 landscape)
-    - Twitch Clips (1080p 16:9 landscape)
+    - Twitch Clips (1080p 16:9 vertical)
   - Orientation selector for manual output settings (Landscape/Portrait/Square)
   - Automatic preset application - selecting a preset auto-fills orientation, resolution, format, and FPS
+- **Compile Page Improvements**
+  - Removed preview area for cleaner layout
+  - Enhanced clip list with avatar thumbnails displayed for each creator
+  - Added view count display in clip details
+  - Added `view_count` column to Clip model with auto-migration
 
 ### Changed
+- **Avatar Overlay Rendering** (Complete Overhaul)
+  - Fixed avatar rendering in compiled videos using API-only worker workflow
+  - Avatar properly scaled to 128x128 pixels before overlay
+  - Positioned at x=50, y=H-223 (bottom-left corner with proper spacing)
+  - Rendered AFTER drawbox and text overlays for correct visual layering
+  - Matches original ffmpegApplyOverlay template design
+- **Text Overlay Positioning**
+  - "clip by" label: moved up 20px (y=-210)
+  - Author name: moved up 20px (y=-180)
+  - Game title: moved up 10px (y=-130)
+  - Improved readability and visual balance with avatar
 - **Project Wizard Workflow**
   - Removed Export step (Step 5) - now redirects directly to project details page after compilation
   - Updated wizard chevron progress: Setup → Get Clips → Arrange → Compile (4 steps)
@@ -34,8 +54,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Orientation displayed with proper capitalization (Landscape/Portrait/Square)
 - **API Responses**
   - Added `public_id` field to `GET /api/projects/<id>` response for direct project page navigation
+- **Worker Configuration**
+  - Fixed Redis broker to use WireGuard address (10.8.0.1:6379) instead of LAN IP
+  - Workers configured for 100% API-based operation (no shared filesystem)
+  - NVENC GPU encoding enabled for 5-10x faster compilation
 
 ### Fixed
+- **Avatar Overlay Issues**
+  - Fixed movie filter hang by switching from `movie=` filter to `-loop 1 -i` input method
+  - Fixed audio mapping to use correct input stream (0:a when video is first input)
+  - Fixed filter chain syntax (proper semicolon/comma separation)
+  - Fixed input ordering (video first, avatar second)
 - **localStorage Project Restoration**
   - Fixed issue where old project IDs persisted across wizard sessions
   - New projects now properly start fresh instead of loading previous project state

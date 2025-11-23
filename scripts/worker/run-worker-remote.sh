@@ -43,9 +43,12 @@ export CELERY_RESULT_BACKEND="${CELERY_RESULT_BACKEND:-redis://192.168.1.100:637
 export FLASK_APP_URL="${FLASK_APP_URL:-http://192.168.1.100:5000}"
 export WORKER_API_KEY="${WORKER_API_KEY:-}"
 
-# Instance path (shared storage mount point on tundra)
-export CLIPPY_INSTANCE_PATH="${CLIPPY_INSTANCE_PATH:-/mnt/clippyfront}"
-export HOST_INSTANCE_PATH="${HOST_INSTANCE_PATH:-/mnt/clippyfront}"
+# Instance path - DO NOT USE /mnt/* - Use local instance for API-only workers
+# Remote workers should NOT have CLIPPY_INSTANCE_PATH or HOST_INSTANCE_PATH set
+# They use the API to download/upload files as needed
+# Only set if explicitly configured in .env.worker
+export CLIPPY_INSTANCE_PATH="${CLIPPY_INSTANCE_PATH:-}"
+export HOST_INSTANCE_PATH="${HOST_INSTANCE_PATH:-}"
 
 # Queue configuration for GPU worker
 export CELERY_CONCURRENCY="${CELERY_CONCURRENCY:-2}"
@@ -57,18 +60,11 @@ CELERY_QUEUES="${CELERY_QUEUES:-gpu,celery}"
 # Optional: disable NVENC if needed (leave unset to auto-detect)
 # export FFMPEG_DISABLE_NVENC=0
 
-# Temp dir (useful for CIFS/SMB mounts to avoid EXDEV errors)
-export TMPDIR="${TMPDIR:-${CLIPPY_INSTANCE_PATH}/tmp}"
+# Temp dir - use local /tmp for remote workers
+export TMPDIR="${TMPDIR:-/tmp}"
 mkdir -p "${TMPDIR}" 2>/dev/null || true
 
-# Ensure instance path exists
-if [[ ! -d "${CLIPPY_INSTANCE_PATH}" ]]; then
-  echo "Error: CLIPPY_INSTANCE_PATH not found: ${CLIPPY_INSTANCE_PATH}"
-  echo "Ensure shared storage is mounted on tundra."
-  exit 1
-fi
-
-# Get version from app
+# Display config
 VERSION=$(python -c "from app.version import __version__; print(__version__)")
 
 if [[ -z "$VERSION" ]]; then
