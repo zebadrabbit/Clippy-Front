@@ -2,19 +2,15 @@
 {% block title %}Project Templates{% endblock %}
 
 {% block content %}
-<div class="container-fluid py-4">
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <h1 class="h2 mb-1">Project Templates</h1>
-                    <p class="text-muted mb-0">Reusable project configurations for faster workflow</p>
-                </div>
-                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createTemplateModal">
-                    <i class="bi bi-plus-lg"></i> Create Template
-                </button>
-            </div>
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1>Project Templates</h1>
+            <p class="text-muted mb-0">Reusable project configurations for faster workflow</p>
         </div>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createTemplateModal">
+            <i class="bi bi-plus-circle"></i> Create Template
+        </button>
     </div>
 
     <!-- Empty State -->
@@ -25,7 +21,7 @@
         <h3 class="text-muted">No Templates Yet</h3>
         <p class="text-muted">Save your first project as a template to reuse settings later</p>
         <button class="btn btn-outline-primary mt-3" data-bs-toggle="modal" data-bs-target="#createTemplateModal">
-            <i class="bi bi-plus-lg"></i> Create First Template
+            <i class="bi bi-plus-circle"></i> Create First Template
         </button>
     </div>
 
