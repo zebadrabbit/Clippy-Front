@@ -1824,6 +1824,15 @@
     });
   });
 
+  // Load music when the music section is expanded
+  const musicCollapse = document.getElementById('music-collapse');
+  if (musicCollapse) {
+    musicCollapse.addEventListener('shown.bs.collapse', () => {
+      console.log('[music-collapse] Expanded, loading music');
+      refreshMusic().catch(e => console.error('[music-collapse] Error:', e));
+    });
+  }
+
   // Ensure separators rebuild when adding clip from grid to timeline
   function attachAddToTimelineHandlers(){
     const grid = document.getElementById('clips-grid');
