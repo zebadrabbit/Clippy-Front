@@ -991,6 +991,8 @@ def _media_type_folder(media_type: MediaType, mime_type: str) -> str:
             return "transitions"
         if media_type == MediaType.COMPILATION:
             return "compilations"
+        if media_type == MediaType.MUSIC:
+            return "music"
         # If it's an image, keep in images/
         if mime_type and mime_type.startswith("image"):
             return "images"
@@ -1075,6 +1077,9 @@ def media_upload():
             user_dir = storage_lib.outros_dir(current_user, None, library=True)
         elif subfolder == "transitions":
             user_dir = storage_lib.transitions_dir(current_user, None, library=True)
+        elif subfolder == "music":
+            base_lib = storage_lib.library_root(current_user)
+            user_dir = os.path.join(base_lib, "music")
         else:
             # clips/images/other buckets inside library root
             base_lib = storage_lib.library_root(current_user)

@@ -677,13 +677,31 @@ def _build_timeline_with_transitions_v2(
     return segments
 
 
-def _compile_final_video_v2(clips: list[str], temp_dir: str, project_data: dict) -> str:
-    """Compile final video from clips (API-based).
+def _compile_final_video_v2(
+    clips: list[str],
+    temp_dir: str,
+    project_data: dict,
+    background_music_id: int | None = None,
+    music_volume: float | None = None,
+    music_start_mode: str | None = None,
+    music_end_mode: str | None = None,
+    intro_id: int | None = None,
+    outro_id: int | None = None,
+    user_id: int | None = None,
+) -> str:
+    """Compile final video from clips with optional background music (API-based).
 
     Args:
         clips: List of processed clip file paths
         temp_dir: Temporary directory
         project_data: Project dict from API
+        background_music_id: Optional background music file ID
+        music_volume: Music volume (0.0-1.0), defaults to 0.3
+        music_start_mode: When to start music ('start' or 'after_intro')
+        music_end_mode: When to end music ('end' or 'before_outro')
+        intro_id: Intro media file ID (used to detect timing)
+        outro_id: Outro media file ID (used to detect timing)
+        user_id: User ID for fetching music file
 
     Returns:
         Path to compiled output file
@@ -706,6 +724,8 @@ def _compile_final_video_v2(clips: list[str], temp_dir: str, project_data: dict)
 
     from app.ffmpeg_config import config_args as _cfg_args
 
+    # First, concat all video segments
+    concat_output = os.path.join(temp_dir, "concat_no_music.mp4")
     cmd = [
         ffmpeg_bin,
         *_cfg_args(app, "ffmpeg", "concat"),
@@ -717,6 +737,100 @@ def _compile_final_video_v2(clips: list[str], temp_dir: str, project_data: dict)
         concat_file,
         "-c",
         "copy",
+        "-y",
+        concat_output,
+    ]
+
+    subprocess.run(cmd, check=True, capture_output=True)
+
+    # If no background music, return the concat output
+    if not background_music_id:
+        shutil.move(concat_output, output_path)
+        return output_path
+
+    # Fetch music file
+    music_path = None
+    try:
+        if user_id:
+            response = worker_api.get_media_batch([background_music_id], user_id)
+            media_files = response.get("media_files", [])
+            if media_files:
+                music_data = media_files[0]
+                music_path = music_data.get("file_path")
+    except Exception:
+        pass
+
+    # If music file not found, return without music
+    if not music_path or not os.path.exists(music_path):
+        shutil.move(concat_output, output_path)
+        return output_path
+
+    # Calculate music start/end times based on intro/outro
+    # First, get total video duration
+    video_meta = extract_video_metadata(concat_output)
+    total_duration = video_meta.get("duration", 0)
+
+    music_start_time = 0.0
+    music_end_time = total_duration
+
+    # Calculate start time
+    if music_start_mode == "after_intro" and intro_id:
+        try:
+            if user_id:
+                response = worker_api.get_media_batch([intro_id], user_id)
+                media_files = response.get("media_files", [])
+                if media_files:
+                    intro_data = media_files[0]
+                    intro_duration = intro_data.get("duration", 0)
+                    if intro_duration:
+                        music_start_time = float(intro_duration)
+        except Exception:
+            pass
+
+    # Calculate end time
+    if music_end_mode == "before_outro" and outro_id:
+        try:
+            if user_id:
+                response = worker_api.get_media_batch([outro_id], user_id)
+                media_files = response.get("media_files", [])
+                if media_files:
+                    outro_data = media_files[0]
+                    outro_duration = outro_data.get("duration", 0)
+                    if outro_duration:
+                        music_end_time = total_duration - float(outro_duration)
+        except Exception:
+            pass
+
+    # Mix background music
+    volume = music_volume if music_volume is not None else 0.3
+    volume = max(0.0, min(1.0, float(volume)))  # Clamp to 0-1
+
+    # Build ffmpeg command to mix audio
+    # Use adelay to start music at the right time, and afade to fade out at the end
+    music_duration = music_end_time - music_start_time
+
+    cmd = [
+        ffmpeg_bin,
+        *_cfg_args(app, "ffmpeg", "encode"),
+        "-i",
+        concat_output,  # Video input
+        "-i",
+        music_path,  # Music input
+        "-filter_complex",
+        f"[1:a]adelay={int(music_start_time * 1000)}|{int(music_start_time * 1000)},volume={volume},"
+        f"afade=t=out:st={music_duration - 2}:d=2[music];"
+        f"[0:a][music]amix=inputs=2:duration=first:dropout_transition=2[aout]",
+        "-map",
+        "0:v",  # Use video from first input
+        "-map",
+        "[aout]",  # Use mixed audio
+        "-c:v",
+        "copy",  # Copy video (already processed)
+        "-c:a",
+        "aac",  # Encode audio
+        "-b:a",
+        "192k",
+        "-shortest",  # End when video ends
         "-y",
         output_path,
     ]
@@ -777,6 +891,10 @@ def compile_video_task_v2(
     transition_ids: list[int] | None = None,
     randomize_transitions: bool = False,
     clip_ids: list[int] | None = None,
+    background_music_id: int | None = None,
+    music_volume: float | None = None,
+    music_start_mode: str | None = None,
+    music_end_mode: str | None = None,
 ) -> dict[str, Any]:
     """Compile video clips into final compilation (Worker API version).
 
@@ -790,6 +908,10 @@ def compile_video_task_v2(
         transition_ids: Optional list of transition media file IDs
         randomize_transitions: Whether to randomize transition selection
         clip_ids: Optional explicit timeline subset
+        background_music_id: Optional background music file ID
+        music_volume: Music volume (0.0-1.0), defaults to 0.3
+        music_start_mode: When to start music ('start' or 'after_intro')
+        music_end_mode: When to end music ('end' or 'before_outro')
 
     Returns:
         Dict with compilation results
@@ -937,7 +1059,18 @@ def compile_video_task_v2(
                 pass
 
             # Compile final video
-            output_path = _compile_final_video_v2(final_clips, temp_dir, project_data)
+            output_path = _compile_final_video_v2(
+                final_clips,
+                temp_dir,
+                project_data,
+                background_music_id=background_music_id,
+                music_volume=music_volume,
+                music_start_mode=music_start_mode,
+                music_end_mode=music_end_mode,
+                intro_id=intro_id,
+                outro_id=outro_id,
+                user_id=project_data["user_id"],
+            )
 
             self.update_state(
                 state="PROGRESS",

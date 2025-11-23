@@ -1107,6 +1107,7 @@
           <div class="mb-1"><strong>Estimated length:</strong> ${fmtSec(estimatedSeconds)}</div>
           <div class="mb-1"><strong>Intro/Outro:</strong> ${intro ? yes : no}, ${outro ? yes : no}</div>
           <div class="mb-1"><strong>Transitions:</strong> ${transCount ? `${transCount} (${transMode})` : 'None'}</div>
+          <div class="mb-1"><strong>Background Music:</strong> ${wizard.selectedMusicId ? `Yes (${document.getElementById('music-volume')?.value || 30}% volume)` : 'None'}</div>
           <div class="text-muted">Clip limits: min ${s.min_len || 0}s • max ${s.max_len || 0}s • max clips ${s.max_clips || 0}${s.compilation_length && s.compilation_length !== 'auto' ? ` • Target length: ${Math.floor(parseInt(s.compilation_length)/60)}m` : ''}${s.start_date || s.end_date ? ` • Dates: ${escapeHtml(s.start_date || '—')} → ${escapeHtml(s.end_date || '—')}` : ''}${s.min_views ? ` • Min views: ${escapeHtml(String(s.min_views))}` : ''}</div>
         </div>
         <div class="compile-right">
@@ -1489,6 +1490,12 @@
         body.transition_ids = wizard.selectedTransitionIds;
         body.randomize_transitions = !!document.getElementById('transitions-randomize')?.checked;
       }
+      if (wizard.selectedMusicId) {
+        body.background_music_id = wizard.selectedMusicId;
+        body.music_volume = parseFloat((parseInt(document.getElementById('music-volume')?.value || '30', 10) / 100).toFixed(2));
+        body.music_start_mode = document.getElementById('music-start-mode')?.value || 'after_intro';
+        body.music_end_mode = document.getElementById('music-end-mode')?.value || 'before_outro';
+      }
       // Extract the current timeline subset (ordered) so the backend renders exactly these clips
       const list = document.getElementById('timeline-list');
       const ids = Array.from(list.querySelectorAll('.timeline-card[data-clip-id]'))
@@ -1706,6 +1713,44 @@
       container.appendChild(card);
     });
   }
+  async function refreshMusic(){
+    const items = await loadMediaList('music');
+    const container = document.getElementById('music-list');
+    container.innerHTML = '';
+    wizard.selectedMusicId = wizard.selectedMusicId || null;
+    if (!items.length){ container.innerHTML = '<div class="text-muted">No music tracks found.</div>'; return; }
+    items.forEach(it => {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.style.width = '160px';
+      card.style.cursor = 'pointer';
+      const body = document.createElement('div');
+      body.className = 'card-body p-2';
+      const icon = document.createElement('div');
+      icon.className = 'text-center mb-2';
+      icon.innerHTML = '<i class="bi bi-music-note-beamed" style="font-size: 3rem;"></i>';
+      const title = document.createElement('div');
+      title.className = 'small text-truncate text-center';
+      title.textContent = it.original_filename || it.filename;
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-sm btn-primary w-100 mt-2';
+      btn.textContent = 'Select';
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        wizard.selectedMusicId = it.id;
+        document.querySelectorAll('#music-list .card').forEach(c => c.classList.remove('border-primary'));
+        card.classList.add('border', 'border-primary');
+      });
+      if (wizard.selectedMusicId === it.id) {
+        card.classList.add('border', 'border-primary');
+      }
+      body.appendChild(icon);
+      body.appendChild(title);
+      body.appendChild(btn);
+      card.appendChild(body);
+      container.appendChild(card);
+    });
+  }
   function renderTransitionsBadge(){
     const tl = document.getElementById('timeline');
     const info = document.getElementById('timeline-info');
@@ -1747,12 +1792,18 @@
     wizard.selectedTransitionIds = [];
     renderTransitionsBadge();
   });
+  // Music volume slider
+  document.getElementById('music-volume')?.addEventListener('input', (e) => {
+    const val = parseInt(e.target.value, 10);
+    document.getElementById('music-volume-display').textContent = val + '%';
+  });
   // When clicking the Arrange chevron, auto-refresh lists too (in case user navigates directly)
   document.querySelector('#wizard-chevrons li[data-step="3"]')?.addEventListener('click', () => {
     Promise.resolve().then(async () => {
       try { await refreshIntros(); } catch (_) {}
       try { await refreshOutros(); } catch (_) {}
       try { await refreshTransitions(); } catch (_) {}
+      try { await refreshMusic(); } catch (_) {}
       try { renderTransitionsBadge(); } catch (_) {}
     });
   });

@@ -119,6 +119,7 @@ class MediaType(Enum):
     - TRANSITION: Transition between clips
     - CLIP: Main content clip
     - COMPILATION: Final compiled render output
+    - MUSIC: Background music/audio track
     """
 
     INTRO = "intro"
@@ -126,6 +127,7 @@ class MediaType(Enum):
     TRANSITION = "transition"
     CLIP = "clip"
     COMPILATION = "compilation"
+    MUSIC = "music"
 
 
 class PlatformPreset(Enum):
@@ -556,6 +558,16 @@ class Project(db.Model):
     intro_media_id = db.Column(db.Integer, db.ForeignKey("media_files.id"))
     outro_media_id = db.Column(db.Integer, db.ForeignKey("media_files.id"))
 
+    # Background music settings
+    background_music_id = db.Column(db.Integer, db.ForeignKey("media_files.id"))
+    music_volume = db.Column(db.Float, default=0.3)  # 0.0 to 1.0
+    music_start_mode = db.Column(
+        db.String(20), default="after_intro"
+    )  # 'start', 'after_intro'
+    music_end_mode = db.Column(
+        db.String(20), default="before_outro"
+    )  # 'end', 'before_outro'
+
     # Output file information
     output_filename = db.Column(db.String(255))
     output_file_size = db.Column(db.BigInteger)
@@ -580,6 +592,9 @@ class Project(db.Model):
     )
     outro_media = db.relationship(
         "MediaFile", foreign_keys=[outro_media_id], uselist=False
+    )
+    background_music = db.relationship(
+        "MediaFile", foreign_keys=[background_music_id], uselist=False
     )
     team = db.relationship(
         "Team",

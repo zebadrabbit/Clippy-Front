@@ -567,6 +567,12 @@ def compile_project_api(project_id: int):
         transition_ids = data.get("transition_ids") or []
         randomize_transitions = bool(data.get("randomize_transitions") or False)
 
+        # Background music settings
+        background_music_id = data.get("background_music_id")
+        music_volume = data.get("music_volume")
+        music_start_mode = data.get("music_start_mode") or "after_intro"
+        music_end_mode = data.get("music_end_mode") or "before_outro"
+
         valid_transition_ids: list[int] = []
         if isinstance(transition_ids, list) and transition_ids:
             try:
@@ -734,6 +740,10 @@ def compile_project_api(project_id: int):
                 "transition_ids": valid_transition_ids,
                 "randomize_transitions": randomize_transitions,
                 "clip_ids": clip_ids,
+                "background_music_id": background_music_id,
+                "music_volume": music_volume,
+                "music_start_mode": music_start_mode,
+                "music_end_mode": music_end_mode,
             },
             queue=queue_name,
         )
