@@ -380,6 +380,11 @@ def init_extensions(app):
 
     db.init_app(app)
 
+    # Cache initialization
+    from app.cache import init_cache
+
+    init_cache(app)
+
     # Database migrations available in all environments
     Migrate(app, db)
 

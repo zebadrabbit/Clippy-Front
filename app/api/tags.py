@@ -36,6 +36,8 @@ def list_tags():
     """
     List all tags for the current user.
 
+    Results are cached per user for 5 minutes for performance.
+
     Query params:
         - q: Search query
         - limit: Maximum results (default 50)
@@ -44,50 +46,55 @@ def list_tags():
     Returns:
         JSON: List of tag objects with usage counts
     """
+    from app.cache import cache
+
     query_text = request.args.get("q", "").strip()
     limit = min(int(request.args.get("limit", 50)), 100)
     include_global = request.args.get("include_global", "true").lower() == "true"
 
-    # Build query
-    query = Tag.query
+    @cache.memoize(timeout=300)  # 5 minutes
+    def _get_user_tags(user_id, query_text, limit, include_global):
+        # Build query
+        query = Tag.query
 
-    # Filter by ownership
-    if include_global:
-        query = query.filter(
-            or_(Tag.user_id == current_user.id, Tag.is_global.is_(True))
-        )
-    else:
-        query = query.filter(Tag.user_id == current_user.id)
+        # Filter by ownership
+        if include_global:
+            query = query.filter(or_(Tag.user_id == user_id, Tag.is_global.is_(True)))
+        else:
+            query = query.filter(Tag.user_id == user_id)
 
-    # Search filter
-    if query_text:
-        search_pattern = f"%{query_text}%"
-        query = query.filter(
-            or_(Tag.name.ilike(search_pattern), Tag.description.ilike(search_pattern))
-        )
+        # Search filter
+        if query_text:
+            search_pattern = f"%{query_text}%"
+            query = query.filter(
+                or_(
+                    Tag.name.ilike(search_pattern),
+                    Tag.description.ilike(search_pattern),
+                )
+            )
 
-    # Order by usage and name
-    tags = query.order_by(Tag.use_count.desc(), Tag.name).limit(limit).all()
+        # Order by usage and name
+        tags = query.order_by(Tag.use_count.desc(), Tag.name).limit(limit).all()
 
-    return jsonify(
-        {
-            "tags": [
-                {
-                    "id": t.id,
-                    "name": t.name,
-                    "slug": t.slug,
-                    "description": t.description,
-                    "color": t.color,
-                    "is_global": t.is_global,
-                    "parent_id": t.parent_id,
-                    "full_path": t.full_path,
-                    "use_count": t.use_count or 0,
-                    "created_at": t.created_at.isoformat() if t.created_at else None,
-                }
-                for t in tags
-            ]
-        }
-    )
+        return [
+            {
+                "id": t.id,
+                "name": t.name,
+                "slug": t.slug,
+                "description": t.description,
+                "color": t.color,
+                "is_global": t.is_global,
+                "parent_id": t.parent_id,
+                "full_path": t.full_path,
+                "use_count": t.use_count or 0,
+                "created_at": t.created_at.isoformat() if t.created_at else None,
+            }
+            for t in tags
+        ]
+
+    tags = _get_user_tags(current_user.id, query_text, limit, include_global)
+
+    return jsonify({"tags": tags})
 
 
 @api_bp.route("/tags", methods=["POST"])
@@ -144,6 +151,11 @@ def create_tag():
         )
         db.session.add(tag)
         db.session.commit()
+
+        # Invalidate cache after tag creation
+        from app.cache import cache
+
+        cache.clear()
 
         current_app.logger.info(f"Tag created: {tag.id} by user {current_user.id}")
 
@@ -286,6 +298,12 @@ def update_tag(tag_id):
 
     try:
         db.session.commit()
+
+        # Invalidate cache after tag update
+        from app.cache import cache
+
+        cache.clear()
+
         current_app.logger.info(f"Tag updated: {tag.id} by user {current_user.id}")
 
         return jsonify(
@@ -328,6 +346,12 @@ def delete_tag(tag_id):
         # Associations are automatically removed via cascade
         db.session.delete(tag)
         db.session.commit()
+
+        # Invalidate cache after tag deletion
+        from app.cache import cache
+
+        cache.clear()
+
         current_app.logger.info(f"Tag deleted: {tag_id} by user {current_user.id}")
 
         return jsonify({"message": "Tag deleted successfully"})
