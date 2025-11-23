@@ -1508,8 +1508,10 @@ def process_uploaded_media_task(
                 app.logger.warning(f"Thumbnail generation failed for {media_id}: {e}")
                 results["thumbnail_error"] = str(e)
 
-        # Extract metadata with ffprobe
-        if media.mime_type and media.mime_type.startswith("video"):
+        # Extract metadata with ffprobe for video and audio files
+        if media.mime_type and (
+            media.mime_type.startswith("video") or media.mime_type.startswith("audio")
+        ):
             try:
                 from app.ffmpeg_config import config_args as _cfg_args
                 from app.main.routes import _resolve_binary
@@ -1539,22 +1541,23 @@ def process_uploaded_media_task(
                     media.duration = float(duration)
                     results["duration"] = float(duration)
 
-                # Extract video stream metadata
-                for stream in data.get("streams", []):
-                    if stream.get("codec_type") == "video":
-                        if "width" in stream:
-                            media.width = int(stream["width"])
-                            results["width"] = int(stream["width"])
-                        if "height" in stream:
-                            media.height = int(stream["height"])
-                            results["height"] = int(stream["height"])
-                        if "r_frame_rate" in stream:
-                            fps_str = stream["r_frame_rate"]
-                            if "/" in fps_str:
-                                num, den = fps_str.split("/")
-                                media.fps = float(num) / float(den)
-                                results["fps"] = float(num) / float(den)
-                        break
+                # Extract video stream metadata (only for video files)
+                if media.mime_type.startswith("video"):
+                    for stream in data.get("streams", []):
+                        if stream.get("codec_type") == "video":
+                            if "width" in stream:
+                                media.width = int(stream["width"])
+                                results["width"] = int(stream["width"])
+                            if "height" in stream:
+                                media.height = int(stream["height"])
+                                results["height"] = int(stream["height"])
+                            if "r_frame_rate" in stream:
+                                fps_str = stream["r_frame_rate"]
+                                if "/" in fps_str:
+                                    num, den = fps_str.split("/")
+                                    media.fps = float(num) / float(den)
+                                    results["fps"] = float(num) / float(den)
+                            break
 
             except Exception as e:
                 app.logger.warning(f"Metadata extraction failed for {media_id}: {e}")

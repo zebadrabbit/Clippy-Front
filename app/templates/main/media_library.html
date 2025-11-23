@@ -133,10 +133,10 @@
             </li>
             {% endif %}
             <li><span class="text-muted" data-role="size">{{ '%.1f'|format(m.file_size_mb) }} MB</span></li>
-        {# Show duration for all video media types. For intros/outros/transitions/compilations, assume video.
-          For clips, rely on MIME check to avoid showing for image clips. #}
+        {# Show duration for video and audio media types #}
         {% set is_video = (m.mime_type and m.mime_type.startswith('video')) or type_val in ('intro','outro','transition','compilation') %}
-        {% if is_video %}
+        {% set is_audio = (m.mime_type and m.mime_type.startswith('audio')) or type_val == 'music' %}
+        {% if is_video or is_audio %}
         <li><span class="text-muted" data-role="duration"><i class="bi bi-clock"></i> {{ m.duration_formatted }}</span></li>
         {% endif %}
             {% if src_url %}

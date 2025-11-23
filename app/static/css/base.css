@@ -419,6 +419,7 @@ fieldset:disabled .btn-primary {
 .media-card[data-type="clip"] { border-color: var(--media-color-clip, var(--color-accent)); }
 .media-card[data-type="outro"] { border-color: var(--media-color-outro, #f59e0b); }
 .media-card[data-type="transition"] { border-color: var(--media-color-transition, #22c55e); }
+.media-card[data-type="music"] { border-color: var(--media-color-music, #3b82f6); }
 .media-card[data-type="compilation"] { border-color: var(--media-color-compilation, var(--color-accent)); }
 
 /* Media type badges using theme colors */
@@ -437,6 +438,10 @@ fieldset:disabled .btn-primary {
 .badge.text-bg-transition {
     background-color: color-mix(in srgb, var(--media-color-transition, #22c55e), #000 10%) !important;
     color: #111 !important;
+}
+.badge.text-bg-music {
+    background-color: color-mix(in srgb, var(--media-color-music, #3b82f6), #000 10%) !important;
+    color: #fff !important;
 }
 .badge.text-bg-compilation {
     background-color: color-mix(in srgb, var(--media-color-compilation, var(--color-accent)), #000 10%) !important;
