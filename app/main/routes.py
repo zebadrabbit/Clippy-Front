@@ -1513,9 +1513,11 @@ def allowed_file(filename):
         return False
 
     file_ext = os.path.splitext(filename)[1].lower().lstrip(".")
-    allowed_extensions = current_app.config.get(
-        "ALLOWED_VIDEO_EXTENSIONS", set()
-    ) | current_app.config.get("ALLOWED_IMAGE_EXTENSIONS", set())
+    allowed_extensions = (
+        current_app.config.get("ALLOWED_VIDEO_EXTENSIONS", set())
+        | current_app.config.get("ALLOWED_IMAGE_EXTENSIONS", set())
+        | current_app.config.get("ALLOWED_AUDIO_EXTENSIONS", set())
+    )
 
     return file_ext in allowed_extensions
 

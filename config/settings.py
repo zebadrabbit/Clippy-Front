@@ -71,6 +71,7 @@ class Config:
     UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER") or "uploads"
     ALLOWED_VIDEO_EXTENSIONS = {"mp4", "avi", "mov", "mkv", "webm"}
     ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
+    ALLOWED_AUDIO_EXTENSIONS = {"mp3", "wav", "ogg", "m4a", "flac", "aac"}
     # Thumbnails
     THUMBNAIL_TIMESTAMP_SECONDS = int(os.environ.get("THUMBNAIL_TIMESTAMP_SECONDS", 3))
     THUMBNAIL_WIDTH = int(os.environ.get("THUMBNAIL_WIDTH", 480))
