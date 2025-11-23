@@ -739,6 +739,20 @@ def compile_project_api(project_id: int):
             # On error, use configured default (never 'celery')
             pass
 
+        # Save intro/outro/music settings to project before compilation
+        if intro_id is not None:
+            project.intro_media_id = intro_id
+        if outro_id is not None:
+            project.outro_media_id = outro_id
+        if background_music_id is not None:
+            project.background_music_id = background_music_id
+        if music_volume is not None:
+            project.music_volume = music_volume
+        if music_start_mode is not None:
+            project.music_start_mode = music_start_mode
+        if music_end_mode is not None:
+            project.music_end_mode = music_end_mode
+
         task = compile_video_task.apply_async(
             args=(project_id,),
             kwargs={

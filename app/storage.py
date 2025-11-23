@@ -154,3 +154,21 @@ def instance_canonicalize(path: str | None) -> str | None:
         # Fall back to original on any error
         return path
     return path
+
+
+def instance_expand(path: str | None) -> str | None:
+    """Expand a canonical '/instance/<suffix>' path back to an absolute path.
+
+    If the path doesn't start with '/instance/', it is returned unchanged.
+    This is the inverse of instance_canonicalize().
+    """
+    if not path:
+        return path
+    try:
+        if str(path).startswith("/instance/"):
+            suffix = path[10:]  # Remove '/instance/' prefix
+            base = current_app.instance_path  # type: ignore[attr-defined]
+            return os.path.join(base, suffix)
+    except Exception:
+        pass
+    return path

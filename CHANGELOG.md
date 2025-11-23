@@ -9,6 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.2] - 2025-11-23
+
+### Added
+- **Celebration Particle Effect**: Canvas 2D-based particle explosion that triggers on successful compilation
+  - 450 particles (3 bursts × 150 particles) with physics-based motion
+  - Gravity simulation (0.3), air resistance (0.99x velocity), random velocity vectors
+  - 6 vibrant colors matching app theme (#0d6efd, #22c55e, #9b59b6, #f59e0b, #ef4444, #06b6d4)
+  - Particles spawn from wizard chevron center with alpha decay
+  - Full-screen canvas overlay (z-index 9999, pointer-events none)
+  - Automatic trigger on compilation success in project wizard
+  - Standalone demo file for testing (`tmp/celebration_demo.html`)
+
+### Fixed
+- **Background Music Timing**: Music now properly stops before outro when "End: before outro" mode is selected
+  - Added `atrim=end={music_end_time}` to FFmpeg filter chain to actually cut audio stream
+  - Fixed fadeout timing to occur 2 seconds before music end (not video end)
+  - Applied to all 4 filter variants (loop/no-loop × has-audio/no-audio)
+  - Filter order: `aloop` → `adelay` → `atrim` → `volume` → `afade`
+  - Music fadeout was working beautifully but track continued through outro - now both work correctly
+
+### Changed
+- Updated celebration effect implementation from Three.js to Canvas 2D for simplicity
+- Music end time calculation now accounts for outro duration and static bumper when "before_outro" mode
+- Fadeout start time now relative to music end point: `fadeout_start = max(0, music_end_time - 2)`
+
+### Deployment
+- All changes synced to remote worker (192.168.1.119:2222)
+- Celery workers restarted to pick up new code
+- Both features ready for production testing
+
+---
+
 ## [1.0.1] - 2025-11-23
 
 ### Fixed

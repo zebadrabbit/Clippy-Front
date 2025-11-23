@@ -1068,8 +1068,6 @@ def media_upload():
     try:
         original_name = os.path.basename(file.filename or "")
         safe_name = secure_filename(original_name) or "uploaded_file"
-        file_ext = os.path.splitext(safe_name)[1]
-        unique_name = f"{uuid4().hex}{file_ext}"
 
         mtype = MediaType(media_type_val)
         mime_type = file.content_type or "application/octet-stream"
@@ -1091,7 +1089,24 @@ def media_upload():
             user_dir = os.path.join(base_lib, subfolder)
         storage_lib.ensure_dirs(user_dir)
 
-        dest_path = os.path.join(user_dir, unique_name)
+        # For library items (intros/outros/transitions/music), keep original filename
+        # For clips, use UUID to avoid conflicts from multiple downloads
+        if subfolder in ("intros", "outros", "transitions", "music"):
+            # Handle duplicate filenames by appending counter
+            base_path = os.path.join(user_dir, safe_name)
+            dest_path = base_path
+            counter = 1
+            while os.path.exists(dest_path):
+                name_part, ext_part = os.path.splitext(safe_name)
+                dest_path = os.path.join(user_dir, f"{name_part}_{counter}{ext_part}")
+                counter += 1
+            unique_name = os.path.basename(dest_path)
+        else:
+            # For clips, use UUID-based names to avoid conflicts
+            file_ext = os.path.splitext(safe_name)[1]
+            unique_name = f"{uuid4().hex}{file_ext}"
+            dest_path = os.path.join(user_dir, unique_name)
+
         file.save(dest_path)
 
         # Enforce storage quota right after save but before DB insert
@@ -1434,14 +1449,18 @@ def media_delete(media_id: int):
         return jsonify({"error": "Not authorized"}), 403
     try:
         # Remove files from disk
+        from app import storage as storage_lib
+
         try:
-            if os.path.exists(media.file_path):
-                os.remove(media.file_path)
+            abs_path = storage_lib.instance_expand(media.file_path)
+            if abs_path and os.path.exists(abs_path):
+                os.remove(abs_path)
         except Exception:
             pass
         try:
-            if media.thumbnail_path and os.path.exists(media.thumbnail_path):
-                os.remove(media.thumbnail_path)
+            abs_thumb = storage_lib.instance_expand(media.thumbnail_path)
+            if abs_thumb and os.path.exists(abs_thumb):
+                os.remove(abs_thumb)
         except Exception:
             pass
         db.session.delete(media)
@@ -1466,16 +1485,20 @@ def media_bulk():
     )
     items = q.all()
     if action == "delete":
+        from app import storage as storage_lib
+
         ok = 0
         for m in items:
             try:
-                if os.path.exists(m.file_path):
-                    os.remove(m.file_path)
+                abs_path = storage_lib.instance_expand(m.file_path)
+                if abs_path and os.path.exists(abs_path):
+                    os.remove(abs_path)
             except Exception:
                 pass
             try:
-                if m.thumbnail_path and os.path.exists(m.thumbnail_path):
-                    os.remove(m.thumbnail_path)
+                abs_thumb = storage_lib.instance_expand(m.thumbnail_path)
+                if abs_thumb and os.path.exists(abs_thumb):
+                    os.remove(abs_thumb)
             except Exception:
                 pass
             db.session.delete(m)

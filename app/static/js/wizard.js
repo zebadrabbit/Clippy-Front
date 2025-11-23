@@ -1537,6 +1537,11 @@
             log.textContent = "Show’s in the can!";
             document.getElementById('next-4').disabled = false;
             document.getElementById('export-ready').classList.remove('d-none');
+
+            // 🎉 Trigger celebration particle effect!
+            if (window.triggerCelebration) {
+              window.triggerCelebration();
+            }
             try { await refreshExportInfo(); } catch (e) {
               const dl = document.getElementById('download-output');
               dl.classList.remove('disabled');
@@ -2184,4 +2189,104 @@
     `;
     document.head.appendChild(style);
   })();
+
+  // ========================================
+  // Celebration Particle Explosion Effect
+  // ========================================
+  window.triggerCelebration = function() {
+    const canvas = document.getElementById('celebration-canvas');
+    if (!canvas) return;
+
+    canvas.style.display = 'block';
+    const ctx = canvas.getContext('2d');
+
+    // Set canvas size
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const particles = [];
+    const particleCount = 150;
+    const gravity = 0.3;
+    const colors = ['#0d6efd', '#22c55e', '#9b59b6', '#f59e0b', '#ef4444', '#06b6d4'];
+
+    class Particle {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.vx = (Math.random() - 0.5) * 15;
+        this.vy = (Math.random() - 0.5) * 15 - 5;
+        this.radius = Math.random() * 4 + 2;
+        this.color = colors[Math.floor(Math.random() * colors.length)];
+        this.alpha = 1;
+        this.decay = Math.random() * 0.015 + 0.01;
+      }
+
+      update() {
+        this.vy += gravity * 0.1;
+        this.x += this.vx;
+        this.y += this.vy;
+        this.alpha -= this.decay;
+
+        // Air resistance
+        this.vx *= 0.99;
+        this.vy *= 0.99;
+      }
+
+      draw() {
+        ctx.save();
+        ctx.globalAlpha = this.alpha;
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      isDead() {
+        return this.alpha <= 0;
+      }
+    }
+
+    // Create explosion from center of chevron area
+    const chevronEl = document.getElementById('wizard-chevrons');
+    let centerX = canvas.width / 2;
+    let centerY = canvas.height / 4;
+
+    if (chevronEl) {
+      const rect = chevronEl.getBoundingClientRect();
+      centerX = rect.left + rect.width / 2;
+      centerY = rect.top + rect.height / 2;
+    }
+
+    // Create multiple bursts
+    for (let burst = 0; burst < 3; burst++) {
+      setTimeout(() => {
+        for (let i = 0; i < particleCount; i++) {
+          particles.push(new Particle(centerX, centerY));
+        }
+      }, burst * 200);
+    }
+
+    function animate() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.update();
+        p.draw();
+
+        if (p.isDead()) {
+          particles.splice(i, 1);
+        }
+      }
+
+      if (particles.length > 0) {
+        requestAnimationFrame(animate);
+      } else {
+        canvas.style.display = 'none';
+      }
+    }
+
+    animate();
+  };
 })();

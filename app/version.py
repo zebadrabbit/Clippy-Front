@@ -2,8 +2,8 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "1.0.1"
-__version_info__ = (1, 0, 1)
+__version__ = "1.0.2"
+__version_info__ = (1, 0, 2)
 
 # Version history tracking
 VERSION_HISTORY = {
@@ -162,6 +162,11 @@ VERSION_HISTORY = {
         "last project links with status indicators, and real-time last_run_at updates. "
         "New API endpoint /api/automation/tasks/<id>/history for viewing past runs (50 most recent). "
         "Automation tasks now complete fully end-to-end: fetch clips → download → compile → update last_run timestamp."
+    ),
+    "1.0.2": (
+        "Celebration particle explosion effect and music timing fix: added Canvas 2D-based particle celebration (450 particles, physics simulation) "
+        "that triggers automatically on successful compilation. Background music now properly stops before outro (when 'End: before outro' is set) "
+        "using atrim filter to cut audio at calculated endpoint with 2-second fadeout. Both features deployed to remote workers."
     ),
 }
 

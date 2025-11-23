@@ -121,8 +121,8 @@
               <dl class="row small mb-0">
                 <dt class="col-sm-3 text-muted">Intro:</dt>
                 <dd class="col-sm-9 mb-2">
-                  {% if intros and intros|length > 0 %}
-                    {% set m = intros[0] %}
+                  {% if project.intro_media %}
+                    {% set m = project.intro_media %}
                     <div class="d-flex align-items-center gap-2">
                       <a href="#" tabindex="0"
                          data-bs-toggle="popover"
@@ -143,8 +143,8 @@
                 </dd>
                 <dt class="col-sm-3 text-muted">Outro:</dt>
                 <dd class="col-sm-9 mb-2">
-                  {% if outros and outros|length > 0 %}
-                    {% set m = outros[0] %}
+                  {% if project.outro_media %}
+                    {% set m = project.outro_media %}
                     <div class="d-flex align-items-center gap-2">
                       <a href="#" tabindex="0"
                          data-bs-toggle="popover"
@@ -181,6 +181,27 @@
                         </a>
                       {% endfor %}
                     </div>
+                  {% else %}
+                    <span class="text-muted">None</span>
+                  {% endif %}
+                </dd>
+                <dt class="col-sm-3 text-muted">Background Music:</dt>
+                <dd class="col-sm-9 mb-0">
+                  {% if project.background_music_id %}
+                    {% set music = project.background_music %}
+                    <div class="d-flex align-items-center gap-2">
+                      <i class="bi bi-music-note-beamed"></i>
+                      <span class="text-truncate" title="{{ music.original_filename if music else 'Unknown' }}">
+                        {{ music.original_filename if music else 'Music file #' ~ project.background_music_id }}
+                      </span>
+                      <span class="badge bg-secondary">{{ (project.music_volume * 100)|int }}% volume</span>
+                    </div>
+                    {% if project.music_start_mode or project.music_end_mode %}
+                      <small class="text-muted d-block mt-1">
+                        Start: {{ 'after intro' if project.music_start_mode == 'after_intro' else 'with video' }}
+                        • End: {{ 'before outro' if project.music_end_mode == 'before_outro' else 'with video' }}
+                      </small>
+                    {% endif %}
                   {% else %}
                     <span class="text-muted">None</span>
                   {% endif %}

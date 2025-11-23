@@ -317,9 +317,6 @@ def download_clip_task_v2(self, clip_id: int, source_url: str) -> dict[str, Any]
         clip_meta = worker_api.get_clip_metadata(clip_id)
         user_id = clip_meta["user_id"]
         project_id = clip_meta["project_id"]
-        username = clip_meta["username"]
-        project_name = clip_meta["project_name"]
-        source_id = clip_meta.get("source_id") or f"clip_{clip_id}"
 
         # Create processing job
         self.update_state(
@@ -392,25 +389,70 @@ def download_clip_task_v2(self, clip_id: int, source_url: str) -> dict[str, Any]
                 "Storage quota exceeded: no remaining bytes for download"
             )
 
-        # Prepare download directory
-        instance_path = os.environ.get("CLIPPY_INSTANCE_PATH", "/app/instance")
-        dl_dir = os.path.join(instance_path, "data", username, project_name, "clips")
-        os.makedirs(dl_dir, exist_ok=True)
+        # Check local cache before downloading
+        import hashlib
+        import time
 
-        # Download with yt-dlp
-        self.update_state(
-            state="PROGRESS", meta={"progress": 30, "status": "Downloading video"}
-        )
-        worker_api.update_processing_job(job_id, progress=30)
-        log("info", "Downloading video", status="downloading")
+        cache_dir = "/tmp/clippy-worker-cache"
+        os.makedirs(cache_dir, exist_ok=True)
 
-        output_path = _download_with_ytdlp_standalone(
-            source_url,
-            source_id,
-            clip_meta.get("title", f"clip_{clip_id}"),
-            max_bytes=int(rem_bytes) if rem_bytes is not None else None,
-            download_dir=dl_dir,
-        )
+        # Clean up old cache files (>2 hours)
+        try:
+            max_age = 2 * 3600  # 2 hours in seconds
+            now = time.time()
+            for cached_file in os.listdir(cache_dir):
+                cached_path = os.path.join(cache_dir, cached_file)
+                if os.path.isfile(cached_path):
+                    age = now - os.stat(cached_path).st_atime
+                    if age > max_age:
+                        try:
+                            os.remove(cached_path)
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+        # Generate cache key from source URL
+        url_hash = hashlib.sha256(source_url.encode()).hexdigest()[:16]
+        cache_pattern = os.path.join(cache_dir, f"clip_{url_hash}.*")
+
+        # Check if cached file exists
+        import glob
+
+        cached_files = glob.glob(cache_pattern)
+        output_path = None
+
+        if cached_files:
+            # Use cached file
+            cached_path = cached_files[0]
+            print(
+                f"[CACHE HIT] Using cached clip for URL {source_url[:50]}... -> {cached_path}"
+            )
+            log("info", f"Using cached clip: {cached_path}", status="cache_hit")
+            # Touch file to refresh TTL
+            os.utime(cached_path, None)
+            output_path = cached_path
+        else:
+            # Download to cache directory
+            print(
+                f"[CACHE MISS] Downloading from Twitch: {source_url[:50]}... to {cache_dir}"
+            )
+            self.update_state(
+                state="PROGRESS", meta={"progress": 30, "status": "Downloading video"}
+            )
+            worker_api.update_processing_job(job_id, progress=30)
+            log("info", "Downloading video from Twitch", status="downloading")
+
+            # Download to cache
+            output_path = _download_with_ytdlp_standalone(
+                source_url,
+                f"clip_{url_hash}",  # Use hash-based filename for cache
+                clip_meta.get("title", f"clip_{clip_id}"),
+                max_bytes=int(rem_bytes) if rem_bytes is not None else None,
+                download_dir=cache_dir,
+            )
+            print(f"[CACHE SAVE] Downloaded to cache: {output_path}")
+            log("info", f"Downloaded to cache: {output_path}", status="cached")
 
         # Extract metadata
         self.update_state(

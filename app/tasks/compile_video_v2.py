@@ -149,6 +149,9 @@ def _download_media_file(media_id: int, user_id: int, cache_dir: str) -> str:
     Remote workers use this to fetch clips, intros, outros, and transitions
     when they don't have shared filesystem access.
 
+    Files are cached in cache_dir for 2 hours. Access time is updated on each use
+    to prevent deletion of recently-used files.
+
     Args:
         media_id: MediaFile ID to download
         user_id: User ID for ownership validation
@@ -169,13 +172,10 @@ def _download_media_file(media_id: int, user_id: int, cache_dir: str) -> str:
     if not api_base or not api_key:
         raise RuntimeError("MEDIA_BASE_URL or WORKER_API_KEY not configured")
 
-    # Check if already cached
-    cached_path = os.path.join(cache_dir, f"media_{media_id}.mp4")
-    if os.path.exists(cached_path):
-        app.logger.info(f"Using cached media file {media_id}: {cached_path}")
-        return cached_path
+    # Clean up old cache files (older than 2 hours since last access)
+    _cleanup_cache(cache_dir, max_age_hours=2)
 
-    # Download from API
+    # Download from API first to get the file extension
     url = f"{api_base}/api/worker/media/{media_id}/download?user_id={user_id}"
     headers = {"Authorization": f"Bearer {api_key}"}
 
@@ -183,6 +183,22 @@ def _download_media_file(media_id: int, user_id: int, cache_dir: str) -> str:
         app.logger.info(f"Downloading media {media_id} from {url}")
         response = requests.get(url, headers=headers, stream=True, timeout=300)
         response.raise_for_status()
+
+        # Detect file extension from Content-Type or Content-Disposition
+        file_ext = ".mp4"  # Default
+        content_type = response.headers.get("Content-Type", "")
+        if "audio/mpeg" in content_type or "audio/mp3" in content_type:
+            file_ext = ".mp3"
+        elif "video/mp4" in content_type:
+            file_ext = ".mp4"
+
+        # Check if already cached with correct extension
+        cached_path = os.path.join(cache_dir, f"media_{media_id}{file_ext}")
+        if os.path.exists(cached_path):
+            app.logger.info(f"Using cached media file {media_id}: {cached_path}")
+            # Touch the file to update access time
+            os.utime(cached_path, None)
+            return cached_path
 
         # Save to cache
         os.makedirs(cache_dir, exist_ok=True)
@@ -195,6 +211,55 @@ def _download_media_file(media_id: int, user_id: int, cache_dir: str) -> str:
 
     except Exception as e:
         raise RuntimeError(f"Failed to download media {media_id}: {e}") from e
+
+
+def _cleanup_cache(cache_dir: str, max_age_hours: float = 2.0) -> None:
+    """Remove cached files older than max_age_hours since last access.
+
+    Args:
+        cache_dir: Cache directory to clean
+        max_age_hours: Maximum age in hours before deletion
+    """
+    import time
+
+    if not os.path.exists(cache_dir):
+        return
+
+    try:
+        now = time.time()
+        max_age_seconds = max_age_hours * 3600
+        removed_count = 0
+        removed_size = 0
+
+        for filename in os.listdir(cache_dir):
+            filepath = os.path.join(cache_dir, filename)
+            if not os.path.isfile(filepath):
+                continue
+
+            # Check file access time (updated by os.utime on each use)
+            try:
+                stat = os.stat(filepath)
+                age_seconds = now - stat.st_atime
+
+                if age_seconds > max_age_seconds:
+                    file_size = stat.st_size
+                    os.remove(filepath)
+                    removed_count += 1
+                    removed_size += file_size
+            except Exception:
+                pass
+
+        if removed_count > 0:
+            size_mb = removed_size / (1024 * 1024)
+            app = _get_app()
+            app.logger.info(
+                f"Cache cleanup: removed {removed_count} files ({size_mb:.1f} MB) "
+                f"older than {max_age_hours} hours from {cache_dir}"
+            )
+
+    except Exception as e:
+        app = _get_app()
+        app.logger.warning(f"Cache cleanup failed: {e}")
 
 
 def _apply_tier_limits_to_clips(
@@ -405,10 +470,11 @@ def _process_clip_v2(
     if audio_profile or audio_db:
         cmd.extend(audio_args(app, audio_profile, audio_db))
     else:
+        # Re-encode audio to prevent sync drift, especially when using -ss trimming
         # Map audio stream from the main video input
         # When avatar is present: input 0=video (with audio), input 1=avatar.png (no audio)
         # When no avatar: input 0=video (with audio)
-        cmd.extend(["-map", "0:a"])
+        cmd.extend(["-map", "0:a", "-c:a", "aac", "-b:a", "192k", "-ar", "48000"])
 
     # Output
     cmd.extend(["-y", output_path])
@@ -507,6 +573,12 @@ def _process_media_file_v2(
         "-vf",
         scale_filter,
         *encoder_args(ffmpeg_bin),
+        "-c:a",
+        "aac",  # Re-encode audio to standardize format
+        "-b:a",
+        "192k",
+        "-ar",
+        "48000",  # Standardize sample rate
         "-y",
         output_path,
     ]
@@ -584,6 +656,7 @@ def _build_timeline_with_transitions_v2(
 
     # Get static bumper path
     app = _get_app()
+    ffmpeg_bin = resolve_binary(app, "ffmpeg")
     static_bumper_path = None
 
     # Check configured path first
@@ -604,11 +677,49 @@ def _build_timeline_with_transitions_v2(
     processed_static_path = None
     if static_bumper_path and os.path.exists(static_bumper_path):
         processed_static_path = os.path.join(temp_dir, "static_processed.mp4")
-        # Create a minimal media_data dict for static.mp4
-        static_media_data = {"file_path": static_bumper_path}
-        _process_media_file_v2(
-            static_media_data, processed_static_path, project_data, tier_limits
+
+        # Process static bumper with special handling for audio sync
+        # Static bumpers often have mismatched audio/video durations which cause sync issues
+        # We re-encode audio to match video duration exactly
+        from app.ffmpeg_config import config_args as _cfg_args
+
+        eff_label = _cap_resolution_label(
+            project_data.get("output_resolution", "1080p"),
+            tier_limits.get("max_res_label"),
         )
+        target_res = parse_resolution(
+            None, eff_label or project_data.get("output_resolution", "1080p")
+        )
+
+        target_width, target_height = map(int, target_res.split("x"))
+        is_portrait_output = target_height > target_width
+
+        if is_portrait_output:
+            scale_filter = (
+                f"scale=-1:{target_height},crop={target_width}:{target_height}"
+            )
+        else:
+            scale_filter = f"scale={target_width}:{target_height}:flags=lanczos"
+
+        # Re-encode audio to standardize format and fix any duration mismatches
+        static_cmd = [
+            ffmpeg_bin,
+            *_cfg_args(app, "ffmpeg", "encode"),
+            "-i",
+            static_bumper_path,
+            "-vf",
+            scale_filter,
+            *encoder_args(ffmpeg_bin),
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-ar",
+            "48000",
+            "-y",
+            processed_static_path,
+        ]
+        subprocess.run(static_cmd, check=True, capture_output=True)
 
     # Build timeline with transitions between segments
     import random as _random
@@ -725,21 +836,56 @@ def _compile_final_video_v2(
     from app.ffmpeg_config import config_args as _cfg_args
 
     # First, concat all video segments
+    # NOTE: When adding music, we need to re-encode audio to avoid sync issues
+    # caused by different audio timestamps/formats between clips
     concat_output = os.path.join(temp_dir, "concat_no_music.mp4")
-    cmd = [
-        ffmpeg_bin,
-        *_cfg_args(app, "ffmpeg", "concat"),
-        "-f",
-        "concat",
-        "-safe",
-        "0",
-        "-i",
-        concat_file,
-        "-c",
-        "copy",
-        "-y",
-        concat_output,
-    ]
+
+    # Check if we'll be adding music - if so, normalize audio during concat
+    will_add_music = bool(background_music_id)
+
+    if will_add_music:
+        # Re-encode audio to normalize timestamps and avoid sync drift
+        # Use concat demuxer with explicit timestamp fixing
+        cmd = [
+            ffmpeg_bin,
+            *_cfg_args(app, "ffmpeg", "concat"),
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-fflags",
+            "+genpts",  # Generate presentation timestamps
+            "-i",
+            concat_file,
+            "-c:v",
+            "copy",  # Video can still be copied
+            "-c:a",
+            "aac",  # Re-encode audio to normalize
+            "-b:a",
+            "192k",
+            "-ar",
+            "48000",  # Standardize sample rate
+            "-avoid_negative_ts",
+            "make_zero",  # Start timestamps at 0
+            "-y",
+            concat_output,
+        ]
+    else:
+        # No music - use codec copy for both audio and video
+        cmd = [
+            ffmpeg_bin,
+            *_cfg_args(app, "ffmpeg", "concat"),
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            concat_file,
+            "-c",
+            "copy",
+            "-y",
+            concat_output,
+        ]
 
     subprocess.run(cmd, check=True, capture_output=True)
 
@@ -747,6 +893,13 @@ def _compile_final_video_v2(
     if not background_music_id:
         shutil.move(concat_output, output_path)
         return output_path
+
+    # Log music parameters for debugging
+    app.logger.info(
+        f"Music mixing parameters: background_music_id={background_music_id}, "
+        f"music_volume={music_volume}, music_start_mode={music_start_mode}, "
+        f"music_end_mode={music_end_mode}, intro_id={intro_id}, outro_id={outro_id}"
+    )
 
     # Fetch music file
     music_path = None
@@ -757,6 +910,27 @@ def _compile_final_video_v2(
             if media_files:
                 music_data = media_files[0]
                 music_path = music_data.get("file_path")
+
+                # Download music file if not accessible locally (remote worker)
+                if music_path and not os.path.exists(music_path):
+                    app.logger.info(
+                        f"Music file not found locally: {music_path}. Attempting download..."
+                    )
+                    cache_dir = os.path.join(
+                        tempfile.gettempdir(), "clippy-worker-cache"
+                    )
+                    try:
+                        music_path = _download_media_file(
+                            background_music_id, user_id, cache_dir
+                        )
+                        app.logger.info(
+                            f"Successfully downloaded music file to {music_path}"
+                        )
+                    except Exception as e:
+                        app.logger.error(
+                            f"Failed to download music file: {e}", exc_info=True
+                        )
+                        music_path = None
     except Exception:
         pass
 
@@ -770,22 +944,96 @@ def _compile_final_video_v2(
     video_meta = extract_video_metadata(concat_output)
     total_duration = video_meta.get("duration", 0)
 
+    # Get static bumper duration if it exists (used in timeline)
+    static_duration = 0.0
+    static_bumper_path = None
+    try:
+        configured_static = app.config.get("STATIC_BUMPER_PATH")
+        if configured_static and os.path.exists(configured_static):
+            static_bumper_path = configured_static
+        else:
+            # Try instance/assets/static.mp4
+            try:
+                from app.storage import data_root
+
+                instance_static = os.path.join(
+                    data_root(), "..", "assets", "static.mp4"
+                )
+                instance_static = os.path.normpath(instance_static)
+                if os.path.exists(instance_static):
+                    static_bumper_path = instance_static
+            except Exception:
+                pass
+
+        if static_bumper_path and os.path.exists(static_bumper_path):
+            static_meta = extract_video_metadata(static_bumper_path)
+            static_duration = float(static_meta.get("duration", 0))
+            app.logger.info(f"Static bumper duration: {static_duration}s")
+    except Exception as e:
+        app.logger.warning(f"Failed to get static duration: {e}")
+
     music_start_time = 0.0
     music_end_time = total_duration
 
     # Calculate start time
+    app.logger.info(
+        f"Music start calculation: mode={music_start_mode}, intro_id={intro_id}, user_id={user_id}"
+    )
     if music_start_mode == "after_intro" and intro_id:
         try:
             if user_id:
                 response = worker_api.get_media_batch([intro_id], user_id)
+                app.logger.info(f"Intro media batch response: {response}")
                 media_files = response.get("media_files", [])
                 if media_files:
                     intro_data = media_files[0]
                     intro_duration = intro_data.get("duration", 0)
+                    app.logger.info(
+                        f"Intro data: {intro_data}, duration={intro_duration}"
+                    )
+
+                    # If duration is missing from database, extract it from the file
+                    if not intro_duration:
+                        app.logger.warning(
+                            "Intro duration is 0 or None, extracting from file"
+                        )
+                        intro_path = intro_data.get("file_path")
+                        if intro_path:
+                            # Check if file exists locally, otherwise download it
+                            intro_path = _resolve_media_input_path(intro_path)
+                            if not os.path.exists(intro_path):
+                                cache_dir = os.path.join(
+                                    tempfile.gettempdir(), "clippy-worker-cache"
+                                )
+                                intro_path = _download_media_file(
+                                    intro_id, user_id, cache_dir
+                                )
+
+                            # Extract metadata
+                            intro_meta = extract_video_metadata(intro_path)
+                            intro_duration = intro_meta.get("duration", 0)
+                            app.logger.info(
+                                f"Extracted intro duration from file: {intro_duration}s"
+                            )
+
                     if intro_duration:
-                        music_start_time = float(intro_duration)
-        except Exception:
-            pass
+                        # Account for intro + static bumper after intro
+                        music_start_time = float(intro_duration) + static_duration
+                        app.logger.info(
+                            f"Music start: after intro (intro={intro_duration}s + static={static_duration}s = {music_start_time}s)"
+                        )
+                    else:
+                        app.logger.warning(
+                            "Intro duration is still 0 or None after extraction attempt"
+                        )
+                else:
+                    app.logger.warning(
+                        f"No media files returned for intro_id={intro_id}"
+                    )
+            else:
+                app.logger.warning("user_id is None, cannot fetch intro duration")
+        except Exception as e:
+            app.logger.error(f"Failed to get intro duration: {e}", exc_info=True)
 
     # Calculate end time
     if music_end_mode == "before_outro" and outro_id:
@@ -796,10 +1044,41 @@ def _compile_final_video_v2(
                 if media_files:
                     outro_data = media_files[0]
                     outro_duration = outro_data.get("duration", 0)
+
+                    # If duration is missing from database, extract it from the file
+                    if not outro_duration:
+                        app.logger.warning(
+                            "Outro duration is 0 or None, extracting from file"
+                        )
+                        outro_path = outro_data.get("file_path")
+                        if outro_path:
+                            # Check if file exists locally, otherwise download it
+                            outro_path = _resolve_media_input_path(outro_path)
+                            if not os.path.exists(outro_path):
+                                cache_dir = os.path.join(
+                                    tempfile.gettempdir(), "clippy-worker-cache"
+                                )
+                                outro_path = _download_media_file(
+                                    outro_id, user_id, cache_dir
+                                )
+
+                            # Extract metadata
+                            outro_meta = extract_video_metadata(outro_path)
+                            outro_duration = outro_meta.get("duration", 0)
+                            app.logger.info(
+                                f"Extracted outro duration from file: {outro_duration}s"
+                            )
+
                     if outro_duration:
-                        music_end_time = total_duration - float(outro_duration)
-        except Exception:
-            pass
+                        # Account for outro + static bumper before outro (after last clip)
+                        music_end_time = (
+                            total_duration - float(outro_duration) - static_duration
+                        )
+                        app.logger.info(
+                            f"Music end: before outro (outro={outro_duration}s + static={static_duration}s, end={music_end_time}s)"
+                        )
+        except Exception as e:
+            app.logger.warning(f"Failed to get outro duration: {e}")
 
     # Mix background music with audio ducking for clips that have audio
     volume = music_volume if music_volume is not None else 0.3
@@ -846,28 +1125,35 @@ def _compile_final_video_v2(
     app.logger.info(
         f"Background music: file_duration={music_file_duration}s, "
         f"needed_duration={needed_music_duration}s, needs_loop={needs_loop}, "
-        f"volume={volume}, start={music_start_time}s, end={music_end_time}s"
+        f"volume={volume}, start={music_start_time}s, end={music_end_time}s, "
+        f"total_video={total_duration}s"
     )
+
+    # Calculate fadeout start time (2 seconds before music should end)
+    # Trim music to music_end_time so it stops before outro (if "before outro" is set)
+    fadeout_start = max(0, music_end_time - 2)
 
     if has_audio_stream:
         # Use sidechaincompress for automatic ducking when video audio is present
         # This reduces music volume by ~20dB when video audio is detected above -40dB threshold
         if needs_loop:
             # Loop music to ensure it covers the full video duration
-            # Use aloop with -1 to loop indefinitely, then trim with atrim
+            # Order: loop -> delay -> trim -> volume/fade
             filter_complex = (
                 f"[1:a]aloop=loop=-1:size=2e+09,"
-                f"atrim=0:{needed_music_duration + music_start_time},"
                 f"adelay={int(music_start_time * 1000)}|{int(music_start_time * 1000)},"
-                f"volume={volume},afade=t=out:st={music_duration - 2}:d=2[music];"
+                f"atrim=end={music_end_time},"
+                f"volume={volume},afade=t=out:st={fadeout_start}:d=2[music];"
                 f"[0:a]asplit=2[va1][va2];"
                 f"[music][va2]sidechaincompress=threshold=0.02:ratio=20:attack=1:release=250[compressed];"
                 f"[va1][compressed]amix=inputs=2:duration=first:dropout_transition=2[aout]"
             )
         else:
+            # Music is long enough, delay and trim to music_end_time
             filter_complex = (
                 f"[1:a]adelay={int(music_start_time * 1000)}|{int(music_start_time * 1000)},"
-                f"volume={volume},afade=t=out:st={music_duration - 2}:d=2[music];"
+                f"atrim=end={music_end_time},"
+                f"volume={volume},afade=t=out:st={fadeout_start}:d=2[music];"
                 f"[0:a]asplit=2[va1][va2];"
                 f"[music][va2]sidechaincompress=threshold=0.02:ratio=20:attack=1:release=250[compressed];"
                 f"[va1][compressed]amix=inputs=2:duration=first:dropout_transition=2[aout]"
@@ -877,17 +1163,19 @@ def _compile_final_video_v2(
         # No audio in video, use music as the only audio source
         # Loop music if needed to cover the video duration
         if needs_loop:
-            # Use aloop with -1 to loop indefinitely, then trim to exact duration needed
+            # Order: loop -> delay -> trim -> volume/fade
             filter_complex = (
                 f"[1:a]aloop=loop=-1:size=2e+09,"
-                f"atrim=0:{needed_music_duration + music_start_time},"
                 f"adelay={int(music_start_time * 1000)}|{int(music_start_time * 1000)},"
-                f"volume={volume},afade=t=out:st={music_duration - 2}:d=2[music]"
+                f"atrim=end={music_end_time},"
+                f"volume={volume},afade=t=out:st={fadeout_start}:d=2[music]"
             )
         else:
+            # Music is long enough, delay and trim to music_end_time
             filter_complex = (
                 f"[1:a]adelay={int(music_start_time * 1000)}|{int(music_start_time * 1000)},"
-                f"volume={volume},afade=t=out:st={music_duration - 2}:d=2[music]"
+                f"atrim=end={music_end_time},"
+                f"volume={volume},afade=t=out:st={fadeout_start}:d=2[music]"
             )
         audio_map = "[music]"
 

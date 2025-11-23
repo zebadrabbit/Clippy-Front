@@ -19,6 +19,7 @@ from functools import wraps
 
 from flask import current_app, jsonify, request, send_file
 
+from app import storage as storage_lib
 from app.api import api_bp
 from app.models import Clip, MediaFile, MediaType, ProcessingJob, Project, db
 
@@ -1263,13 +1264,17 @@ def worker_get_media_batch():
         )
 
         # Verify all files exist on disk
+        from app import storage as storage_lib
+
         existing_media = []
         for mf in media_files:
-            if mf.file_path and os.path.exists(mf.file_path):
+            # Expand canonical /instance/... paths to absolute paths
+            abs_path = storage_lib.instance_expand(mf.file_path)
+            if abs_path and os.path.exists(abs_path):
                 existing_media.append(mf)
             else:
                 current_app.logger.warning(
-                    f"Media file {mf.id} not found on disk: {mf.file_path}"
+                    f"Media file {mf.id} not found on disk: {mf.file_path} (expanded: {abs_path})"
                 )
 
         return jsonify(
@@ -1277,7 +1282,9 @@ def worker_get_media_batch():
                 "media_files": [
                     {
                         "id": mf.id,
-                        "file_path": mf.file_path or "",
+                        "file_path": storage_lib.instance_expand(mf.file_path)
+                        or mf.file_path
+                        or "",
                         "media_type": mf.media_type.value if mf.media_type else None,
                         "duration": mf.duration,
                         "width": mf.width,
@@ -1322,20 +1329,19 @@ def worker_download_media(media_id):
             )
             return jsonify({"error": "Media file not found"}), 404
 
-        # Check if file exists on disk
-        if not media_file.file_path or not os.path.exists(media_file.file_path):
+        # Check if file exists on disk (expand canonical path first)
+        file_path = storage_lib.instance_expand(media_file.file_path)
+        if not file_path or not os.path.exists(file_path):
             current_app.logger.error(
-                f"Media file {media_id} path not found on disk: {media_file.file_path}"
+                f"Media file {media_id} path not found on disk: {media_file.file_path} (expanded: {file_path})"
             )
             return jsonify({"error": "File not found on disk"}), 404
 
         # Determine MIME type
-        mimetype = (
-            mimetypes.guess_type(media_file.file_path)[0] or "application/octet-stream"
-        )
+        mimetype = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
 
         # Get filename from path
-        filename = os.path.basename(media_file.file_path)
+        filename = os.path.basename(file_path)
 
         current_app.logger.info(
             f"Worker downloading media {media_id} ({filename}) for user {user_id}"
@@ -1343,7 +1349,7 @@ def worker_download_media(media_id):
 
         # Send file with proper headers
         return send_file(
-            media_file.file_path,
+            file_path,
             mimetype=mimetype,
             as_attachment=True,
             download_name=filename,
