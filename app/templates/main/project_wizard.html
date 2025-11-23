@@ -267,7 +267,7 @@
           </div>
         </div>
 
-        <!-- Timeline on top -->
+        <!-- Timeline at top (always visible) -->
         <div class="mb-3">
           <div class="card">
             <div class="card-header">Timeline</div>
@@ -280,52 +280,63 @@
           </div>
         </div>
 
-        <!-- Downloaded Clips next (collapsible) -->
-        <div class="mb-3">
-          <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-              <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#clips-collapse" aria-expanded="true" aria-controls="clips-collapse">Downloaded Clips</button>
-              <small class="text-muted" id="clips-remaining"></small>
+        <!-- Two-column layout: sidebar navigation + content -->
+        <div class="arrange-layout">
+          <!-- Left sidebar navigation -->
+          <div class="arrange-sidebar">
+            <div class="list-group list-group-flush">
+              <a href="#" class="list-group-item list-group-item-action active" data-arrange-tab="clips">
+                <i class="bi bi-film"></i> Clips
+                <span class="badge bg-secondary ms-auto" id="clips-count-badge">0</span>
+              </a>
+              <a href="#" class="list-group-item list-group-item-action" data-arrange-tab="intros">
+                <i class="bi bi-play-circle"></i> Intros
+              </a>
+              <a href="#" class="list-group-item list-group-item-action" data-arrange-tab="outros">
+                <i class="bi bi-stop-circle"></i> Outros
+              </a>
+              <a href="#" class="list-group-item list-group-item-action" data-arrange-tab="transitions">
+                <i class="bi bi-arrows-angle-contract"></i> Transitions
+              </a>
+              <a href="#" class="list-group-item list-group-item-action" data-arrange-tab="music">
+                <i class="bi bi-music-note-beamed"></i> Music
+              </a>
             </div>
-            <div id="clips-collapse" class="collapse show">
-              <div class="card-body" id="clips-grid" style="min-height: 220px;">
+          </div>
+
+          <!-- Right content area -->
+          <div class="arrange-content">
+            <!-- Clips tab -->
+            <div class="arrange-tab-content active" data-tab="clips">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">Downloaded Clips</h5>
+                <small class="text-muted" id="clips-remaining"></small>
+              </div>
+              <div id="clips-grid" style="min-height: 220px;">
                 <div class="text-muted">No clips yet. Download first.</div>
               </div>
             </div>
-          </div>
-        </div>
 
-        <!-- Collapsible Intro & Outro together -->
-        <div class="row g-3">
-          <div class="col-12">
-            <div class="card h-100">
-              <div class="card-header d-flex justify-content-between align-items-center">
-                <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#inout-collapse" aria-expanded="false" aria-controls="inout-collapse">Intro &amp; Outro (optional)</button>
-              </div>
-              <div id="inout-collapse" class="collapse">
-                <div class="card-body">
-                  <div class="row g-3">
-                    <div class="col-md-6">
-                      <div class="fw-semibold mb-2">Intro</div>
-                      <div id="intro-list" class="d-flex flex-wrap gap-2">
-                        <div class="text-muted">No intros found. Upload one under Upload Media.</div>
-                      </div>
-                    </div>
-                    <div class="col-md-6">
-                      <div class="fw-semibold mb-2">Outro</div>
-                      <div id="outro-list" class="d-flex flex-wrap gap-2">
-                        <div class="text-muted">No outros found. Upload one under Upload Media.</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+            <!-- Intros tab -->
+            <div class="arrange-tab-content" data-tab="intros">
+              <h5 class="mb-3">Intro Videos</h5>
+              <div id="intro-list" class="media-grid">
+                <div class="text-muted">No intros found. Upload one under Upload Media.</div>
               </div>
             </div>
-          </div>
-          <div class="col-12">
-            <div class="card mb-2">
-              <div class="card-header d-flex justify-content-between align-items-center">
-                <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#transitions-collapse" aria-expanded="false" aria-controls="transitions-collapse">Transitions (optional)</button>
+
+            <!-- Outros tab -->
+            <div class="arrange-tab-content" data-tab="outros">
+              <h5 class="mb-3">Outro Videos</h5>
+              <div id="outro-list" class="media-grid">
+                <div class="text-muted">No outros found. Upload one under Upload Media.</div>
+              </div>
+            </div>
+
+            <!-- Transitions tab -->
+            <div class="arrange-tab-content" data-tab="transitions">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">Transition Effects</h5>
                 <div class="d-flex align-items-center gap-2">
                   <div class="form-check form-switch m-0">
                     <input class="form-check-input" type="checkbox" id="transitions-randomize">
@@ -335,28 +346,23 @@
                   <button class="btn btn-sm btn-outline-danger" id="clear-all-transitions">Clear All</button>
                 </div>
               </div>
-              <div id="transitions-collapse" class="collapse">
-                <div class="card-body">
-                  <div id="transition-list" class="d-flex flex-wrap gap-2">
-                    <div class="text-muted">No transitions found. Upload under Upload Media.</div>
-                  </div>
-                </div>
+              <div id="transition-list" class="media-grid">
+                <div class="text-muted">No transitions found. Upload under Upload Media.</div>
               </div>
             </div>
-          </div>
-          <div class="col-12">
-            <div class="card">
-              <div class="card-header d-flex justify-content-between align-items-center">
-                <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#music-collapse" aria-expanded="false" aria-controls="music-collapse">Background Music (optional)</button>
+
+            <!-- Music tab -->
+            <div class="arrange-tab-content" data-tab="music">
+              <h5 class="mb-3">Background Music</h5>
+              <div class="mb-4">
+                <div class="fw-semibold mb-2">Select Music Track</div>
+                <div id="music-list" class="media-grid">
+                  <div class="text-muted">No music tracks found. Upload under Upload Media.</div>
+                </div>
               </div>
-              <div id="music-collapse" class="collapse">
+              <div class="card bg-dark">
+                <div class="card-header">Music Settings</div>
                 <div class="card-body">
-                  <div class="mb-3">
-                    <div class="fw-semibold mb-2">Select Music Track</div>
-                    <div id="music-list" class="d-flex flex-wrap gap-2">
-                      <div class="text-muted">No music tracks found. Upload under Upload Media.</div>
-                    </div>
-                  </div>
                   <div class="row g-3">
                     <div class="col-md-4">
                       <label for="music-volume" class="form-label">Volume</label>
@@ -385,6 +391,7 @@
             </div>
           </div>
         </div>
+
         <div class="form-check mt-3">
           <input class="form-check-input" type="checkbox" id="arranged-confirm">
           <label class="form-check-label" for="arranged-confirm">I have arranged my timeline</label>

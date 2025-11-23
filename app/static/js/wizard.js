@@ -115,6 +115,23 @@
     gotoStep(li.dataset.step);
   }));
 
+  // Arrange tab navigation (Step 3)
+  document.querySelectorAll('[data-arrange-tab]').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const targetTab = link.dataset.arrangeTab;
+
+      // Update active link
+      document.querySelectorAll('[data-arrange-tab]').forEach(l => l.classList.remove('active'));
+      link.classList.add('active');
+
+      // Update active content
+      document.querySelectorAll('.arrange-tab-content').forEach(content => {
+        content.classList.toggle('active', content.dataset.tab === targetTab);
+      });
+    });
+  });
+
   // Next/Back buttons and helpers
   let wizard = { projectId: null, downloadTasks: [], compileTaskId: null, selectedTransitionIds: [], settings: {} };
 
@@ -1900,7 +1917,8 @@
     const grid = document.getElementById('clips-grid');
     const wrap = document.getElementById('clips-collapse');
     const badge = document.getElementById('clips-remaining');
-    if (!grid || !wrap) return;
+    const countBadge = document.getElementById('clips-count-badge');
+    if (!grid) return;
     const cards = Array.from(grid.querySelectorAll('.clip-card'));
     const visible = cards.filter(c => !c.classList.contains('d-none')).length;
     if (badge) {
@@ -1911,21 +1929,11 @@
         badge.textContent = '';
       }
     }
-    const wantCollapsed = (visible === 0 && cards.length > 0);
-    // Bootstrap Collapse API if available
-    try {
-      const Coll = window.bootstrap?.Collapse;
-      if (Coll) {
-        let inst = Coll.getInstance(wrap);
-        if (!inst) inst = new Coll(wrap, { toggle: false });
-        if (wantCollapsed) inst.hide(); else inst.show();
-      } else {
-        // Fallback: toggle 'show' class
-        wrap.classList.toggle('show', !wantCollapsed);
-      }
-    } catch (_) {
-      wrap.classList.toggle('show', !wantCollapsed);
+    // Update sidebar count badge
+    if (countBadge) {
+      countBadge.textContent = visible;
     }
+    // Legacy collapse support removed since we're using tabs now
   }
 
 

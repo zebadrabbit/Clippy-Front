@@ -6,6 +6,68 @@
     align-content: start;
 }
 
+/* Arrange step: two-column layout with sidebar navigation */
+.arrange-layout {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 1.5rem;
+    min-height: 500px;
+}
+
+.arrange-sidebar {
+    position: sticky;
+    top: 1rem;
+    height: fit-content;
+}
+
+.arrange-sidebar .list-group-item {
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+}
+
+.arrange-sidebar .list-group-item:hover {
+    background-color: rgba(var(--bs-primary-rgb), 0.1);
+}
+
+.arrange-sidebar .list-group-item.active {
+    background-color: var(--bs-primary);
+    border-color: var(--bs-primary);
+    color: white;
+}
+
+.arrange-sidebar .list-group-item i {
+    font-size: 1.1rem;
+}
+
+.arrange-content {
+    min-height: 500px;
+}
+
+.arrange-tab-content {
+    display: none;
+    animation: fadeIn 0.2s ease-in;
+}
+
+.arrange-tab-content.active {
+    display: block;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Media grid for intros/outros/transitions/music */
+.media-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0.75rem;
+}
+
 .clip-card .card-img-top {
     height: 110px;
     object-fit: cover;
