@@ -91,7 +91,7 @@
     let mediaHtml = '';
     if ((item.mime||'').startsWith('image')) mediaHtml = '<img src="' + item.preview_url + '" class="card-img-top" alt="' + escapeHtml(card.dataset.name) + '">';
   else if ((item.mime||'').startsWith('video')) mediaHtml = '<button type="button" class="btn p-0 border-0 text-start w-100 video-open position-relative" data-id="' + item.id + '" style="background: var(--bs-card-bg);"><img src="' + THUMB_URL_TPL.replace('0', item.id) + '" class="img-fluid" alt="' + escapeHtml(card.dataset.name) + '"><i class="bi bi-play-circle-fill position-absolute top-50 start-50 translate-middle" style="font-size:2.5rem; opacity:0.85;"></i></button>';
-  else if ((item.mime||'').startsWith('audio/')) mediaHtml = '<div class="card-img-top d-flex align-items-center justify-content-center" style="height:160px; background: var(--bs-card-bg);"><i class="bi bi-music-note-beamed" style="font-size:3rem;"></i></div>';
+  else if ((item.mime||'').startsWith('audio/')) mediaHtml = '<button type="button" class="btn p-0 border-0 text-start w-100 audio-open position-relative" data-id="' + item.id + '" style="background: var(--bs-card-bg);"><div class="card-img-top d-flex align-items-center justify-content-center" style="height:160px; background: var(--bs-card-bg);"><i class="bi bi-music-note-beamed" style="font-size:3rem;"></i><i class="bi bi-play-circle-fill position-absolute top-50 start-50 translate-middle" style="font-size:2.5rem; opacity:0.85;"></i></div></button>';
   else mediaHtml = '<div class="card-img-top d-flex align-items-center justify-content-center" style="height:160px; background: var(--bs-card-bg);"><i class="bi bi-file-earmark-text" style="font-size:2rem;"></i></div>';
     card.insertAdjacentHTML('beforeend', mediaHtml);
     const body = document.createElement('div'); body.className = 'card-body';
@@ -124,6 +124,7 @@
     document.querySelectorAll('.media-delete').forEach(function(btn){ btn.addEventListener('click', onDeleteClick); });
     document.querySelectorAll('.media-select').forEach(function(cb){ cb.addEventListener('change', updateBulkBar); });
     document.querySelectorAll('.video-open').forEach(function(btn){ btn.addEventListener('click', onOpenVideo); });
+    document.querySelectorAll('.audio-open').forEach(function(btn){ btn.addEventListener('click', onOpenAudio); });
     var selAll = document.getElementById('bulk-select-all'); if (selAll) selAll.addEventListener('click', function(){ document.querySelectorAll('.media-select').forEach(function(cb){ cb.checked=true; }); updateBulkBar(); });
     var clearBtn = document.getElementById('bulk-clear'); if (clearBtn) clearBtn.addEventListener('click', function(){ document.querySelectorAll('.media-select').forEach(function(cb){ cb.checked=false; }); updateBulkBar(); });
     var delBtn = document.getElementById('bulk-delete'); if (delBtn) delBtn.addEventListener('click', onBulkDelete);
@@ -136,6 +137,7 @@
     var del = col.querySelector('.media-delete'); if (del) del.addEventListener('click', onDeleteClick);
     var cb = col.querySelector('.media-select'); if (cb) cb.addEventListener('change', updateBulkBar);
     var open = col.querySelector('.video-open'); if (open) open.addEventListener('click', onOpenVideo);
+    var audio = col.querySelector('.audio-open'); if (audio) audio.addEventListener('click', onOpenAudio);
   }
 
   function selectedIds(){ return Array.from(document.querySelectorAll('.media-select:checked')).map(function(cb){ return cb.value; }); }
@@ -185,6 +187,62 @@
     const resp = await apiPost(BULK_URL, fd);
     if (resp && resp.success){ ids.forEach(function(id){ const card = document.querySelector('.media-card[data-id="' + id + '"]'); if (!card) return; const body = card.querySelector('.card-body'); if (!body) return; let tagsWrap = body.querySelector('.mt-1.small'); const html = (tags||'').split(',').map(function(s){ s=s.trim(); return s? '<span class=\"badge bg-secondary me-1\">'+s+'</span>':''; }).join(''); if (tagsWrap) tagsWrap.innerHTML = html; else if (html){ const div = document.createElement('div'); div.className = 'mt-1 small'; div.innerHTML = html; body.appendChild(div);} card.dataset.tags = tags; }); showToast('Tags updated for ' + ids.length + ' item(s).'); }
     else alert((resp && resp.error) || 'Bulk tag update failed');
+  }
+
+  function onOpenAudio(e){
+    const id = e.currentTarget.getAttribute('data-id');
+    const card = document.querySelector('.media-card[data-id="' + id + '"]');
+    const name = (card && card.dataset.name) || 'Audio';
+    const src = PREVIEW_URL_TPL.replace('0', id);
+
+    // Create audio player modal
+    const modalId = 'audio-player-modal';
+    let modalEl = document.getElementById(modalId);
+    if (!modalEl) {
+      modalEl = document.createElement('div');
+      modalEl.id = modalId;
+      modalEl.className = 'modal fade';
+      modalEl.tabIndex = -1;
+      modalEl.innerHTML = `
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title"><i class="bi bi-music-note-beamed me-2"></i><span id="audio-title"></span></h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center">
+              <i class="bi bi-music-note-beamed mb-3" style="font-size: 4rem; opacity: 0.5;"></i>
+              <audio id="audio-player" controls controlsList="nodownload" style="width: 100%; max-width: 500px;">
+                <source id="audio-source" src="" type="audio/mpeg">
+                Your browser does not support the audio element.
+              </audio>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modalEl);
+      modalEl.addEventListener('hidden.bs.modal', function(){
+        const player = document.getElementById('audio-player');
+        if (player) {
+          player.pause();
+          player.currentTime = 0;
+        }
+      });
+    }
+
+    // Update source and title
+    document.getElementById('audio-title').textContent = name;
+    const audioSource = document.getElementById('audio-source');
+    const audioPlayer = document.getElementById('audio-player');
+    audioSource.src = src;
+    audioPlayer.load();
+
+    // Show modal and play
+    const modal = new bootstrap.Modal(modalEl);
+    modal.show();
+    audioPlayer.play().catch(function(err){
+      console.warn('Audio autoplay failed:', err);
+    });
   }
 
   function onEditClick(e){ const id = e.currentTarget.getAttribute('data-id'); const card = document.querySelector('.media-card[data-id="' + id + '"]'); openEditModal({ id: id, name: (card && card.dataset.name)||'', type: (card && card.dataset.type)||'', tags: (card && card.dataset.tags)||'' }); }
