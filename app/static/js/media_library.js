@@ -24,7 +24,7 @@
     headers: { 'X-CSRFToken': csrfToken },
     paramName: 'file',
     maxFilesize: 1024,
-    acceptedFiles: 'image/*,video/*',
+    acceptedFiles: 'image/*,video/*,audio/*',
     parallelUploads: 2,
     previewsContainer: dzEl.querySelector('.dz-previews'),
     addRemoveLinks: false,
@@ -32,7 +32,23 @@
     previewTemplate: '<div></div>',
     init: function() {
       this.on('sending', function(file, xhr, formData) {
-        formData.append('media_type', mediaTypeSel.value || 'clip');
+        let mediaType = mediaTypeSel.value || 'auto';
+
+        // Auto-detect media type from MIME type
+        if (mediaType === 'auto') {
+          const mime = file.type || '';
+          if (mime.startsWith('audio/')) {
+            mediaType = 'music';
+          } else if (mime.startsWith('video/')) {
+            mediaType = 'transition';
+          } else if (mime.startsWith('image/')) {
+            mediaType = 'transition';
+          } else {
+            mediaType = 'transition'; // Default fallback
+          }
+        }
+
+        formData.append('media_type', mediaType);
       });
       this.on('success', function(file, resp){
         if (!resp || !resp.success) return;
@@ -67,6 +83,7 @@
     let mediaHtml = '';
     if ((item.mime||'').startsWith('image')) mediaHtml = '<img src="' + item.preview_url + '" class="card-img-top" alt="' + escapeHtml(card.dataset.name) + '">';
   else if ((item.mime||'').startsWith('video')) mediaHtml = '<button type="button" class="btn p-0 border-0 text-start w-100 video-open position-relative" data-id="' + item.id + '" style="background: var(--bs-card-bg);"><img src="' + THUMB_URL_TPL.replace('0', item.id) + '" class="img-fluid" alt="' + escapeHtml(card.dataset.name) + '"><i class="bi bi-play-circle-fill position-absolute top-50 start-50 translate-middle" style="font-size:2.5rem; opacity:0.85;"></i></button>';
+  else if ((item.mime||'').startsWith('audio/')) mediaHtml = '<div class="card-img-top d-flex align-items-center justify-content-center" style="height:160px; background: var(--bs-card-bg);"><i class="bi bi-music-note-beamed" style="font-size:3rem;"></i></div>';
   else mediaHtml = '<div class="card-img-top d-flex align-items-center justify-content-center" style="height:160px; background: var(--bs-card-bg);"><i class="bi bi-file-earmark-text" style="font-size:2rem;"></i></div>';
     card.insertAdjacentHTML('beforeend', mediaHtml);
     const body = document.createElement('div'); body.className = 'card-body';
@@ -243,6 +260,14 @@
     const card = document.querySelector('.media-card[data-id="' + id + '"]');
     const rawMime = (card && card.dataset.mime) || '';
     const name = (card && card.dataset.name) || '';
+
+    // Don't try to play audio files as videos
+    if (rawMime.startsWith('audio/')) {
+      const src = PREVIEW_URL_TPL.replace('0', id);
+      window.open(src, '_blank');
+      return;
+    }
+
     const validMime = /^video\/[\w.+-]+$/.test(rawMime);
     const ext = (name.split('.').pop() || '').toLowerCase();
     const guessedMime = (function(){

@@ -24,13 +24,14 @@
         <div class="col-lg-3">
           <div class="mb-2"><span class="h4 mb-0 d-block">Media Type</span></div>
           <select id="dz-media-type" class="form-select">
+            <option value="auto">Auto-detect</option>
             {% for t in media_types %}
-              {% if t.name in ('INTRO','OUTRO','TRANSITION') %}
-                <option value="{{ t.value }}">{{ t.name.title() }}</option>
+              {% if t.name in ('INTRO','OUTRO','TRANSITION','MUSIC') %}
+                <option value="{{ t.value }}" {% if t.value == 'transition' %}selected{% endif %}>{{ t.name.title() }}</option>
               {% endif %}
             {% endfor %}
           </select>
-          <div class="form-text">Choose how this upload will be categorized.</div>
+          <div class="form-text">Auto-detect or manually choose type. Videos default to Transition.</div>
         </div>
         <div class="col-lg-9">
           <form action="{{ url_for('main.media_upload') }}" class="dropzone dropzone-accent" id="media-dropzone">
@@ -71,7 +72,7 @@
         <select class="form-select" name="type">
           <option value="">All</option>
           {% for t in media_types %}
-            {% if t.name in ('INTRO','OUTRO','TRANSITION') %}
+            {% if t.name in ('INTRO','OUTRO','TRANSITION','MUSIC') %}
               <option value="{{ t.value }}" {% if type_filter==t.value %}selected{% endif %}>{{ t.name.title() }}</option>
             {% endif %}
           {% endfor %}
@@ -111,6 +112,10 @@
             <img src="{{ url_for('main.media_thumbnail', media_id=m.id) }}" class="img-fluid media-thumb" alt="{{ m.original_filename }}">
             <i class="bi bi-play-circle-fill position-absolute top-50 start-50 translate-middle" style="font-size:2.5rem; opacity:0.85;"></i>
           </button>
+        {% elif m.mime_type.startswith('audio') %}
+          <div class="card-img-top d-flex align-items-center justify-content-center media-thumb" style="height:140px; background: var(--bs-card-bg);">
+            <i class="bi bi-music-note-beamed" style="font-size:3rem;"></i>
+          </div>
         {% else %}
           <div class="card-img-top d-flex align-items-center justify-content-center media-thumb" style="height:140px; background: var(--bs-card-bg);">
             <i class="bi bi-file-earmark-text" style="font-size:2rem;"></i>
