@@ -1756,6 +1756,7 @@
         wizard.selectedMusicId = it.id;
         document.querySelectorAll('#music-list .card').forEach(c => c.classList.remove('border-primary'));
         card.classList.add('border', 'border-primary');
+        try { renderTransitionsBadge(); } catch(_) {}
       });
       if (wizard.selectedMusicId === it.id) {
         card.classList.add('border', 'border-primary');
@@ -1786,7 +1787,43 @@
     }
     const count = (wizard.selectedTransitionIds || []).length;
     const rand = document.getElementById('transitions-randomize')?.checked;
-    badge.textContent = count ? `Transitions selected: ${count}${count>1 ? (rand ? ' (randomized)' : ' (cycled)') : ''}` : 'No transitions selected';
+    const transText = count ? `Transitions: ${count}${count>1 ? (rand ? ' (randomized)' : ' (cycled)') : ''}` : 'No transitions';
+
+    // Add music info
+    let musicText = '';
+    if (wizard.selectedMusicId) {
+      const musicList = document.getElementById('music-list');
+      const selectedCard = musicList?.querySelector('.border-primary .small.text-truncate.text-center');
+      const musicName = selectedCard?.textContent || 'Music track';
+      const volume = document.getElementById('music-volume')?.value || 30;
+      musicText = ` | Music: ${musicName} (${volume}%)`;
+
+      // Add remove button
+      if (!badge.querySelector('.btn-remove-music')) {
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'btn btn-sm btn-outline-danger ms-2 btn-remove-music';
+        removeBtn.innerHTML = '<i class="bi bi-x-circle"></i>';
+        removeBtn.title = 'Remove background music';
+        removeBtn.addEventListener('click', () => {
+          wizard.selectedMusicId = null;
+          document.querySelectorAll('#music-list .card').forEach(c => c.classList.remove('border', 'border-primary'));
+          renderTransitionsBadge();
+        });
+        badge.appendChild(removeBtn);
+      }
+    } else {
+      // Remove the button if no music
+      badge.querySelector('.btn-remove-music')?.remove();
+    }
+
+    badge.textContent = transText + musicText;
+    // Re-append button if it exists
+    const existingBtn = badge.querySelector('.btn-remove-music');
+    if (existingBtn) {
+      badge.textContent = transText + musicText;
+      badge.appendChild(existingBtn);
+    }
+
     // Tint separators/labels accordingly
     try { updateSeparatorLabels(); } catch(_) {}
   }
@@ -1812,6 +1849,7 @@
   document.getElementById('music-volume')?.addEventListener('input', (e) => {
     const val = parseInt(e.target.value, 10);
     document.getElementById('music-volume-display').textContent = val + '%';
+    try { renderTransitionsBadge(); } catch(_) {}
   });
   // When clicking the Arrange chevron, auto-refresh lists too (in case user navigates directly)
   document.querySelector('#wizard-chevrons li[data-step="3"]')?.addEventListener('click', () => {
