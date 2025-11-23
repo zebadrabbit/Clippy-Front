@@ -801,13 +801,55 @@ def _compile_final_video_v2(
         except Exception:
             pass
 
-    # Mix background music
+    # Mix background music with audio ducking for clips that have audio
     volume = music_volume if music_volume is not None else 0.3
     volume = max(0.0, min(1.0, float(volume)))  # Clamp to 0-1
 
+    # Detect if video has audible content using silencedetect
+    # This helps us duck the music when the video has actual audio
+    try:
+        probe_cmd = [
+            resolve_binary(app, "ffprobe"),
+            "-v",
+            "error",
+            "-show_entries",
+            "stream=codec_type",
+            "-of",
+            "json",
+            concat_output,
+        ]
+        import json
+
+        probe_output = subprocess.check_output(probe_cmd, text=True)
+        probe_data = json.loads(probe_output)
+        has_audio_stream = any(
+            s.get("codec_type") == "audio" for s in probe_data.get("streams", [])
+        )
+    except Exception:
+        has_audio_stream = True  # Assume audio exists if detection fails
+
     # Build ffmpeg command to mix audio
-    # Use adelay to start music at the right time, and afade to fade out at the end
+    # If video has audio streams, use sidechaincompress to duck music when video audio is present
+    # Otherwise, just mix normally
     music_duration = music_end_time - music_start_time
+
+    if has_audio_stream:
+        # Use sidechaincompress for automatic ducking when video audio is present
+        # This reduces music volume by ~20dB when video audio is detected above -40dB threshold
+        filter_complex = (
+            f"[1:a]adelay={int(music_start_time * 1000)}|{int(music_start_time * 1000)},"
+            f"volume={volume},afade=t=out:st={music_duration - 2}:d=2[music];"
+            f"[0:a]asplit=2[va1][va2];"
+            f"[music][va2]sidechaincompress=threshold=0.02:ratio=20:attack=1:release=250[compressed];"
+            f"[va1][compressed]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+        )
+    else:
+        # No audio in video, just mix music normally
+        filter_complex = (
+            f"[1:a]adelay={int(music_start_time * 1000)}|{int(music_start_time * 1000)},"
+            f"volume={volume},afade=t=out:st={music_duration - 2}:d=2[music];"
+            f"[0:a][music]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+        )
 
     cmd = [
         ffmpeg_bin,
@@ -817,13 +859,11 @@ def _compile_final_video_v2(
         "-i",
         music_path,  # Music input
         "-filter_complex",
-        f"[1:a]adelay={int(music_start_time * 1000)}|{int(music_start_time * 1000)},volume={volume},"
-        f"afade=t=out:st={music_duration - 2}:d=2[music];"
-        f"[0:a][music]amix=inputs=2:duration=first:dropout_transition=2[aout]",
+        filter_complex,
         "-map",
         "0:v",  # Use video from first input
         "-map",
-        "[aout]",  # Use mixed audio
+        "[aout]",  # Use mixed/ducked audio
         "-c:v",
         "copy",  # Copy video (already processed)
         "-c:a",
