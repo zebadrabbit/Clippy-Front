@@ -756,73 +756,95 @@ def generate_preview_api(project_id: int):
     ):
         return jsonify({"error": "Project has no clips to preview"}), 400
 
-    try:
-        from app.tasks.video_processing import generate_preview_task
+    # TODO: Preview generation was removed during Worker API Migration (Phase 5)
+    # The generate_preview_task was part of the deprecated video_processing.py tasks
+    # that required direct database access. To restore this feature, we need to:
+    # 1. Create a new preview task using the v2 API-based approach
+    # 2. Add preview generation endpoints to the worker API
+    # 3. Implement preview logic similar to compile_video_task_v2
+    #
+    # For now, return a "not implemented" error to prevent crashes
+    logger.warning(
+        "preview_not_implemented",
+        project_id=project_id,
+        user_id=current_user.id,
+        message="Preview generation temporarily disabled during worker migration",
+    )
+    return (
+        jsonify(
+            {
+                "error": "Preview generation is temporarily unavailable",
+                "message": "This feature is being updated for the new worker architecture. Please use the full compilation instead.",
+            }
+        ),
+        501,  # Not Implemented
+    )
 
-        intro_id = data.get("intro_id")
-        outro_id = data.get("outro_id")
-        transition_ids = data.get("transition_ids") or []
-        randomize_transitions = bool(data.get("randomize_transitions") or False)
-
-        # Determine queue (same logic as compilation - use GPU/CPU workers, never 'celery')
-        # Default to gpu, or cpu if USE_GPU_QUEUE is false
-        queue_name = "gpu" if bool(current_app.config.get("USE_GPU_QUEUE")) else "cpu"
-
-        try:
-            from app.tasks.celery_app import celery_app as _celery
-
-            # Check for active workers and prefer available queues
-            i = _celery.control.inspect(timeout=1.0)
-            active_queues = set()
-            if i:
-                aq = i.active_queues() or {}
-                for _worker, queues in aq.items():
-                    for q in queues or []:
-                        qname = q.get("name") if isinstance(q, dict) else None
-                        if qname:
-                            active_queues.add(qname)
-
-            # Prefer gpu if available and configured, otherwise cpu
-            if bool(current_app.config.get("USE_GPU_QUEUE")):
-                if "gpu" in active_queues:
-                    queue_name = "gpu"
-                elif "cpu" in active_queues:
-                    queue_name = "cpu"  # Fallback to CPU if GPU not available
-                # else keep default "gpu" - task will wait for worker
-            else:
-                # CPU mode - prefer cpu queue if available
-                if "cpu" in active_queues:
-                    queue_name = "cpu"
-                elif "gpu" in active_queues:
-                    queue_name = "gpu"  # GPU can do CPU work
-                # else keep default "cpu" - task will wait for worker
-        except Exception:
-            # On error, use configured default (never 'celery')
-            pass
-
-        # Start preview generation task on worker queue
-        task = generate_preview_task.apply_async(
-            args=(project_id,),
-            kwargs={
-                "intro_id": intro_id,
-                "outro_id": outro_id,
-                "transition_ids": transition_ids,
-                "randomize_transitions": randomize_transitions,
-                "clip_ids": clip_ids,
-            },
-            queue=queue_name,
-        )
-
-        db.session.commit()
-        return jsonify({"task_id": task.id, "status": "started"}), 202
-
-    except Exception as e:
-        try:
-            db.session.rollback()
-        except Exception:
-            pass
-        current_app.logger.error(f"Preview generation failed: {e}")
-        return jsonify({"error": "Failed to start preview generation"}), 500
+    # Original preview code commented out for reference - all code below is unreachable
+    # intro_id = data.get("intro_id")
+    # outro_id = data.get("outro_id")
+    # transition_ids = data.get("transition_ids") or []
+    # randomize_transitions = bool(data.get("randomize_transitions") or False)
+    #
+    # # Determine queue (same logic as compilation - use GPU/CPU workers, never 'celery')
+    # # Default to gpu, or cpu if USE_GPU_QUEUE is false
+    # queue_name = "gpu" if bool(current_app.config.get("USE_GPU_QUEUE")) else "cpu"
+    #
+    # try:
+    #     from app.tasks.celery_app import celery_app as _celery
+    #
+    #     # Check for active workers and prefer available queues
+    #     i = _celery.control.inspect(timeout=1.0)
+    #     active_queues = set()
+    #     if i:
+    #         aq = i.active_queues() or {}
+    #         for _worker, queues in aq.items():
+    #             for q in queues or []:
+    #                 qname = q.get("name") if isinstance(q, dict) else None
+    #                 if qname:
+    #                     active_queues.add(qname)
+    #
+    #     # Prefer gpu if available and configured, otherwise cpu
+    #     if bool(current_app.config.get("USE_GPU_QUEUE")):
+    #         if "gpu" in active_queues:
+    #             queue_name = "gpu"
+    #         elif "cpu" in active_queues:
+    #             queue_name = "cpu"  # Fallback to CPU if GPU not available
+    #         # else keep default "gpu" - task will wait for worker
+    #     else:
+    #         # CPU mode - prefer cpu queue if available
+    #         if "cpu" in active_queues:
+    #             queue_name = "cpu"
+    #         elif "gpu" in active_queues:
+    #             queue_name = "gpu"  # GPU can do CPU work
+    #         # else keep default "cpu" - task will wait for worker
+    # except Exception:
+    #     # On error, use configured default (never 'celery')
+    #     pass
+    #
+    # # Start preview generation task on worker queue
+    # task = generate_preview_task.apply_async(
+    #     args=(project_id,),
+    #     kwargs={
+    #         "intro_id": intro_id,
+    #         "outro_id": outro_id,
+    #         "transition_ids": transition_ids,
+    #         "randomize_transitions": randomize_transitions,
+    #         "clip_ids": clip_ids,
+    #     },
+    #     queue=queue_name,
+    # )
+    #
+    # db.session.commit()
+    # return jsonify({"task_id": task.id, "status": "started"}), 202
+    #
+    # except Exception as e:
+    #     try:
+    #         db.session.rollback()
+    #     except Exception:
+    #         pass
+    #     current_app.logger.error(f"Preview generation failed: {e}")
+    #     return jsonify({"error": "Failed to start preview generation"}), 500
 
 
 @api_bp.route("/projects/<int:project_id>/clips", methods=["GET"])

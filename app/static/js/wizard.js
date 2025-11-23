@@ -1484,8 +1484,16 @@
 
     } catch (e) {
       console.error('Preview generation error:', e);
-      previewFeedback.textContent = 'Failed to start preview generation';
-      previewFeedback.className = 'text-danger ms-2';
+
+      // Handle 501 Not Implemented response
+      if (e.message && e.message.includes('temporarily unavailable')) {
+        previewFeedback.textContent = 'Preview generation is temporarily unavailable. Please use full compilation instead.';
+        previewFeedback.className = 'text-warning ms-2';
+      } else {
+        previewFeedback.textContent = 'Failed to start preview generation';
+        previewFeedback.className = 'text-danger ms-2';
+      }
+
       if (previewBtn) previewBtn.disabled = false;
       previewProgressContainer.classList.add('d-none');
     }
