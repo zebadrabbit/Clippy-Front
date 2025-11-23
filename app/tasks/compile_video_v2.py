@@ -839,17 +839,25 @@ def _compile_final_video_v2(
 
     # Determine if we need to loop the music to cover the video duration
     # We need music to last from start_time to end_time
-    needed_music_duration = music_duration + music_start_time
+    needed_music_duration = music_duration
     needs_loop = music_file_duration > 0 and music_file_duration < needed_music_duration
+
+    # Log music processing details
+    app.logger.info(
+        f"Background music: file_duration={music_file_duration}s, "
+        f"needed_duration={needed_music_duration}s, needs_loop={needs_loop}, "
+        f"volume={volume}, start={music_start_time}s, end={music_end_time}s"
+    )
 
     if has_audio_stream:
         # Use sidechaincompress for automatic ducking when video audio is present
         # This reduces music volume by ~20dB when video audio is detected above -40dB threshold
         if needs_loop:
             # Loop music to ensure it covers the full video duration
-            loop_count = int(needed_music_duration / music_file_duration) + 1
+            # Use aloop with -1 to loop indefinitely, then trim with atrim
             filter_complex = (
-                f"[1:a]aloop=loop={loop_count}:size={int(music_file_duration * 48000)},"
+                f"[1:a]aloop=loop=-1:size=2e+09,"
+                f"atrim=0:{needed_music_duration + music_start_time},"
                 f"adelay={int(music_start_time * 1000)}|{int(music_start_time * 1000)},"
                 f"volume={volume},afade=t=out:st={music_duration - 2}:d=2[music];"
                 f"[0:a]asplit=2[va1][va2];"
@@ -869,9 +877,10 @@ def _compile_final_video_v2(
         # No audio in video, use music as the only audio source
         # Loop music if needed to cover the video duration
         if needs_loop:
-            loop_count = int(needed_music_duration / music_file_duration) + 1
+            # Use aloop with -1 to loop indefinitely, then trim to exact duration needed
             filter_complex = (
-                f"[1:a]aloop=loop={loop_count}:size={int(music_file_duration * 48000)},"
+                f"[1:a]aloop=loop=-1:size=2e+09,"
+                f"atrim=0:{needed_music_duration + music_start_time},"
                 f"adelay={int(music_start_time * 1000)}|{int(music_start_time * 1000)},"
                 f"volume={volume},afade=t=out:st={music_duration - 2}:d=2[music]"
             )
@@ -882,13 +891,15 @@ def _compile_final_video_v2(
             )
         audio_map = "[music]"
 
+    # Log the filter for debugging
+    app.logger.info(f"Music filter_complex: {filter_complex}")
+    app.logger.info(f"Audio map: {audio_map}")
+
     cmd = [
         ffmpeg_bin,
         *_cfg_args(app, "ffmpeg", "encode"),
         "-i",
         concat_output,  # Video input
-        "-stream_loop",
-        "-1",  # Loop music input indefinitely
         "-i",
         music_path,  # Music input
         "-filter_complex",
@@ -908,7 +919,10 @@ def _compile_final_video_v2(
         output_path,
     ]
 
-    subprocess.run(cmd, check=True, capture_output=True)
+    app.logger.info(f"Running music mix command: {' '.join(cmd)}")
+    result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+    if result.stderr:
+        app.logger.debug(f"FFmpeg music mix stderr: {result.stderr[-500:]}")
 
     return output_path
 
