@@ -30,7 +30,7 @@
     </div>
 
     <!-- Templates Grid -->
-    <div id="templatesGrid" class="row g-4">
+    <div id="templatesGrid" class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
         <!-- Templates will be loaded here -->
     </div>
 </div>
@@ -208,7 +208,7 @@ function renderTemplates() {
     grid.style.display = 'flex';
 
     grid.innerHTML = templates.map(template => `
-        <div class="col-md-6 col-lg-4">
+        <div class="col">
             <div class="card h-100 shadow-sm hover-shadow">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-start mb-3">
