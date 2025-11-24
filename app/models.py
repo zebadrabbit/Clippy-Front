@@ -359,6 +359,7 @@ class User(UserMixin, db.Model):
 
     # External service connections
     discord_user_id = db.Column(db.String(100), unique=True)
+    discord_channel_id = db.Column(db.String(100))
     twitch_username = db.Column(db.String(100))
 
     # Preferences
@@ -554,6 +555,10 @@ class Project(db.Model):
     transitions_enabled = db.Column(db.Boolean, default=True)
     watermark_enabled = db.Column(db.Boolean, default=False)
 
+    # Vertical video settings (for 9:16 conversions)
+    vertical_zoom = db.Column(db.Integer, default=100)  # 100-120 (percentage)
+    vertical_align = db.Column(db.String(10), default="center")  # left, center, right
+
     # Intro/Outro media references
     intro_media_id = db.Column(db.Integer, db.ForeignKey("media_files.id"))
     outro_media_id = db.Column(db.Integer, db.ForeignKey("media_files.id"))
@@ -567,6 +572,16 @@ class Project(db.Model):
     music_end_mode = db.Column(
         db.String(20), default="before_outro"
     )  # 'end', 'before_outro'
+
+    # Music ducking (sidechaincompress) parameters
+    duck_threshold = db.Column(
+        db.Float, default=0.02
+    )  # 0.0 to 1.0, when to start ducking
+    duck_ratio = db.Column(db.Float, default=20.0)  # 1.0 to 20.0, how much to reduce
+    duck_attack = db.Column(db.Float, default=1.0)  # 0.1 to 10.0 ms, how fast to duck
+    duck_release = db.Column(
+        db.Float, default=250.0
+    )  # 10.0 to 1000.0 ms, how fast to recover
 
     # Output file information
     output_filename = db.Column(db.String(255))

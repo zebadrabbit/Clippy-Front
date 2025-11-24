@@ -107,6 +107,66 @@ class Clip:
     game_name: str | None = None
 
 
+def get_clip_by_id(clip_id: str) -> Clip | None:
+    """Fetch a single clip by its ID from the Twitch Helix API.
+
+    Args:
+        clip_id: The Twitch clip ID (slug from the URL)
+
+    Returns:
+        Clip object with metadata, or None if not found
+    """
+    if not clip_id:
+        return None
+
+    url = f"{TWITCH_HELIX_BASE}/clips"
+    params = {"id": clip_id}
+
+    try:
+        resp = httpx.get(url, headers=_client_headers(), params=params, timeout=15.0)
+        resp.raise_for_status()
+        j = resp.json()
+        raw = j.get("data", [])
+        if not raw:
+            return None
+
+        c = raw[0]
+
+        # Fetch game name if game_id is present
+        game_name = None
+        game_id = c.get("game_id")
+        if game_id:
+            try:
+                g_resp = httpx.get(
+                    f"{TWITCH_HELIX_BASE}/games",
+                    headers=_client_headers(),
+                    params={"id": game_id},
+                    timeout=15.0,
+                )
+                g_resp.raise_for_status()
+                g_items = g_resp.json().get("data", [])
+                if g_items:
+                    game_name = g_items[0].get("name")
+            except Exception:
+                pass
+
+        return Clip(
+            id=c.get("id"),
+            url=c.get("url"),
+            title=c.get("title"),
+            created_at=c.get("created_at"),
+            duration=float(c.get("duration", 0)),
+            view_count=int(c.get("view_count", 0)),
+            thumbnail_url=c.get("thumbnail_url"),
+            creator_name=c.get("creator_name"),
+            creator_id=c.get("creator_id"),
+            game_id=game_id,
+            game_name=game_name,
+        )
+    except Exception:
+        return None
+
+
 def get_clips(
     broadcaster_id: str,
     started_at: str | None = None,

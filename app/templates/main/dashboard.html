@@ -83,6 +83,11 @@
                         <small class="text-muted ms-2">{{ p.updated_at.strftime('%Y-%m-%d') if p.updated_at else '' }}</small>
                       </div>
                       <div class="small text-muted mt-1">{{ p.clips|safe_count }} clips · {{ p.media_files|safe_count }} media</div>
+                      {% if p.platform_preset and p.platform_preset.value != 'custom' %}
+                        <div class="mt-2">
+                          <span class="badge bg-primary"><i class="bi bi-camera-video me-1"></i>{{ p.platform_preset.display_name }}</span>
+                        </div>
+                      {% endif %}
                       {% if item.tags %}
                         <div class="mt-2">
                           {% for tag in item.tags.split(',') %}

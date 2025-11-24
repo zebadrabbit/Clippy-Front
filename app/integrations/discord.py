@@ -28,13 +28,13 @@ def _headers() -> dict[str, str]:
 
 
 def get_channel_messages(
-    channel_id: str | None = None, limit: int = 200
+    channel_id: str | None = None, limit: int = 100
 ) -> list[dict[str, Any]]:
     """Fetch recent messages from a channel.
 
     Args:
         channel_id: Discord channel ID as a string; defaults to Config.DISCORD_CHANNEL_ID
-        limit: Max number of messages to fetch (1-200)
+        limit: Max number of messages to fetch (1-100)
 
     Returns list of message dicts (subset of fields including reactions).
     """
@@ -43,13 +43,26 @@ def get_channel_messages(
     if not cid:
         raise RuntimeError("DISCORD_CHANNEL_ID is not configured.")
 
-    lim = max(1, min(limit, 200))
+    lim = max(1, min(limit, 100))
     url = f"{DISCORD_API_BASE}/channels/{cid}/messages"
     params = {"limit": lim}
 
     with httpx.Client(timeout=20.0, headers=_headers()) as client:
         resp = client.get(url, params=params)
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            # Log the response body for debugging
+            error_detail = ""
+            try:
+                error_data = resp.json()
+                error_detail = f" - {error_data}"
+            except Exception:
+                error_detail = f" - {resp.text}"
+            raise RuntimeError(
+                f"Discord API error {resp.status_code}: {error_detail}. "
+                f"Check that bot token is valid and bot has access to channel {cid}"
+            ) from e
         data = resp.json()
 
     # Return selected fields to reduce payload size
@@ -67,6 +80,7 @@ def get_channel_messages(
                 "reactions": [
                     {
                         "emoji": r.get("emoji", {}).get("name"),
+                        "emoji_id": r.get("emoji", {}).get("id"),
                         "count": r.get("count", 0),
                     }
                     for r in (m.get("reactions") or [])
@@ -98,21 +112,36 @@ def filter_by_reactions(
     Args:
         messages: List of message dicts with 'reactions' field
         min_reactions: Minimum total reaction count required
-        reaction_emoji: Optional specific emoji to filter by (e.g., '👍', ':thumbsup:', 'thumbsup')
+        reaction_emoji: Optional specific emoji to filter by
+            - Unicode emoji: '👍'
+            - Discord name: 'thumbsup', '+1' (for 👍)
+            - With colons: ':thumbsup:', ':+1:'
 
     Returns:
         Filtered list of messages meeting reaction threshold
     """
-    if min_reactions <= 0:
+    if min_reactions <= 0 and not reaction_emoji:
         return messages
 
     filtered: list[dict[str, Any]] = []
 
-    # Normalize emoji for comparison (handle both unicode and :name: format)
+    # Normalize emoji for comparison
+    # Discord API returns:
+    #   - Unicode emojis as their Discord name (e.g., "+1" for 👍)
+    #   - Custom emojis with both name and id
     normalized_emoji = None
+    emoji_aliases = []
     if reaction_emoji:
         # Remove colons if present (:thumbsup: -> thumbsup)
         normalized_emoji = reaction_emoji.strip().strip(":").lower()
+        emoji_aliases = [normalized_emoji]
+
+        # Add common aliases
+        # Discord uses "+1" for thumbsup emoji
+        if normalized_emoji in ("thumbsup", "👍"):
+            emoji_aliases.extend(["+1", "thumbsup", "👍"])
+        elif normalized_emoji == "+1":
+            emoji_aliases.extend(["thumbsup", "👍"])
 
     for msg in messages:
         reactions = msg.get("reactions") or []
@@ -124,12 +153,8 @@ def filter_by_reactions(
             matching_count = 0
             for r in reactions:
                 emoji_name = (r.get("emoji") or "").lower()
-                # Match both unicode emoji directly or :name: format
-                if (
-                    emoji_name == normalized_emoji
-                    or emoji_name == reaction_emoji
-                    or emoji_name.strip(":") == normalized_emoji
-                ):
+                # Match against any of our emoji aliases
+                if emoji_name in emoji_aliases or emoji_name == reaction_emoji.lower():
                     matching_count += r.get("count", 0)
 
             if matching_count >= min_reactions:

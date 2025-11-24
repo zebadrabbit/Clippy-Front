@@ -24,6 +24,86 @@ from app.api import api_bp
 from app.models import Clip, MediaFile, MediaType, ProcessingJob, Project, db
 
 
+def _download_creator_avatar(clip: Clip) -> bool:
+    """Download and cache creator avatar for a clip.
+
+    Args:
+        clip: Clip object with creator_id and creator_name populated
+
+    Returns:
+        True if avatar was downloaded/found, False otherwise
+    """
+    if not clip.creator_id or not clip.creator_name:
+        return False
+
+    try:
+        import glob
+        import re
+
+        import requests as _requests
+
+        from app.integrations.twitch import get_user_profile_image_url
+
+        current_app.logger.info(
+            f"Processing avatar for {clip.creator_name} (ID: {clip.creator_id})"
+        )
+
+        # Sanitize creator name for filename
+        safe_name = re.sub(r"[^a-z0-9_-]+", "_", clip.creator_name.strip().lower())
+
+        # Prepare avatars directory
+        avatars_dir = os.path.join(current_app.instance_path, "assets", "avatars")
+        os.makedirs(avatars_dir, exist_ok=True)
+
+        # Check if an avatar already exists for this creator
+        existing_avatar = None
+        for ext in (".png", ".jpg", ".jpeg", ".webp"):
+            exact_match = os.path.join(avatars_dir, f"{safe_name}{ext}")
+            if os.path.isfile(exact_match):
+                existing_avatar = exact_match
+                break
+            matches = glob.glob(os.path.join(avatars_dir, f"{safe_name}_*{ext}"))
+            if matches:
+                matches.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+                existing_avatar = matches[0]
+                break
+
+        if existing_avatar:
+            clip.creator_avatar_path = existing_avatar
+            current_app.logger.info(
+                f"Reusing existing avatar for {clip.creator_name}: {existing_avatar}"
+            )
+            return True
+
+        # Download new avatar
+        avatar_url = get_user_profile_image_url(clip.creator_id)
+        if not avatar_url:
+            current_app.logger.warning(
+                f"No avatar URL available for {clip.creator_name}"
+            )
+            return False
+
+        current_app.logger.info(f"Downloading avatar from: {avatar_url}")
+        ext = os.path.splitext(avatar_url.split("?")[0])[1] or ".jpg"
+        avatar_filename = f"{safe_name}{ext}"
+        avatar_path = os.path.join(avatars_dir, avatar_filename)
+
+        resp = _requests.get(avatar_url, timeout=10)
+        resp.raise_for_status()
+        with open(avatar_path, "wb") as f:
+            f.write(resp.content)
+
+        clip.creator_avatar_path = avatar_path
+        current_app.logger.info(f"Downloaded avatar to: {avatar_path}")
+        return True
+
+    except Exception as avatar_err:
+        current_app.logger.warning(
+            f"Failed to download avatar for {clip.creator_name}: {avatar_err}"
+        )
+        return False
+
+
 def require_worker_key(f):
     """Decorator to require WORKER_API_KEY for worker endpoints."""
 
@@ -127,6 +207,80 @@ def worker_update_clip_status(clip_id: int):
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error updating clip {clip_id}: {e}")
+        return jsonify({"error": "Internal error"}), 500
+
+
+@api_bp.route("/worker/clips/<int:clip_id>/enrich", methods=["POST"])
+@require_worker_key
+def worker_enrich_clip_metadata(clip_id: int):
+    """Enrich clip with Twitch metadata (creator, game, date, avatar).
+
+    Request body:
+        {
+            "source_url": str
+        }
+
+    Returns:
+        {"status": "enriched", "clip_id": int} or {"status": "skipped"}
+    """
+    try:
+        clip = db.session.get(Clip, clip_id)
+        if not clip:
+            return jsonify({"error": "Clip not found"}), 404
+
+        data = request.get_json() or {}
+        source_url = data.get("source_url", clip.source_url)
+
+        if not source_url or "twitch" not in source_url.lower():
+            return jsonify({"status": "skipped", "reason": "Not a Twitch URL"})
+
+        # Extract clip slug and enrich metadata
+        import re
+
+        from app.integrations.twitch import get_clip_by_id
+
+        match = re.search(
+            r"(?:clips?\.twitch\.tv/|twitch\.tv/.+/clip/)([^/?&#]+)",
+            source_url,
+        )
+        if not match:
+            return jsonify({"status": "skipped", "reason": "Could not extract clip ID"})
+
+        clip_slug = match.group(1)
+        twitch_clip = get_clip_by_id(clip_slug)
+
+        if not twitch_clip:
+            return jsonify(
+                {"status": "skipped", "reason": "No metadata from Twitch API"}
+            )
+
+        # Update clip metadata
+        if twitch_clip.creator_name:
+            clip.creator_name = twitch_clip.creator_name
+        if twitch_clip.creator_id:
+            clip.creator_id = twitch_clip.creator_id
+        if twitch_clip.game_name:
+            clip.game_name = twitch_clip.game_name
+        if twitch_clip.created_at:
+            try:
+                clip.clip_created_at = datetime.fromisoformat(
+                    twitch_clip.created_at.replace("Z", "+00:00")
+                )
+            except Exception:
+                pass
+        if twitch_clip.title and (not clip.title or clip.title.startswith("Clip ")):
+            clip.title = twitch_clip.title
+
+        db.session.commit()
+
+        # Download avatar (always attempt, helper will reuse if exists)
+        _download_creator_avatar(clip)
+        db.session.commit()
+
+        return jsonify({"status": "enriched", "clip_id": clip_id})
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error enriching clip {clip_id}: {e}", exc_info=True)
         return jsonify({"error": "Internal error"}), 500
 
 
@@ -875,80 +1029,82 @@ def worker_upload_clip(project_id: int, clip_id: int):
         if metadata.get("duration"):
             clip.duration = metadata["duration"]
 
-        # Download creator avatar if we have creator info and no avatar yet
-        if clip.creator_id and clip.creator_name and not clip.creator_avatar_path:
-            try:
-                import glob
-                import re
-
-                import requests as _requests
-
-                from app.integrations.twitch import get_user_profile_image_url
-
-                # Sanitize creator name for filename
-                safe_name = re.sub(
-                    r"[^a-z0-9_-]+", "_", clip.creator_name.strip().lower()
-                )
-
-                # Prepare avatars directory
-                avatars_dir = os.path.join(
-                    current_app.instance_path, "assets", "avatars"
-                )
-                os.makedirs(avatars_dir, exist_ok=True)
-
-                # Check if an avatar already exists for this creator (to avoid duplicates)
-                existing_avatar = None
-                for ext in (".png", ".jpg", ".jpeg", ".webp"):
-                    # First check exact match without suffix
-                    exact_match = os.path.join(avatars_dir, f"{safe_name}{ext}")
-                    if os.path.isfile(exact_match):
-                        existing_avatar = exact_match
-                        break
-                    # Then check for any files with random suffix pattern
-                    matches = glob.glob(
-                        os.path.join(avatars_dir, f"{safe_name}_*{ext}")
-                    )
-                    if matches:
-                        # Use most recent one
-                        matches.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-                        existing_avatar = matches[0]
-                        break
-
-                if existing_avatar:
-                    # Reuse existing avatar
-                    clip.creator_avatar_path = existing_avatar
-                    current_app.logger.info(
-                        f"Reusing existing avatar for {clip.creator_name}: {existing_avatar}"
-                    )
-                else:
-                    # Download new avatar
-                    avatar_url = get_user_profile_image_url(clip.creator_id)
-                    if avatar_url:
-                        ext = os.path.splitext(avatar_url.split("?")[0])[1] or ".jpg"
-                        # Use simple filename without random suffix for first avatar
-                        avatar_filename = f"{safe_name}{ext}"
-                        avatar_path = os.path.join(avatars_dir, avatar_filename)
-
-                        # Download avatar
-                        r = _requests.get(avatar_url, timeout=10)
-                        r.raise_for_status()
-                        with open(avatar_path, "wb") as f:
-                            f.write(r.content)
-
-                        clip.creator_avatar_path = avatar_path
-                        current_app.logger.info(
-                            f"Downloaded new avatar for {clip.creator_name} to {avatar_path}"
-                        )
-            except Exception as avatar_err:
-                current_app.logger.warning(
-                    f"Failed to download avatar for clip {clip_id}: {avatar_err}"
-                )
-
         db.session.commit()
 
         current_app.logger.info(
             f"Worker uploaded clip {clip_id} -> MediaFile {media.id} for project {project_id}"
         )
+
+        # Enrich Twitch metadata synchronously (runs server-side with secrets)
+        if clip.source_url and "twitch" in clip.source_url.lower():
+            try:
+                import re
+
+                from app.integrations.twitch import get_clip_by_id
+
+                current_app.logger.info(
+                    f"Attempting to enrich Twitch metadata for clip {clip_id}, URL: {clip.source_url}"
+                )
+
+                # Extract clip slug from URL
+                match = re.search(
+                    r"(?:clips?\.twitch\.tv/|twitch\.tv/.+/clip/)([^/?&#]+)",
+                    clip.source_url,
+                )
+                if match:
+                    clip_slug = match.group(1)
+                    current_app.logger.info(f"Extracted clip slug: {clip_slug}")
+
+                    twitch_clip = get_clip_by_id(clip_slug)
+                    if twitch_clip:
+                        current_app.logger.info(
+                            f"Got Twitch metadata: creator={twitch_clip.creator_name}, game={twitch_clip.game_name}"
+                        )
+
+                        # Update clip with metadata (always update, not just if empty)
+                        if twitch_clip.creator_name:
+                            clip.creator_name = twitch_clip.creator_name
+                        if twitch_clip.creator_id:
+                            clip.creator_id = twitch_clip.creator_id
+                        if twitch_clip.game_name:
+                            clip.game_name = twitch_clip.game_name
+                        if twitch_clip.created_at:
+                            try:
+                                from datetime import datetime
+
+                                clip.clip_created_at = datetime.fromisoformat(
+                                    twitch_clip.created_at.replace("Z", "+00:00")
+                                )
+                            except Exception as dt_err:
+                                current_app.logger.warning(
+                                    f"Failed to parse created_at: {dt_err}"
+                                )
+                        if twitch_clip.title:
+                            # Only override generic titles
+                            if not clip.title or clip.title.startswith("Clip "):
+                                clip.title = twitch_clip.title
+
+                        db.session.commit()
+                        current_app.logger.info(
+                            f"Successfully enriched clip {clip_id} with Twitch metadata"
+                        )
+                    else:
+                        current_app.logger.warning(
+                            f"Twitch API returned no data for clip slug: {clip_slug}"
+                        )
+                else:
+                    current_app.logger.warning(
+                        f"Could not extract clip slug from URL: {clip.source_url}"
+                    )
+            except Exception as enrich_err:
+                current_app.logger.error(
+                    f"Failed to enrich clip {clip_id} metadata: {enrich_err}",
+                    exc_info=True,
+                )
+
+        # Download creator avatar AFTER enrichment (so we have creator_id and creator_name)
+        _download_creator_avatar(clip)
+        db.session.commit()
 
         return jsonify(
             {
@@ -1183,6 +1339,12 @@ def worker_get_compilation_context(project_id: int):
                     "output_resolution": project.output_resolution or "1920x1080",
                     "output_format": project.output_format or "mp4",
                     "max_clip_duration": project.max_clip_duration,
+                    "vertical_zoom": project.vertical_zoom or 100,
+                    "vertical_align": project.vertical_align or "center",
+                    "duck_threshold": project.duck_threshold or 0.02,
+                    "duck_ratio": project.duck_ratio or 20.0,
+                    "duck_attack": project.duck_attack or 1.0,
+                    "duck_release": project.duck_release or 250.0,
                 },
                 "clips": [
                     {

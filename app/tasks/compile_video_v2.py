@@ -389,11 +389,25 @@ def _process_clip_v2(
     target_width, target_height = map(int, target_res.split("x"))
     is_portrait_output = target_height > target_width
 
+    # Get vertical video settings from project
+    vertical_zoom = project_data.get("vertical_zoom", 100)  # 100-120
+    vertical_align = project_data.get("vertical_align", "center")  # left, center, right
+
     # Build scale filter with letterboxing for portrait outputs
     if is_portrait_output:
-        # For portrait: scale up by 20%, crop to fit, then pad to canvas size
-        # This zooms in slightly to reduce black bars while maintaining 16:9 content
-        scale_filter = f"scale=iw*1.2:ih*1.2,crop={target_width}:ih,pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:black"
+        # Convert zoom percentage to scale factor (100% = 1.0, 120% = 1.2)
+        zoom_factor = vertical_zoom / 100.0
+
+        # Determine crop position based on alignment
+        if vertical_align == "left":
+            crop_x = "0"
+        elif vertical_align == "right":
+            crop_x = "iw-ow"
+        else:  # center
+            crop_x = "(iw-ow)/2"
+
+        # For portrait: scale up by zoom factor, crop to fit width, then pad to canvas size
+        scale_filter = f"scale=iw*{zoom_factor}:ih*{zoom_factor},crop={target_width}:ih:{crop_x}:0,pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:black"
     else:
         # For landscape/square: scale normally
         scale_filter = f"scale={target_width}:{target_height}:flags=lanczos"
@@ -750,17 +764,22 @@ def _build_timeline_with_transitions_v2(
             if trans:
                 segments.append(trans)
                 transition_idx += 1
-
-        # Static before clip (after transition, or at start if no intro)
-        if processed_static_path:
+                # Static after transition (always add after transition)
+                if processed_static_path:
+                    segments.append(processed_static_path)
+        elif i == 0 and not intro_path and processed_static_path:
+            # First clip with no intro: add static before it
             segments.append(processed_static_path)
 
         # The clip itself
         segments.append(clip_path)
 
-        # Static after clip
+        # Static after clip (always, unless it's the last clip and outro is coming)
         if processed_static_path:
-            segments.append(processed_static_path)
+            if i < len(processed_clips) - 1:  # Not the last clip
+                segments.append(processed_static_path)
+            elif not outro_path:  # Last clip and no outro
+                segments.append(processed_static_path)
 
     # Outro
     if outro_path:
@@ -799,6 +818,10 @@ def _compile_final_video_v2(
     intro_id: int | None = None,
     outro_id: int | None = None,
     user_id: int | None = None,
+    duck_threshold: float | None = None,
+    duck_ratio: float | None = None,
+    duck_attack: float | None = None,
+    duck_release: float | None = None,
 ) -> str:
     """Compile final video from clips with optional background music (API-based).
 
@@ -813,6 +836,10 @@ def _compile_final_video_v2(
         intro_id: Intro media file ID (used to detect timing)
         outro_id: Outro media file ID (used to detect timing)
         user_id: User ID for fetching music file
+        duck_threshold: Ducking threshold (0.0-1.0), defaults to 0.02
+        duck_ratio: Ducking ratio (1.0-20.0), defaults to 20.0
+        duck_attack: Ducking attack time in ms (0.1-10.0), defaults to 1.0
+        duck_release: Ducking release time in ms (10.0-1000.0), defaults to 250.0
 
     Returns:
         Path to compiled output file
@@ -1133,9 +1160,15 @@ def _compile_final_video_v2(
     # Trim music to music_end_time so it stops before outro (if "before outro" is set)
     fadeout_start = max(0, music_end_time - 2)
 
+    # Use ducking parameters from project or defaults
+    threshold = duck_threshold if duck_threshold is not None else 0.02
+    ratio = duck_ratio if duck_ratio is not None else 20.0
+    attack = duck_attack if duck_attack is not None else 1.0
+    release = duck_release if duck_release is not None else 250.0
+
     if has_audio_stream:
         # Use sidechaincompress for automatic ducking when video audio is present
-        # This reduces music volume by ~20dB when video audio is detected above -40dB threshold
+        # This reduces music volume when video audio is detected above threshold
         if needs_loop:
             # Loop music to ensure it covers the full video duration
             # Order: loop -> delay -> trim -> volume/fade
@@ -1145,7 +1178,7 @@ def _compile_final_video_v2(
                 f"atrim=end={music_end_time},"
                 f"volume={volume},afade=t=out:st={fadeout_start}:d=2[music];"
                 f"[0:a]asplit=2[va1][va2];"
-                f"[music][va2]sidechaincompress=threshold=0.02:ratio=20:attack=1:release=250[compressed];"
+                f"[music][va2]sidechaincompress=threshold={threshold}:ratio={ratio}:attack={attack}:release={release}[compressed];"
                 f"[va1][compressed]amix=inputs=2:duration=first:dropout_transition=2[aout]"
             )
         else:
@@ -1155,7 +1188,7 @@ def _compile_final_video_v2(
                 f"atrim=end={music_end_time},"
                 f"volume={volume},afade=t=out:st={fadeout_start}:d=2[music];"
                 f"[0:a]asplit=2[va1][va2];"
-                f"[music][va2]sidechaincompress=threshold=0.02:ratio=20:attack=1:release=250[compressed];"
+                f"[music][va2]sidechaincompress=threshold={threshold}:ratio={ratio}:attack={attack}:release={release}[compressed];"
                 f"[va1][compressed]amix=inputs=2:duration=first:dropout_transition=2[aout]"
             )
         audio_map = "[aout]"
@@ -1445,6 +1478,10 @@ def compile_video_task_v2(
                 intro_id=intro_id,
                 outro_id=outro_id,
                 user_id=project_data["user_id"],
+                duck_threshold=project_data.get("duck_threshold"),
+                duck_ratio=project_data.get("duck_ratio"),
+                duck_attack=project_data.get("duck_attack"),
+                duck_release=project_data.get("duck_release"),
             )
 
             self.update_state(

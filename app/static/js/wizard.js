@@ -79,6 +79,7 @@
         try { await refreshIntros(); } catch (_) {}
         try { await refreshOutros(); } catch (_) {}
         try { await refreshTransitions(); } catch (_) {}
+        try { await refreshMusic(); } catch (_) {}
         try { renderTransitionsBadge(); } catch (_) {}
       });
     }
@@ -379,7 +380,9 @@
   // Twitch warning toggle
   const routeSelect = document.getElementById('route-select');
   const twitchWarn = document.getElementById('twitch-warning');
-  const discordParams = document.getElementById('discord-params');
+  const discordMinReactions = document.getElementById('discord-min-reactions');
+  const discordEmoji = document.getElementById('discord-emoji');
+  const discordSetupAlert = document.getElementById('discord-setup-alert');
 
   function updateTwitchWarning(){
     const val = routeSelect.value;
@@ -389,17 +392,32 @@
 
   function updateDiscordParams(){
     const val = routeSelect.value;
-    if (discordParams) discordParams.classList.toggle('d-none', val !== 'discord');
+    const shouldShow = val === 'discord';
+    console.log('[updateDiscordParams] route:', val, '| showing discord params:', shouldShow);
+    if (discordMinReactions) {
+      discordMinReactions.classList.toggle('d-none', !shouldShow);
+    }
+    if (discordEmoji) {
+      discordEmoji.classList.toggle('d-none', !shouldShow);
+    }
+    if (discordSetupAlert) {
+      discordSetupAlert.classList.toggle('d-none', !shouldShow);
+    }
+    console.log('[updateDiscordParams] Discord params visibility updated');
   }
 
   routeSelect?.addEventListener('change', () => {
+    console.log('[route-select change] New value:', routeSelect.value);
     updateTwitchWarning();
     updateDiscordParams();
   });
 
-  // Initialize on page load
-  updateTwitchWarning();
-  updateDiscordParams();
+  // Initialize on page load with a slight delay to ensure DOM is ready
+  setTimeout(() => {
+    console.log('[init] Running initial updateTwitchWarning and updateDiscordParams');
+    updateTwitchWarning();
+    updateDiscordParams();
+  }, 0);
 
   // Create project and go to Get Clips
   // Audio normalization slider wiring
@@ -510,6 +528,8 @@
       max_clip_duration: parseInt(fd.get('max_len') || '300', 10),
       platform_preset: (fd.get('platform_preset') || 'youtube').toString(),
       compilation_length: compilationLengthValue,
+      vertical_zoom: parseInt(fd.get('vertical_zoom') || '100', 10),
+      vertical_align: (fd.get('vertical_align') || 'center').toString(),
       // audio normalization will be conditionally appended below
     };
     if (audioNormEnabled) {
@@ -538,11 +558,9 @@
         platform_preset: fd.get('platform_preset') || 'custom',
         compilation_length: compilationLengthValue,
         max_clips: Math.max(1, Math.min(500, parseInt(fd.get('max_clips') || '20', 10))),
-        min_len: parseInt(fd.get('min_len') || '5', 10),
         max_len: payload.max_clip_duration,
         start_date: fd.get('start_date') || '',
         end_date: fd.get('end_date') || '',
-        min_views: fd.get('min_views') || '',
         audio_norm_profile: audioNormEnabled ? payload.audio_norm_profile : undefined,
         audio_norm_db: audioNormEnabled ? payload.audio_norm_db : undefined
       };
@@ -712,7 +730,7 @@
 
       // Build query parameters
       const params = new URLSearchParams({ limit: '200' });
-      if (minReactions > 1) params.set('min_reactions', String(minReactions));
+      if (minReactions >= 0) params.set('min_reactions', String(minReactions));
       if (reactionEmoji) params.set('reaction_emoji', reactionEmoji);
       if (channelId) params.set('channel_id', channelId);
 
@@ -744,8 +762,8 @@
     if (compilationLength !== 'auto') {
       const targetSeconds = parseInt(compilationLength, 10);
       if (!isNaN(targetSeconds) && targetSeconds > 0) {
-        // Estimate average clip duration (45 seconds is typical for Twitch clips)
-        const avgClipDuration = 45;
+        // Get average clip duration from server config (defaults to 45 seconds)
+        const avgClipDuration = parseInt(document.body.dataset.avgClipDuration || '45', 10);
         const estimatedClipsNeeded = Math.ceil(targetSeconds / avgClipDuration);
 
         // Use the smaller of: calculated clips needed or max_clips hard limit
@@ -1125,7 +1143,7 @@
           <div class="mb-1"><strong>Intro/Outro:</strong> ${intro ? yes : no}, ${outro ? yes : no}</div>
           <div class="mb-1"><strong>Transitions:</strong> ${transCount ? `${transCount} (${transMode})` : 'None'}</div>
           <div class="mb-1"><strong>Background Music:</strong> ${wizard.selectedMusicId ? `Yes (${document.getElementById('music-volume')?.value || 30}% volume)` : 'None'}</div>
-          <div class="text-muted">Clip limits: min ${s.min_len || 0}s • max ${s.max_len || 0}s • max clips ${s.max_clips || 0}${s.compilation_length && s.compilation_length !== 'auto' ? ` • Target length: ${Math.floor(parseInt(s.compilation_length)/60)}m` : ''}${s.start_date || s.end_date ? ` • Dates: ${escapeHtml(s.start_date || '—')} → ${escapeHtml(s.end_date || '—')}` : ''}${s.min_views ? ` • Min views: ${escapeHtml(String(s.min_views))}` : ''}</div>
+          <div class="text-muted">Clip limits: max ${s.max_len || 0}s • max clips ${s.max_clips || 0}${s.compilation_length && s.compilation_length !== 'auto' ? ` • Target length: ${Math.floor(parseInt(s.compilation_length)/60)}m` : ''}${s.start_date || s.end_date ? ` • Dates: ${escapeHtml(s.start_date || '—')} → ${escapeHtml(s.end_date || '—')}` : ''}</div>
         </div>
         <div class="compile-right">
           <div class="d-flex justify-content-between align-items-center">
@@ -1512,6 +1530,13 @@
         body.music_volume = parseFloat((parseInt(document.getElementById('music-volume')?.value || '30', 10) / 100).toFixed(2));
         body.music_start_mode = document.getElementById('music-start-mode')?.value || 'after_intro';
         body.music_end_mode = document.getElementById('music-end-mode')?.value || 'before_outro';
+        // Include ducking parameters
+        const thresholdSlider = parseInt(document.getElementById('duck-threshold')?.value || '2', 10);
+        body.duck_threshold = parseFloat((thresholdSlider / 100).toFixed(2));
+        body.duck_ratio = parseFloat(document.getElementById('duck-ratio')?.value || '20');
+        const attackSlider = parseInt(document.getElementById('duck-attack')?.value || '10', 10);
+        body.duck_attack = parseFloat((attackSlider / 10).toFixed(1));
+        body.duck_release = parseFloat(document.getElementById('duck-release')?.value || '250');
       }
       // Extract the current timeline subset (ordered) so the backend renders exactly these clips
       const list = document.getElementById('timeline-list');
@@ -1867,12 +1892,63 @@
     wizard.selectedTransitionIds = [];
     renderTransitionsBadge();
   });
+
+  // Add All Clips to Timeline
+  document.getElementById('add-all-clips')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    const grid = document.getElementById('clips-grid');
+    const clipCards = Array.from(grid.querySelectorAll('.card:not(.d-none)'));
+
+    if (clipCards.length === 0) {
+      alert('No clips available to add.');
+      return;
+    }
+
+    // Find the "Add to timeline" button in each visible clip card and click it
+    let addedCount = 0;
+    clipCards.forEach(card => {
+      const addBtn = card.querySelector('.btn-primary');
+      if (addBtn && addBtn.textContent.includes('Add to timeline')) {
+        addBtn.click();
+        addedCount++;
+      }
+    });
+
+    if (addedCount > 0) {
+      console.log(`Added ${addedCount} clips to timeline`);
+    }
+  });
+
   // Music volume slider
   document.getElementById('music-volume')?.addEventListener('input', (e) => {
     const val = parseInt(e.target.value, 10);
     document.getElementById('music-volume-display').textContent = val + '%';
     try { renderTransitionsBadge(); } catch(_) {}
   });
+
+  // Ducking controls
+  document.getElementById('duck-threshold')?.addEventListener('input', (e) => {
+    const val = parseInt(e.target.value, 10);
+    const normalized = (val / 100).toFixed(2);
+    document.getElementById('duck-threshold-display').textContent = normalized;
+  });
+
+  document.getElementById('duck-ratio')?.addEventListener('input', (e) => {
+    const val = parseInt(e.target.value, 10);
+    document.getElementById('duck-ratio-display').textContent = val + ':1';
+  });
+
+  document.getElementById('duck-attack')?.addEventListener('input', (e) => {
+    const val = parseInt(e.target.value, 10);
+    const normalized = (val / 10).toFixed(1);
+    document.getElementById('duck-attack-display').textContent = normalized + 'ms';
+  });
+
+  document.getElementById('duck-release')?.addEventListener('input', (e) => {
+    const val = parseInt(e.target.value, 10);
+    document.getElementById('duck-release-display').textContent = val + 'ms';
+  });
+
   // When clicking the Arrange chevron, auto-refresh lists too (in case user navigates directly)
   document.querySelector('#wizard-chevrons li[data-step="3"]')?.addEventListener('click', () => {
     Promise.resolve().then(async () => {
@@ -2015,10 +2091,47 @@
 
         // Show feedback about preset application
         console.log(`Applied ${selectedOption.textContent} preset:`, settings);
+
+        // Show/hide vertical video controls for 9:16 presets
+        toggleVerticalVideoControls(this.value);
       } catch (err) {
         console.error('Failed to apply preset settings:', err);
       }
     });
+
+    // Initialize vertical video controls on page load
+    toggleVerticalVideoControls(presetSelect.value);
+
+    // Function to show/hide vertical video controls
+    function toggleVerticalVideoControls(presetValue) {
+      const verticalControls = document.getElementById('verticalVideoControls');
+      if (!verticalControls) return;
+
+      const verticalPresets = ['youtube_shorts', 'tiktok', 'instagram_reel', 'instagram_story'];
+      const isVertical = verticalPresets.includes(presetValue);
+
+      if (isVertical) {
+        verticalControls.classList.remove('d-none');
+      } else {
+        verticalControls.classList.add('d-none');
+      }
+    }
+  })();
+
+  // Vertical Video Zoom Controls
+  (function initVerticalVideoControls() {
+    const zoomSlider = document.getElementById('verticalZoom');
+    const zoomDisplay = document.getElementById('verticalZoomDisplay');
+
+    if (!zoomSlider || !zoomDisplay) return;
+
+    // Update zoom display value
+    zoomSlider.addEventListener('input', function() {
+      zoomDisplay.textContent = `${this.value}%`;
+    });
+
+    // Initialize display
+    zoomDisplay.textContent = `${zoomSlider.value}%`;
   })();
 
   // Keyboard Shortcuts for Timeline

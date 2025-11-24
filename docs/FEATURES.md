@@ -78,14 +78,20 @@ See [TIERS-AND-QUOTAS.md](TIERS-AND-QUOTAS.md) for details.
 ### Twitch
 
 - **Clip fetching** via Helix API
-- **Creator avatars** auto-download
+- **Metadata enrichment** for creator, game, timestamp
+- **Creator avatars** auto-download and cache
 - **URL normalization** for deduplication
-- Connected account requirement
+- Connected account requirement (twitch_username in profile)
 
 ### Discord
 
-- **Message fetching** with clip URL extraction
+- **Message fetching** with clip URL extraction (requires bot with Read Message History permission)
+- **Reaction-based filtering** (min 0-100 reactions threshold)
 - **Multi-source support** in single request
+- **Twitch metadata enrichment** for Discord-sourced clips
+- **Per-user channel configuration** (discord_channel_id in profile)
+- **Bot setup**: Requires Message Content Intent and permission 65536
+- See [Discord Integration Guide](DISCORD_INTEGRATION.md) for setup
 
 ### Content Policy
 

@@ -251,6 +251,11 @@ class Config:
     DEFAULT_OUTPUT_FORMAT = os.environ.get("DEFAULT_OUTPUT_FORMAT", "mp4")
     DEFAULT_MAX_CLIP_DURATION = int(os.environ.get("DEFAULT_MAX_CLIP_DURATION", 30))
 
+    # Average clip duration for compilation length calculations (in seconds)
+    AVERAGE_CLIP_DURATION_SECONDS = int(
+        os.environ.get("AVERAGE_CLIP_DURATION_SECONDS", 45)
+    )
+
     # Global watermark defaults (can be overridden via System Settings)
     WATERMARK_PATH = os.environ.get("WATERMARK_PATH")  # path set via Admin UI upload
     WATERMARK_OPACITY = float(os.environ.get("WATERMARK_OPACITY", 0.3))

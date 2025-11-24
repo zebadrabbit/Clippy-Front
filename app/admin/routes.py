@@ -1015,6 +1015,11 @@ def system_config():
                 "type": "int",
                 "label": "Default Transition Duration (s)",
             },
+            {
+                "key": "AVERAGE_CLIP_DURATION_SECONDS",
+                "type": "int",
+                "label": "Average Clip Duration (s)",
+            },
         ],
         "Security": [
             {"key": "FORCE_HTTPS", "type": "bool", "label": "Force HTTPS"},

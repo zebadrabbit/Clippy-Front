@@ -292,10 +292,20 @@ def apply_template(template_id):
         return jsonify({"error": "project_name is required"}), 400
 
     try:
+        # Ensure unique project name by appending (1), (2), etc. if needed
+        # This prevents directory collisions when multiple projects share the same name
+        unique_name = project_name
+        counter = 1
+        while Project.query.filter_by(
+            user_id=current_user.id, name=unique_name
+        ).first():
+            unique_name = f"{project_name} ({counter})"
+            counter += 1
+
         # Create new project with template parameters
         params = template.params or {}
         project = Project(
-            name=project_name,
+            name=unique_name,
             user_id=current_user.id,
             output_resolution=params.get("output_resolution", "1080p"),
             output_format=params.get("output_format", "mp4"),

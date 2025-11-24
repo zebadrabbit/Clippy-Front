@@ -132,8 +132,8 @@ def discord_messages_api():
     Query params:
         channel_id (str, optional): Discord channel ID to fetch messages from.
             Defaults to Config.DISCORD_CHANNEL_ID from environment.
-        limit (int, optional): Number of messages to fetch (1-200).
-            Defaults to 200.
+        limit (int, optional): Number of messages to fetch (1-100).
+            Defaults to 100.
         min_reactions (int, optional): Minimum reaction count to filter messages.
             Defaults to 1 (no filtering). Only messages with at least this many
             total reactions will be included.
@@ -164,7 +164,7 @@ def discord_messages_api():
         GET /api/discord/messages?min_reactions=3&reaction_emoji=👍
         GET /api/discord/messages?channel_id=123456789&min_reactions=5
     """
-    limit = request.args.get("limit", default=200, type=int)
+    limit = request.args.get("limit", default=100, type=int)
     channel_id = request.args.get("channel_id")
     min_reactions = request.args.get("min_reactions", default=1, type=int)
     reaction_emoji = request.args.get("reaction_emoji", default="", type=str).strip()
@@ -174,12 +174,26 @@ def discord_messages_api():
         messages = get_channel_messages(channel_id=channel_id, limit=limit)
         total_count = len(messages)
 
-        # Filter by reactions if requested
-        if min_reactions > 1 or reaction_emoji:
+        # Log reaction data for debugging
+        current_app.logger.info(
+            f"Discord fetch: {total_count} messages, min_reactions={min_reactions}, emoji='{reaction_emoji}'"
+        )
+        for msg in messages[:5]:  # Log first 5 messages
+            reactions = msg.get("reactions", [])
+            if reactions:
+                current_app.logger.debug(
+                    f"Message {msg.get('id')}: reactions={reactions}"
+                )
+
+        # Filter by reactions if requested (min_reactions > 0 or specific emoji)
+        if min_reactions > 0 or reaction_emoji:
             messages = filter_by_reactions(
                 messages,
                 min_reactions=min_reactions,
                 reaction_emoji=reaction_emoji or None,
+            )
+            current_app.logger.info(
+                f"After filtering: {len(messages)} messages (from {total_count})"
             )
 
         # Extract Twitch clip URLs from filtered messages
@@ -195,6 +209,7 @@ def discord_messages_api():
             }
         )
     except Exception as e:
+        error_msg = str(e)
         safe_log_error(
             current_app.logger,
             "Discord API error",
@@ -205,4 +220,50 @@ def discord_messages_api():
             reaction_emoji=reaction_emoji,
             user_id=current_user.id,
         )
-        return jsonify({"error": "Failed to fetch Discord messages"}), 502
+        # Provide more specific error message to help user troubleshoot
+        if "400" in error_msg or "Bad Request" in error_msg:
+            return (
+                jsonify(
+                    {
+                        "error": "Discord API error: Invalid request. Please check that:\n"
+                        "1. Your Discord bot token is valid\n"
+                        "2. The bot has been added to your server\n"
+                        "3. The bot has 'Read Message History' permission in the channel\n"
+                        "4. The channel ID is correct"
+                    }
+                ),
+                502,
+            )
+        elif "401" in error_msg or "Unauthorized" in error_msg:
+            return (
+                jsonify(
+                    {
+                        "error": "Discord bot token is invalid or expired. Please update DISCORD_BOT_TOKEN in your environment."
+                    }
+                ),
+                502,
+            )
+        elif "403" in error_msg or "Forbidden" in error_msg:
+            return (
+                jsonify(
+                    {
+                        "error": "Discord bot doesn't have permission to access this channel. "
+                        "Please ensure the bot has 'Read Message History' permission."
+                    }
+                ),
+                502,
+            )
+        elif "404" in error_msg or "Not Found" in error_msg:
+            return (
+                jsonify(
+                    {
+                        "error": f"Discord channel not found. Please check channel ID: {channel_id}"
+                    }
+                ),
+                502,
+            )
+        else:
+            return (
+                jsonify({"error": f"Failed to fetch Discord messages: {error_msg}"}),
+                502,
+            )

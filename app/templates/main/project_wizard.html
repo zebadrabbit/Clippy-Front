@@ -39,43 +39,14 @@
             </select>
           </div>
 
-          <!-- Discord-specific parameters (hidden by default) -->
-          <div class="col-md-12 d-none" id="discord-params">
-            <div class="card border-primary">
-              <div class="card-header bg-primary text-white">
-                <i class="bi bi-discord"></i> Discord Curation Settings
-              </div>
-              <div class="card-body">
-                <div class="row g-3">
-                  <div class="col-md-4">
-                    <label class="form-label">Minimum Reactions</label>
-                    <input type="number" class="form-control" id="min-reactions" name="min_reactions" value="1" min="1" max="100">
-                    <small class="text-muted">Only fetch clips from messages with at least this many reactions</small>
-                  </div>
-                  <div class="col-md-4">
-                    <label class="form-label">Reaction Emoji (optional)</label>
-                    <input type="text" class="form-control" id="reaction-emoji" name="reaction_emoji" placeholder="👍 or :thumbsup:">
-                    <small class="text-muted">Filter by specific emoji (leave empty for any reaction)</small>
-                  </div>
-                  <div class="col-md-4">
-                    <label class="form-label">Channel ID (optional)</label>
-                    <input type="text" class="form-control" id="discord-channel-id" name="discord_channel_id" placeholder="Use default from config">
-                    <small class="text-muted">Override default Discord channel</small>
-                  </div>
-                </div>
-                <div class="alert alert-info mt-3 mb-0">
-                  <i class="bi bi-info-circle"></i> <strong>How it works:</strong> Community posts Twitch clips in Discord.
-                  Members react with emojis to curate. Only clips meeting the reaction threshold are imported.
-                </div>
-              </div>
-            </div>
-          </div>
+          <!-- Hidden Discord channel ID from profile -->
+          <input type="hidden" id="discord-channel-id" name="discord_channel_id" value="{{ discord_channel_id or '' }}">
 
           <div class="row g-2">
           <div class="col-12">
             <div class="alert alert-warning d-none" id="twitch-warning">
               <strong>Twitch not connected.</strong> Add your Twitch username to unlock fetching clips.
-              <a href="{{ url_for('auth.profile') }}" class="alert-link">Open your profile</a>.
+              <a href="{{ url_for('main.profile') }}" class="alert-link">Open your profile</a>.
             </div>
           </div>
           <div class="col-12">
@@ -132,6 +103,32 @@
           </div>
           </div>
 
+          <!-- Vertical Video Controls (9:16 presets only) -->
+          <div class="row g-2 mb-3 d-none" id="verticalVideoControls">
+            <div class="col-md-12">
+              <div class="alert alert-info mb-3">
+                <i class="bi bi-info-circle"></i> <strong>Vertical Video Mode:</strong> Converting 16:9 clips to 9:16 format
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Zoom Level</label>
+              <div class="d-flex align-items-center gap-2">
+                <input type="range" class="form-range" id="verticalZoom" name="vertical_zoom" min="100" max="120" value="100" step="1">
+                <span id="verticalZoomDisplay" class="text-muted small" style="min-width: 3.5rem;">100%</span>
+              </div>
+              <small class="text-muted">Zoom into 16:9 clips to fill vertical frame (100% = fit width, 120% = max zoom)</small>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Horizontal Alignment</label>
+              <select class="form-select" id="verticalAlign" name="vertical_align">
+                <option value="center" selected>Center</option>
+                <option value="left">Left</option>
+                <option value="right">Right</option>
+              </select>
+              <small class="text-muted">Horizontal position when zoomed in</small>
+            </div>
+          </div>
+
           <div class="row g-2 d-none">
           <div class="col-4">
             <label class="form-label">Output</label>
@@ -185,19 +182,42 @@
                 </select>
                 <small class="text-muted">Fetches enough clips to reach target length</small>
               </div>
-              <div class="col-md-3">
+              <div class="col-md-2">
                 <label class="form-label">Max Clips</label>
                 <input type="number" min="1" max="500" step="1" class="form-control" name="max_clips" value="5">
-                <small class="text-muted">Hard limit on clip count</small>
               </div>
-              <div class="col-md-3">
-                <label class="form-label">Min Clip Length (sec)</label>
-                <input type="number" min="1" max="600" step="1" class="form-control" name="min_len" value="5">
+              <!-- Discord-specific parameters (hidden by default) -->
+              <div class="col-md-3 d-none" id="discord-min-reactions">
+                <label class="form-label"><i class="bi bi-discord"></i> Minimum Reactions</label>
+                <input type="number" class="form-control" id="min-reactions" name="min_reactions" value="0" min="0" max="100">
+                <small class="text-muted">Messages with at least this many reactions</small>
               </div>
-              <div class="col-md-3">
-                <label class="form-label">Min Views (optional)</label>
-                <input type="number" class="form-control" name="min_views" placeholder="e.g. 1000">
+              <div class="col-md-4 d-none" id="discord-emoji">
+                <label class="form-label"><i class="bi bi-discord"></i> Reaction Emoji (optional)</label>
+                <select class="form-select" id="reaction-emoji" name="reaction_emoji">
+                  <option value="">Any reaction</option>
+                  <option value="👍">👍 Thumbs Up</option>
+                  <option value="❤️">❤️ Heart</option>
+                  <option value="😂">😂 Laughing</option>
+                  <option value="😮">😮 Surprised</option>
+                  <option value="😢">😢 Sad</option>
+                  <option value="😡">😡 Angry</option>
+                  <option value="🎉">🎉 Party</option>
+                  <option value="🔥">🔥 Fire</option>
+                  <option value="⭐">⭐ Star</option>
+                  <option value="✅">✅ Check</option>
+                </select>
+                <small class="text-muted">Filter by specific emoji</small>
               </div>
+            </div>
+            <!-- Discord setup alert (shown when Discord is selected and channel ID is missing) -->
+            <div class="alert alert-info mt-3 mb-0 d-none" id="discord-setup-alert">
+              <i class="bi bi-info-circle"></i> <strong>Discord Setup Required:</strong>
+              {% if not discord_channel_id %}
+                Set your Discord channel ID in your <a href="{{ url_for('main.profile') }}" class="alert-link">profile settings</a> to fetch clips.
+              {% else %}
+                Channel ID configured in your <a href="{{ url_for('main.profile') }}" class="alert-link">profile</a>.
+              {% endif %}
             </div>
           </div>
           <div class="col-4">
@@ -310,7 +330,12 @@
             <div class="arrange-tab-content active" data-tab="clips">
               <div class="d-flex justify-content-between align-items-center mb-3">
                 <h5 class="mb-0">Downloaded Clips</h5>
-                <small class="text-muted" id="clips-remaining"></small>
+                <div class="d-flex align-items-center gap-2">
+                  <small class="text-muted" id="clips-remaining"></small>
+                  <button class="btn btn-sm btn-primary" id="add-all-clips" title="Add all clips to timeline">
+                    <i class="bi bi-plus-circle"></i> Add All to Timeline
+                  </button>
+                </div>
               </div>
               <div id="clips-grid" style="min-height: 220px;">
                 <div class="text-muted">No clips yet. Download first.</div>
@@ -384,6 +409,66 @@
                         <option value="before_outro" selected>Before outro</option>
                         <option value="end">At the end</option>
                       </select>
+                    </div>
+                  </div>
+
+                  <!-- Advanced Ducking Settings (Collapsible) -->
+                  <div class="mt-3">
+                    <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#ducking-settings" aria-expanded="false" aria-controls="ducking-settings">
+                      <i class="bi bi-sliders"></i> Advanced: Audio Ducking
+                    </button>
+                    <div class="collapse mt-3" id="ducking-settings">
+                      <div class="card card-body bg-dark border-secondary">
+                        <p class="small text-muted mb-3">
+                          <i class="bi bi-info-circle"></i> Audio ducking automatically lowers background music volume when clip audio is present. Adjust these parameters to fine-tune the effect.
+                        </p>
+                        <div class="row g-3">
+                          <div class="col-md-6">
+                            <label for="duck-threshold" class="form-label">
+                              Threshold
+                              <span class="text-muted small">(when to start ducking)</span>
+                            </label>
+                            <div class="d-flex align-items-center gap-2">
+                              <input type="range" class="form-range" id="duck-threshold" min="0" max="100" value="2" step="1">
+                              <span id="duck-threshold-display" class="text-muted small" style="min-width: 4rem;">0.02</span>
+                            </div>
+                            <small class="text-muted">Lower = more sensitive (ducks with quieter audio)</small>
+                          </div>
+                          <div class="col-md-6">
+                            <label for="duck-ratio" class="form-label">
+                              Ratio
+                              <span class="text-muted small">(how much to reduce)</span>
+                            </label>
+                            <div class="d-flex align-items-center gap-2">
+                              <input type="range" class="form-range" id="duck-ratio" min="1" max="20" value="20" step="1">
+                              <span id="duck-ratio-display" class="text-muted small" style="min-width: 4rem;">20:1</span>
+                            </div>
+                            <small class="text-muted">Higher = more aggressive reduction</small>
+                          </div>
+                          <div class="col-md-6">
+                            <label for="duck-attack" class="form-label">
+                              Attack
+                              <span class="text-muted small">(how fast to duck)</span>
+                            </label>
+                            <div class="d-flex align-items-center gap-2">
+                              <input type="range" class="form-range" id="duck-attack" min="1" max="100" value="10" step="1">
+                              <span id="duck-attack-display" class="text-muted small" style="min-width: 4rem;">1.0ms</span>
+                            </div>
+                            <small class="text-muted">Lower = faster response (instant ducking)</small>
+                          </div>
+                          <div class="col-md-6">
+                            <label for="duck-release" class="form-label">
+                              Release
+                              <span class="text-muted small">(how fast to recover)</span>
+                            </label>
+                            <div class="d-flex align-items-center gap-2">
+                              <input type="range" class="form-range" id="duck-release" min="10" max="1000" value="250" step="10">
+                              <span id="duck-release-display" class="text-muted small" style="min-width: 4rem;">250ms</span>
+                            </div>
+                            <small class="text-muted">Higher = smoother fade-back</small>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>

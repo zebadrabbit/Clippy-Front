@@ -853,6 +853,7 @@ def init_extensions(app):
                             "DEFAULT_OUTPUT_FORMAT": "str",
                             "DEFAULT_MAX_CLIP_DURATION": "int",
                             "DEFAULT_TRANSITION_DURATION_SECONDS": "int",
+                            "AVERAGE_CLIP_DURATION_SECONDS": "int",
                         }
                         # Allowlist of System Settings that can override app.config at runtime
                         allowed.update(

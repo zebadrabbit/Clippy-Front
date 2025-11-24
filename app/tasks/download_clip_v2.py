@@ -355,6 +355,21 @@ def download_clip_task_v2(self, clip_id: int, source_url: str) -> dict[str, Any]
                 duration=duration,
             )
 
+            # Enrich metadata even when reusing (so each clip gets proper creator/game info)
+            try:
+                worker_api.enrich_clip_metadata(clip_id, source_url)
+                log(
+                    "info",
+                    "Enriched Twitch metadata for reused clip",
+                    status="enriched",
+                )
+            except Exception as enrich_err:
+                log(
+                    "warning",
+                    f"Failed to enrich metadata: {enrich_err}",
+                    status="enrichment_failed",
+                )
+
             # Complete job
             worker_api.update_processing_job(
                 job_id,

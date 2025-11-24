@@ -29,7 +29,7 @@
 
     {% block styles %}{% endblock %}
 </head>
-<body class="d-flex flex-column min-vh-100" {% if current_user.is_authenticated %}data-recent-jobs-url="{{ url_for('api.recent_jobs_api') }}" data-job-details-url-template="{{ url_for('api.job_details_api', job_id=0) }}"{% endif %}>
+<body class="d-flex flex-column min-vh-100" {% if current_user.is_authenticated %}data-recent-jobs-url="{{ url_for('api.recent_jobs_api') }}" data-job-details-url-template="{{ url_for('api.job_details_api', job_id=0) }}"{% endif %} data-avg-clip-duration="{{ config.get('AVERAGE_CLIP_DURATION_SECONDS', 45) }}">
 
     <!-- Navigation -->
     <nav class="navbar navbar-expand-lg navbar-themed navbar-dark border-bottom">
@@ -113,8 +113,8 @@
                                 <span>Me</span>
                             </a>
                             <ul class="dropdown-menu dropdown-menu-end">
-                                <li><a class="dropdown-item" href="{{ url_for('auth.profile') }}"><i class="bi bi-person"></i> Profile</a></li>
-                                <li><a class="dropdown-item" href="{{ url_for('auth.account_settings') }}"><i class="bi bi-gear"></i> Settings</a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('main.profile') }}"><i class="bi bi-person"></i> Profile</a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('main.account_settings') }}"><i class="bi bi-gear"></i> Settings</a></li>
                                 <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
                             </ul>

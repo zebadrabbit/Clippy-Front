@@ -20,6 +20,7 @@ ClippyFront is a Flask-based web application for organizing media and assembling
 - **[Installation Guide](docs/INSTALLATION.md)** - Complete setup instructions
 - **[Configuration](docs/CONFIGURATION.md)** - Environment variables reference
 - **[Features](docs/FEATURES.md)** - Detailed feature documentation
+- **[Discord Integration](docs/DISCORD_INTEGRATION.md)** - Bot setup and clips channel guide
 
 ### Operations
 

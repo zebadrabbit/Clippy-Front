@@ -1457,13 +1457,13 @@ def process_uploaded_media_task(
         if not media:
             return {"status": "error", "error": f"Media file {media_id} not found"}
 
-        if not media.filepath or not Path(media.filepath).exists():
+        if not media.file_path or not Path(media.file_path).exists():
             return {
                 "status": "error",
-                "error": f"File not found: {media.filepath}",
+                "error": f"File not found: {media.file_path}",
             }
 
-        file_path = Path(media.filepath)
+        file_path = Path(media.file_path)
         results = {"status": "success", "media_id": media_id}
 
         # Generate thumbnail for video files

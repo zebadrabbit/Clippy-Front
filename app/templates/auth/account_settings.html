@@ -423,7 +423,7 @@
                                 </div>
                                 <div>
                                     {% if current_user.discord_user_id %}
-                                        <form method="POST" action="{{ url_for('auth.disconnect_discord') }}" class="d-inline">
+                                        <form method="POST" action="{{ url_for('main.disconnect_discord') }}" class="d-inline">
                                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                             <button type="submit" class="btn btn-outline-danger btn-sm">Disconnect</button>
                                         </form>
@@ -446,7 +446,7 @@
                                 </div>
                                 <div>
                                     {% if current_user.twitch_username %}
-                                        <form method="POST" action="{{ url_for('auth.disconnect_twitch') }}" class="d-inline">
+                                        <form method="POST" action="{{ url_for('main.disconnect_twitch') }}" class="d-inline">
                                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                             <button type="submit" class="btn btn-outline-danger btn-sm">Disconnect</button>
                                         </form>
@@ -564,7 +564,7 @@
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <form method="POST" action="{{ url_for('auth.change_password') }}">
+            <form method="POST" action="{{ url_for('main.change_password') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="modal-body">
                     <div class="mb-3">
@@ -606,7 +606,7 @@
                     This action cannot be undone. This will permanently delete your account and remove all data.
                 </div>
                 <p>Please type your username <strong>{{ current_user.username }}</strong> to confirm:</p>
-                <form method="POST" action="{{ url_for('auth.delete_account') }}" id="deleteAccountForm">
+                <form method="POST" action="{{ url_for('main.delete_account') }}" id="deleteAccountForm">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="mb-3">
                         <input type="text" class="form-control" id="confirmUsername" name="confirm_username"
@@ -632,7 +632,7 @@
                 <h5 class="modal-title"><i class="bi bi-discord"></i> Connect Discord</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <form method="POST" action="{{ url_for('auth.connect_discord') }}">
+            <form method="POST" action="{{ url_for('main.connect_discord') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="modal-body">
                     <div class="mb-3">
@@ -658,7 +658,7 @@
                 <h5 class="modal-title"><i class="bi bi-twitch"></i> Connect Twitch</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <form method="POST" action="{{ url_for('auth.connect_twitch') }}">
+            <form method="POST" action="{{ url_for('main.connect_twitch') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="modal-body">
                     <div class="mb-3">

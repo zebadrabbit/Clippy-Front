@@ -87,8 +87,35 @@ def create_project_api():
     except Exception:
         audio_norm_db = None
 
+    # Vertical video settings (for 9:16 conversions)
+    vertical_zoom = int(data.get("vertical_zoom") or 100)
+    vertical_zoom = max(100, min(120, vertical_zoom))  # Clamp to 100-120
+    vertical_align = (data.get("vertical_align") or "center").strip()
+    if vertical_align not in ["left", "center", "right"]:
+        vertical_align = "center"
+
+    # Music ducking parameters (for sidechaincompress)
+    duck_threshold = float(data.get("duck_threshold") or 0.02)
+    duck_threshold = max(0.0, min(1.0, duck_threshold))  # Clamp to 0.0-1.0
+    duck_ratio = float(data.get("duck_ratio") or 20.0)
+    duck_ratio = max(1.0, min(20.0, duck_ratio))  # Clamp to 1.0-20.0
+    duck_attack = float(data.get("duck_attack") or 1.0)
+    duck_attack = max(0.1, min(10.0, duck_attack))  # Clamp to 0.1-10.0
+    duck_release = float(data.get("duck_release") or 250.0)
+    duck_release = max(10.0, min(1000.0, duck_release))  # Clamp to 10.0-1000.0
+
     try:
         from app.models import PlatformPreset, Project, db
+
+        # Ensure unique project name by appending (1), (2), etc. if needed
+        # This prevents directory collisions when multiple projects share the same name
+        unique_name = name
+        counter = 1
+        while Project.query.filter_by(
+            user_id=current_user.id, name=unique_name
+        ).first():
+            unique_name = f"{name} ({counter})"
+            counter += 1
 
         pid = None
         try:
@@ -96,7 +123,7 @@ def create_project_api():
         except Exception:
             pid = None
         project = Project(
-            name=name,
+            name=unique_name,
             description=description,
             user_id=current_user.id,
             max_clip_duration=max_clip_duration,
@@ -107,6 +134,12 @@ def create_project_api():
             public_id=pid,
             audio_norm_profile=audio_norm_profile,
             audio_norm_db=audio_norm_db,
+            vertical_zoom=vertical_zoom,
+            vertical_align=vertical_align,
+            duck_threshold=duck_threshold,
+            duck_ratio=duck_ratio,
+            duck_attack=duck_attack,
+            duck_release=duck_release,
         )
 
         # Set platform preset if specified
@@ -298,6 +331,35 @@ def create_and_download_clips_api(project_id: int):
                 game_name = obj.get("game_name")
                 clip_created_at = obj.get("created_at")
 
+                # Enrich missing metadata for Twitch clips
+                if platform == "twitch" and (
+                    not creator_name or not game_name or not clip_created_at
+                ):
+                    try:
+                        from app.integrations.twitch import get_clip_by_id
+
+                        clip_id = extract_key(url_s)
+                        if clip_id:
+                            twitch_clip = get_clip_by_id(clip_id)
+                            if twitch_clip:
+                                current_app.logger.info(
+                                    f"Enriched clip metadata from Twitch for: {clip_id}"
+                                )
+                                if not creator_name:
+                                    creator_name = twitch_clip.creator_name
+                                if not creator_id:
+                                    creator_id = twitch_clip.creator_id
+                                if not game_name:
+                                    game_name = twitch_clip.game_name
+                                if not clip_created_at:
+                                    clip_created_at = twitch_clip.created_at
+                                if not title or title.startswith("Clip "):
+                                    title = twitch_clip.title
+                    except Exception as enrich_err:
+                        current_app.logger.warning(
+                            f"Failed to enrich metadata for {url_s}: {enrich_err}"
+                        )
+
                 clip = Clip(
                     title=title,
                     description=None,
@@ -387,10 +449,39 @@ def create_and_download_clips_api(project_id: int):
                 if "twitch" in url_s.lower()
                 else ("discord" if "discord" in url_s.lower() else "external")
             )
+
+            # Enrich metadata for Twitch clips (URL-only path)
+            title = f"Clip {order_base + idx + 1}"
+            creator_name = None
+            creator_id = None
+            game_name = None
+            clip_created_at = None
+
+            if platform == "twitch":
+                try:
+                    from app.integrations.twitch import get_clip_by_id
+
+                    clip_id = extract_key(url_s)
+                    if clip_id:
+                        twitch_clip = get_clip_by_id(clip_id)
+                        if twitch_clip:
+                            current_app.logger.info(
+                                f"Enriched clip metadata from Twitch for: {clip_id}"
+                            )
+                            creator_name = twitch_clip.creator_name
+                            creator_id = twitch_clip.creator_id
+                            game_name = twitch_clip.game_name
+                            clip_created_at = twitch_clip.created_at
+                            title = twitch_clip.title
+                except Exception as enrich_err:
+                    current_app.logger.warning(
+                        f"Failed to enrich metadata for {url_s}: {enrich_err}"
+                    )
+
             reused, media_file, src_platform = try_reuse(dedup_key)
             if reused and media_file:
                 clip = Clip(
-                    title=f"Clip {order_base + idx + 1}",
+                    title=title,
                     description=None,
                     source_platform=src_platform or platform,
                     source_url=url_s,
@@ -402,7 +493,19 @@ def create_and_download_clips_api(project_id: int):
                     project_id=project.id,
                     order_index=order_base + idx,
                     is_downloaded=False,
+                    creator_name=creator_name,
+                    creator_id=creator_id,
+                    game_name=game_name,
                 )
+                if clip_created_at:
+                    try:
+                        from datetime import datetime
+
+                        clip.clip_created_at = datetime.fromisoformat(
+                            clip_created_at.replace("Z", "+00:00")
+                        )
+                    except Exception:
+                        pass
                 db.session.add(clip)
                 db.session.flush()
                 try:
@@ -442,14 +545,26 @@ def create_and_download_clips_api(project_id: int):
                 idx += 1
             else:
                 clip = Clip(
-                    title=f"Clip {order_base + idx + 1}",
+                    title=title,
                     description=None,
                     source_platform=platform,
                     source_url=url_s,
                     source_id=(extract_key(url_s) if platform == "twitch" else None),
                     project_id=project.id,
                     order_index=order_base + idx,
+                    creator_name=creator_name,
+                    creator_id=creator_id,
+                    game_name=game_name,
                 )
+                if clip_created_at:
+                    try:
+                        from datetime import datetime
+
+                        clip.clip_created_at = datetime.fromisoformat(
+                            clip_created_at.replace("Z", "+00:00")
+                        )
+                    except Exception:
+                        pass
                 db.session.add(clip)
                 db.session.flush()
                 try:
@@ -579,6 +694,12 @@ def compile_project_api(project_id: int):
         music_volume = data.get("music_volume")
         music_start_mode = data.get("music_start_mode") or "after_intro"
         music_end_mode = data.get("music_end_mode") or "before_outro"
+
+        # Music ducking parameters
+        duck_threshold = data.get("duck_threshold")
+        duck_ratio = data.get("duck_ratio")
+        duck_attack = data.get("duck_attack")
+        duck_release = data.get("duck_release")
 
         valid_transition_ids: list[int] = []
         if isinstance(transition_ids, list) and transition_ids:
@@ -752,6 +873,20 @@ def compile_project_api(project_id: int):
             project.music_start_mode = music_start_mode
         if music_end_mode is not None:
             project.music_end_mode = music_end_mode
+
+        # Save ducking parameters if provided
+        duck_threshold = data.get("duck_threshold")
+        duck_ratio = data.get("duck_ratio")
+        duck_attack = data.get("duck_attack")
+        duck_release = data.get("duck_release")
+        if duck_threshold is not None:
+            project.duck_threshold = duck_threshold
+        if duck_ratio is not None:
+            project.duck_ratio = duck_ratio
+        if duck_attack is not None:
+            project.duck_attack = duck_attack
+        if duck_release is not None:
+            project.duck_release = duck_release
 
         task = compile_video_task.apply_async(
             args=(project_id,),

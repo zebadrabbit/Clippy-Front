@@ -115,6 +115,21 @@ def update_clip_status(
     return _make_request("POST", f"/worker/clips/{clip_id}/status", data)
 
 
+def enrich_clip_metadata(clip_id: int, source_url: str) -> dict[str, Any]:
+    """Enrich clip with Twitch metadata (creator, game, date).
+
+    Args:
+        clip_id: Clip ID
+        source_url: Source URL to extract metadata from
+
+    Returns:
+        {"status": "enriched", "clip_id": int} or {"status": "skipped"}
+    """
+    return _make_request(
+        "POST", f"/worker/clips/{clip_id}/enrich", {"source_url": source_url}
+    )
+
+
 def get_media_metadata(media_id: int) -> dict[str, Any]:
     """Fetch media file metadata.
 

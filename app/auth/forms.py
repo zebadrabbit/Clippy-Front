@@ -235,6 +235,10 @@ class ProfileForm(FlaskForm):
         "Discord User ID",
         validators=[Optional(), Length(max=100)],
     )
+    discord_channel_id = StringField(
+        "Discord Channel ID",
+        validators=[Optional(), Length(max=100)],
+    )
     twitch_username = StringField(
         "Twitch Username",
         validators=[Optional(), Length(max=100)],

@@ -26,8 +26,8 @@
                     <div class="row mb-4">
                         <div class="col-md-2">
                             {% if current_user.profile_image_path %}
-                                <img src="{{ url_for('auth.profile_image') }}" alt="Profile image" class="rounded-circle mb-2" style="width:80px;height:80px;object-fit:cover;">
-                                <form method="POST" action="{{ url_for('auth.remove_profile_image') }}">
+                                <img src="{{ url_for('main.profile_image') }}" alt="Profile image" class="rounded-circle mb-2" style="width:80px;height:80px;object-fit:cover;">
+                                <form method="POST" action="{{ url_for('main.remove_profile_image') }}">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                     <button type="submit" class="btn btn-sm btn-outline-danger w-100">Remove</button>
                                 </form>
@@ -35,7 +35,7 @@
                                 <div class="bg-primary rounded-circle d-flex align-items-center justify-content-center mb-2" style="width: 80px; height: 80px; font-size: 2rem; color: white;">
                                     {{ current_user.username[0].upper() }}
                                 </div>
-                                <form method="POST" action="{{ url_for('auth.upload_profile_image') }}" enctype="multipart/form-data">
+                                <form method="POST" action="{{ url_for('main.upload_profile_image') }}" enctype="multipart/form-data">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                     <input class="form-control form-control-sm mb-2" type="file" name="file" accept="image/*" required>
                                     <button type="submit" class="btn btn-sm btn-outline-primary w-100">Upload</button>
@@ -62,7 +62,7 @@
                     </div>
 
                     <!-- Profile Form -->
-                    <form method="POST" action="{{ url_for('auth.profile') }}">
+                    <form method="POST" action="{{ url_for('main.profile') }}">
                         {{ form.hidden_tag() }}
 
                         <div class="row">
@@ -124,8 +124,34 @@
                                     {% endif %}
                                     <div class="form-text">IANA timezone name (e.g., America/Los_Angeles). Used for schedules and times.</div>
                                 </div>
+                            </div>
+                        </div>
 
-                                <h6 class="border-bottom pb-2 mb-3 mt-4">External Services</h6>
+                        <!-- Submit Button -->
+                        <div class="d-flex justify-content-end">
+                            {{ form.submit(class="btn btn-primary") }}
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- External Services Card -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-plug"></i>
+                        External Services
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('main.profile') }}">
+                        {{ form.hidden_tag() }}
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6 class="border-bottom pb-2 mb-3">
+                                    <i class="bi bi-discord"></i> Discord Integration
+                                </h6>
 
                                 <!-- Discord User ID -->
                                 <div class="mb-3">
@@ -153,6 +179,57 @@
                                         </div>
                                     {% endif %}
                                 </div>
+
+                                <!-- Discord Channel ID -->
+                                <div class="mb-3">
+                                    {{ form.discord_channel_id.label(class="form-label") }}
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="bi bi-hash"></i>
+                                        </span>
+                                        {{ form.discord_channel_id(class="form-control" + (" is-invalid" if form.discord_channel_id.errors else ""), placeholder="Your Discord channel ID") }}
+                                    </div>
+                                    {% if form.discord_channel_id.errors %}
+                                        <div class="invalid-feedback">
+                                            {% for error in form.discord_channel_id.errors %}
+                                                {{ error }}
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                    {% if current_user.discord_channel_id %}
+                                        <div class="form-text text-success">
+                                            <i class="bi bi-link-45deg"></i> Channel configured
+                                        </div>
+                                    {% else %}
+                                        <div class="form-text text-warning">
+                                            <i class="bi bi-link-45deg-broken"></i> No channel configured yet
+                                        </div>
+                                    {% endif %}
+                                    <div class="form-text mt-2">
+                                        <strong><i class="bi bi-1-circle"></i> First, add the bot to your server:</strong>
+                                        <div class="mt-1">
+                                            <a href="https://discord.com/oauth2/authorize?client_id=837480234043179058&permissions=65536&scope=bot" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary">
+                                                <i class="bi bi-discord me-1"></i>Invite Bot to Discord
+                                                <i class="bi bi-box-arrow-up-right ms-1"></i>
+                                            </a>
+                                            <small class="text-muted d-block mt-1">Grant "Read Message History" permission</small>
+                                        </div>
+                                    </div>
+                                    <div class="form-text mt-2">
+                                        <strong><i class="bi bi-2-circle"></i> Then get your Channel ID:</strong>
+                                        <ol class="mb-0 mt-1">
+                                            <li>Enable Developer Mode in Discord (User Settings → Advanced → Developer Mode)</li>
+                                            <li>Right-click on your channel and select "Copy Channel ID"</li>
+                                            <li>Paste it here</li>
+                                        </ol>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <h6 class="border-bottom pb-2 mb-3">
+                                    <i class="bi bi-twitch"></i> Twitch Integration
+                                </h6>
 
                                 <!-- Twitch Username -->
                                 <div class="mb-3">
@@ -184,7 +261,7 @@
                         </div>
 
                         <!-- Submit Button -->
-                        <div class="d-flex justify-content-end">
+                        <div class="d-flex justify-content-end mt-3">
                             {{ form.submit(class="btn btn-primary") }}
                         </div>
                     </form>
