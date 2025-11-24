@@ -97,6 +97,187 @@
       {% endif %}
 
       {% if section %}
+      {% if section == 'logging' %}
+      <!-- Logging Diagnostics -->
+      <div class="card mb-3">
+        <div class="card-header d-flex align-items-center gap-2">
+          <i class="bi bi-file-earmark-text"></i> <strong>Logging Status</strong>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div class="small text-muted">Log Directory</div>
+              <div class="d-flex align-items-center gap-2">
+                <code class="text-break">{{ config_info.logging.log_dir }}</code>
+                {% if config_info.logging.log_dir_exists %}
+                  <span class="badge bg-success-subtle text-success">exists</span>
+                {% else %}
+                  <span class="badge bg-warning-subtle text-warning">missing</span>
+                {% endif %}
+                <span class="badge bg-light text-muted">W: {{ 'yes' if config_info.logging.log_dir_writable else 'no' }}</span>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="small text-muted">Current Log Level</div>
+              <span class="badge bg-primary-subtle text-primary">{{ config_info.logging.current_level }}</span>
+            </div>
+            <div class="col-md-6">
+              <div class="small text-muted">App Log</div>
+              <div class="d-flex align-items-center gap-2">
+                <code class="text-break">{{ config_info.logging.app_log }}</code>
+                {% if config_info.logging.app_log_exists %}
+                  <span class="badge bg-success-subtle text-success">exists</span>
+                {% endif %}
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="small text-muted">Worker Log</div>
+              <div class="d-flex align-items-center gap-2">
+                <code class="text-break">{{ config_info.logging.worker_log }}</code>
+                {% if config_info.logging.worker_log_exists %}
+                  <span class="badge bg-success-subtle text-success">exists</span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="alert alert-info small">
+        <strong>Note:</strong> Log files rotate at 10 MB, keeping 5 backups. Change <code>LOG_LEVEL</code> to DEBUG/INFO/WARNING/ERROR as needed.
+      </div>
+      {% endif %}
+
+      {% if section == 'ffmpeg' %}
+      <!-- FFmpeg Diagnostics -->
+      <div class="card mb-3">
+        <div class="card-header d-flex align-items-center gap-2">
+          <i class="bi bi-film"></i> <strong>FFmpeg Status</strong>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div class="small text-muted">FFmpeg Binary</div>
+              <code class="text-break">{{ config_info.ffmpeg.binary }}</code>
+              {% if config_info.ffmpeg.binary_exists is not none %}
+                {% if config_info.ffmpeg.binary_exists %}
+                  <span class="badge bg-success-subtle text-success ms-2">exists</span>
+                {% else %}
+                  <span class="badge bg-danger-subtle text-danger ms-2">not found</span>
+                {% endif %}
+              {% endif %}
+            </div>
+            <div class="col-md-6">
+              <div class="small text-muted">NVENC Hardware Acceleration</div>
+              {% if config_info.ffmpeg.nvenc_available %}
+                <span class="badge bg-success-subtle text-success">Available</span>
+                <small class="text-muted ms-2">{{ config_info.ffmpeg.nvenc_reason }}</small>
+              {% else %}
+                <span class="badge bg-warning-subtle text-warning">Not Available</span>
+                <small class="text-muted ms-2">{{ config_info.ffmpeg.nvenc_reason }}</small>
+              {% endif %}
+            </div>
+            <div class="col-md-6">
+              <div class="small text-muted">Creator Overlay</div>
+              {% if config_info.ffmpeg.overlay_enabled %}
+                <span class="badge bg-success-subtle text-success">Enabled</span>
+              {% else %}
+                <span class="badge bg-secondary-subtle text-secondary">Disabled</span>
+              {% endif %}
+            </div>
+            <div class="col-md-6">
+              <div class="small text-muted">Font File (for overlay)</div>
+              {% if config_info.ffmpeg.fontfile %}
+                <code class="text-break">{{ config_info.ffmpeg.fontfile }}</code>
+                {% if config_info.ffmpeg.fontfile_exists %}
+                  <span class="badge bg-success-subtle text-success ms-2">exists</span>
+                {% else %}
+                  <span class="badge bg-danger-subtle text-danger ms-2">not found</span>
+                {% endif %}
+              {% else %}
+                <span class="text-muted">None (overlay disabled)</span>
+              {% endif %}
+            </div>
+          </div>
+          <hr>
+          <div class="row g-3">
+            <div class="col-12"><strong class="small text-muted">Current Encoding Defaults</strong></div>
+            <div class="col-md-3">
+              <div class="small text-muted">Bitrate</div>
+              <code>{{ config_info.ffmpeg.defaults.bitrate }}</code>
+            </div>
+            <div class="col-md-3">
+              <div class="small text-muted">Audio Bitrate</div>
+              <code>{{ config_info.ffmpeg.defaults.audio_bitrate }}</code>
+            </div>
+            <div class="col-md-3">
+              <div class="small text-muted">CQ/CRF</div>
+              <code>{{ config_info.ffmpeg.defaults.cq }}</code>
+            </div>
+            <div class="col-md-3">
+              <div class="small text-muted">NVENC Preset</div>
+              <code>{{ config_info.ffmpeg.defaults.nvenc_preset }}</code>
+            </div>
+            <div class="col-md-3">
+              <div class="small text-muted">GOP Size</div>
+              <code>{{ config_info.ffmpeg.defaults.gop }}</code>
+            </div>
+            <div class="col-md-3">
+              <div class="small text-muted">RC Lookahead</div>
+              <code>{{ config_info.ffmpeg.defaults.rc_lookahead }}</code>
+            </div>
+            <div class="col-md-3">
+              <div class="small text-muted">AQ Strength</div>
+              <code>{{ config_info.ffmpeg.defaults.aq_strength }}</code>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="alert alert-info small">
+        <strong>NVENC:</strong> Hardware acceleration requires NVIDIA GPU with NVENC support and proper drivers.
+        <strong>Overlay:</strong> Displays creator name and game info on clips (3-10 seconds).
+      </div>
+      {% endif %}
+
+      {% if section == 'ytdlp' %}
+      <!-- yt-dlp Diagnostics -->
+      <div class="card mb-3">
+        <div class="card-header d-flex align-items-center gap-2">
+          <i class="bi bi-download"></i> <strong>yt-dlp Status</strong>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div class="small text-muted">yt-dlp Binary</div>
+              <code class="text-break">{{ config_info.ytdlp.binary }}</code>
+              {% if config_info.ytdlp.binary_exists is not none %}
+                {% if config_info.ytdlp.binary_exists %}
+                  <span class="badge bg-success-subtle text-success ms-2">exists</span>
+                {% else %}
+                  <span class="badge bg-danger-subtle text-danger ms-2">not found</span>
+                {% endif %}
+              {% endif %}
+            </div>
+            <div class="col-md-6">
+              <div class="small text-muted">Cookies File</div>
+              {% if config_info.ytdlp.cookies_path %}
+                <code class="text-break">{{ config_info.ytdlp.cookies_path }}</code>
+                {% if config_info.ytdlp.cookies_exists %}
+                  <span class="badge bg-success-subtle text-success ms-2">exists</span>
+                {% else %}
+                  <span class="badge bg-warning-subtle text-warning ms-2">not found</span>
+                {% endif %}
+              {% else %}
+                <span class="text-muted">Not configured</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="alert alert-info small">
+        <strong>Cookies:</strong> Required for downloading age-restricted or member-only content. Export from browser using a cookie extension.
+      </div>
+      {% endif %}
+
       {% if section == 'email' %}
       <div class="alert alert-info small">
         For security, SMTP password must be set via environment (.env) as <code>SMTP_PASSWORD</code>.

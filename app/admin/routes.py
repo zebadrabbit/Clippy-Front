@@ -1067,6 +1067,86 @@ def system_config():
                 "label": "Admin: Projects per Page",
             },
         ],
+        "Logging": [
+            {
+                "key": "LOG_LEVEL",
+                "type": "str",
+                "label": "Log Level (DEBUG/INFO/WARNING/ERROR)",
+            },
+            {"key": "LOG_DIR", "type": "str", "label": "Log Directory (override)"},
+        ],
+        "FFmpeg Encoding": [
+            {
+                "key": "FFMPEG_BITRATE",
+                "type": "str",
+                "label": "Video Bitrate (e.g., 12M)",
+            },
+            {
+                "key": "FFMPEG_AUDIO_BITRATE",
+                "type": "str",
+                "label": "Audio Bitrate (e.g., 192k)",
+            },
+            {
+                "key": "FFMPEG_CQ",
+                "type": "int",
+                "label": "NVENC CQ / CRF (lower=better, 18-28)",
+            },
+            {
+                "key": "FFMPEG_NVENC_PRESET",
+                "type": "str",
+                "label": "NVENC Preset (slow/medium/fast)",
+            },
+            {
+                "key": "FFMPEG_GOP",
+                "type": "int",
+                "label": "GOP Size (keyframe interval)",
+            },
+            {
+                "key": "FFMPEG_RC_LOOKAHEAD",
+                "type": "int",
+                "label": "NVENC RC Lookahead",
+            },
+            {
+                "key": "FFMPEG_AQ_STRENGTH",
+                "type": "int",
+                "label": "NVENC AQ Strength (1-15)",
+            },
+            {"key": "FFMPEG_SPATIAL_AQ", "type": "bool", "label": "Enable Spatial AQ"},
+            {
+                "key": "FFMPEG_TEMPORAL_AQ",
+                "type": "bool",
+                "label": "Enable Temporal AQ",
+            },
+            {
+                "key": "FFMPEG_DISABLE_NVENC",
+                "type": "bool",
+                "label": "Disable NVENC (use CPU)",
+            },
+            {
+                "key": "DISABLE_OVERLAY",
+                "type": "bool",
+                "label": "Disable Creator Overlay",
+            },
+        ],
+        "FFmpeg CLI Arguments": [
+            {"key": "FFMPEG_GLOBAL_ARGS", "type": "str", "label": "ffmpeg Global Args"},
+            {"key": "FFMPEG_ENCODE_ARGS", "type": "str", "label": "ffmpeg Encode Args"},
+            {
+                "key": "FFMPEG_THUMBNAIL_ARGS",
+                "type": "str",
+                "label": "ffmpeg Thumbnail Args",
+            },
+            {"key": "FFMPEG_CONCAT_ARGS", "type": "str", "label": "ffmpeg Concat Args"},
+            {"key": "FFPROBE_ARGS", "type": "str", "label": "ffprobe Args"},
+        ],
+        "yt-dlp": [
+            {"key": "YT_DLP_ARGS", "type": "str", "label": "yt-dlp CLI Arguments"},
+            {
+                "key": "YT_DLP_COOKIES",
+                "type": "str",
+                "label": "yt-dlp Cookies File Path",
+            },
+        ],
         "CLI Arguments": [
             {"key": "FFMPEG_GLOBAL_ARGS", "type": "str", "label": "ffmpeg Global Args"},
             {"key": "FFMPEG_ENCODE_ARGS", "type": "str", "label": "ffmpeg Encode Args"},
@@ -1106,7 +1186,10 @@ def system_config():
     section_map = {
         "general": ["General"],
         "security": ["Security", "Rate Limiting"],
-        "binaries": ["Binaries", "CLI Arguments"],
+        "binaries": ["Binaries"],
+        "logging": ["Logging"],
+        "ffmpeg": ["FFmpeg Encoding", "FFmpeg CLI Arguments"],
+        "ytdlp": ["yt-dlp"],
         # Display bucket includes pagination, thumbnails, and watermark
         "pagination": ["Watermark", "Pagination", "Thumbnails"],
         "email": ["Email"],
@@ -1230,6 +1313,64 @@ def system_config():
             "from": str(current_app.config.get("EMAIL_FROM_ADDRESS") or ""),
         },
     }
+
+    # Add logging diagnostics
+    if section == "logging" or not section:
+        from app.logging_config import get_log_dir
+
+        log_dir = get_log_dir(current_app.instance_path)
+        log_level = str(
+            current_app.config.get("LOG_LEVEL", os.environ.get("LOG_LEVEL", "INFO"))
+        )
+        config_info["logging"] = {
+            "log_dir": log_dir,
+            "log_dir_exists": _exists(log_dir),
+            "log_dir_writable": _rw(log_dir)[1] if _exists(log_dir) else False,
+            "current_level": log_level.upper(),
+            "app_log": os.path.join(log_dir, "app.log"),
+            "worker_log": os.path.join(log_dir, "worker.log"),
+            "app_log_exists": _exists(os.path.join(log_dir, "app.log")),
+            "worker_log_exists": _exists(os.path.join(log_dir, "worker.log")),
+        }
+
+    # Add FFmpeg diagnostics
+    if section == "ffmpeg" or not section:
+        from app.ffmpeg_config import detect_nvenc, overlay_enabled, resolve_fontfile
+
+        ffmpeg_bin = os.environ.get("FFMPEG_BINARY", "ffmpeg")
+        nvenc_available, nvenc_reason = detect_nvenc(ffmpeg_bin)
+        fontfile = resolve_fontfile()
+
+        config_info["ffmpeg"] = {
+            "binary": ffmpeg_bin,
+            "binary_exists": _exists(ffmpeg_bin) if os.path.isabs(ffmpeg_bin) else None,
+            "nvenc_available": nvenc_available,
+            "nvenc_reason": nvenc_reason,
+            "overlay_enabled": overlay_enabled(),
+            "fontfile": fontfile,
+            "fontfile_exists": _exists(fontfile) if fontfile else False,
+            "defaults": {
+                "bitrate": os.environ.get("FFMPEG_BITRATE", "12M"),
+                "audio_bitrate": os.environ.get("FFMPEG_AUDIO_BITRATE", "192k"),
+                "cq": os.environ.get("FFMPEG_CQ", "19"),
+                "nvenc_preset": os.environ.get("FFMPEG_NVENC_PRESET", "slow"),
+                "gop": os.environ.get("FFMPEG_GOP", "120"),
+                "rc_lookahead": os.environ.get("FFMPEG_RC_LOOKAHEAD", "20"),
+                "aq_strength": os.environ.get("FFMPEG_AQ_STRENGTH", "8"),
+            },
+        }
+
+    # Add yt-dlp diagnostics
+    if section == "ytdlp" or not section:
+        ytdlp_bin = os.environ.get("YT_DLP_BINARY", "yt-dlp")
+        ytdlp_cookies = os.environ.get("YT_DLP_COOKIES")
+
+        config_info["ytdlp"] = {
+            "binary": ytdlp_bin,
+            "binary_exists": _exists(ytdlp_bin) if os.path.isabs(ytdlp_bin) else None,
+            "cookies_path": ytdlp_cookies,
+            "cookies_exists": _exists(ytdlp_cookies) if ytdlp_cookies else False,
+        }
 
     # Persist updates
     if request.method == "POST":

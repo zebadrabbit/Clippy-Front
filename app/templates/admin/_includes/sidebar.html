@@ -33,7 +33,16 @@
         Security & Rate limiting
       </a>
       <a class="list-group-item list-group-item-action py-2 {{ 'active' if (config_section or '') == 'binaries' else '' }}" href="{{ url_for('admin.system_config', section='binaries') }}">
-        Binaries & CLI arguments
+        Binaries
+      </a>
+      <a class="list-group-item list-group-item-action py-2 {{ 'active' if (config_section or '') == 'logging' else '' }}" href="{{ url_for('admin.system_config', section='logging') }}">
+        Logging
+      </a>
+      <a class="list-group-item list-group-item-action py-2 {{ 'active' if (config_section or '') == 'ffmpeg' else '' }}" href="{{ url_for('admin.system_config', section='ffmpeg') }}">
+        FFmpeg
+      </a>
+      <a class="list-group-item list-group-item-action py-2 {{ 'active' if (config_section or '') == 'ytdlp' else '' }}" href="{{ url_for('admin.system_config', section='ytdlp') }}">
+        yt-dlp
       </a>
       <a class="list-group-item list-group-item-action py-2 {{ 'active' if (config_section or '') == 'pagination' else '' }}" href="{{ url_for('admin.system_config', section='pagination') }}">
         Display

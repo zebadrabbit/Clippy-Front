@@ -5,10 +5,7 @@
 #   \___|_|_| .__/| .__/ \__, |
 #           |_|   |_|    |___/
 #
-#  Clippy: Self-hosted AI Video Generation and Editing Service
-#
-#  This service allows users to generate and edit videos using advanced AI techniques.
-#  It supports integrations with Twitch and Discord for media sourcing.
+#  Clippy: Self-hosted Video Generation and Editing Service
 #
 #  github.com/zebadrabbit/Clippy-Front
 

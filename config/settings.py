@@ -66,8 +66,8 @@ class Config:
 
     # File Upload Configuration
     MAX_CONTENT_LENGTH = int(
-        os.environ.get("MAX_CONTENT_LENGTH", 500 * 1024 * 1024)
-    )  # Default 500MB
+        os.environ.get("MAX_CONTENT_LENGTH", 2 * 1024 * 1024 * 1024)
+    )  # Default 2GB
     UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER") or "uploads"
     ALLOWED_VIDEO_EXTENSIONS = {
         "mp4",
