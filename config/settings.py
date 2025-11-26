@@ -32,6 +32,9 @@ class Config:
         or "postgresql://postgres:postgres@localhost/clippy_front"
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    # Table prefix for database isolation (e.g., dev_, prod_, opt_)
+    TABLE_PREFIX = os.environ.get("TABLE_PREFIX", "")
     # SQLAlchemy engine pool settings (tunable via env for different processes)
     # Defaults are conservative to avoid exhausting Postgres connections when
     # multiple worker processes are running.

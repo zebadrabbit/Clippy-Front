@@ -329,6 +329,133 @@ curl -H "X-Worker-API-Key: $WORKER_API_KEY" \
 
 **Storage access**: See [WORKER_SETUP.md](WORKER_SETUP.md)
 
+## Production Deployment
+
+### Environment Configuration
+
+**Problem**: Production app using development .env settings
+
+**Cause**: rsync/deployment script copied dev `.env` to production
+
+**Solution**: Never sync `.env` files between environments
+
+**Best practices**:
+
+1. **Exclude .env from sync**:
+   ```bash
+   rsync -avz --exclude='.env' /dev/path/ /prod/path/
+   ```
+
+2. **Use environment-specific templates**:
+   ```bash
+   # Development
+   cp .env.example .env.dev
+
+   # Production
+   cp .env.example .env.prod
+   # Edit .env.prod with production values
+   ```
+
+3. **Critical production settings** (must differ from dev):
+   - `TABLE_PREFIX` - Use `opt_` for production, `dev_` for dev
+   - `REDIS_DB` - Use different database numbers (e.g., 0 for dev, 1 for prod)
+   - `CLIPPY_INSTANCE_PATH` - Production path (e.g., `/opt/clippyfront/instance`)
+   - `FLASK_APP_URL` - Production URL with HTTPS (e.g., `https://clips.example.com`)
+   - `MEDIA_BASE_URL` - Same as FLASK_APP_URL for production
+   - `SECRET_KEY` - Unique per environment
+   - `WORKER_API_KEY` - Should match remote worker configuration
+
+4. **Automated setup**: Use setup script to generate correct .env
+   ```bash
+   sudo scripts/setup_webserver.sh \
+     --app-dir /opt/clippyfront \
+     --table-prefix opt_ \
+     --server-name clips.example.com
+   ```
+
+**Common symptoms of .env misconfiguration**:
+
+- 401 UNAUTHORIZED from workers (wrong `FLASK_APP_URL` or `WORKER_API_KEY`)
+- 404 errors (table prefix mismatch between app and worker)
+- Permission denied (wrong `CLIPPY_INSTANCE_PATH`)
+- Tasks appearing on wrong queue (wrong `REDIS_DB`)
+
+**Verify configuration**:
+```bash
+# Check critical settings
+cd /opt/clippyfront
+sudo grep -E '^(TABLE_PREFIX|REDIS_DB|FLASK_APP_URL|CLIPPY_INSTANCE_PATH)=' .env
+
+# Should show:
+# TABLE_PREFIX=opt_
+# REDIS_DB=1
+# FLASK_APP_URL=https://your-domain.com
+# CLIPPY_INSTANCE_PATH=/opt/clippyfront/instance
+```
+
+**Fix production .env after accidental sync**:
+```bash
+cd /opt/clippyfront
+sudo sed -i 's|^TABLE_PREFIX=.*|TABLE_PREFIX=opt_|' .env
+sudo sed -i 's|^REDIS_DB=.*|REDIS_DB=1|' .env
+sudo sed -i 's|^CLIPPY_INSTANCE_PATH=.*|CLIPPY_INSTANCE_PATH=/opt/clippyfront/instance|' .env
+sudo sed -i 's|^FLASK_APP_URL=.*|FLASK_APP_URL=https://your-domain.com|' .env
+sudo sed -i 's|^MEDIA_BASE_URL=.*|MEDIA_BASE_URL=https://your-domain.com|' .env
+
+# Restart services
+sudo systemctl restart gunicorn-clippyfront
+```
+
+**Remote worker configuration must match**:
+```bash
+# On remote worker, ensure these match production Flask app:
+grep -E '^(TABLE_PREFIX|REDIS_DB|FLASK_APP_URL|MEDIA_BASE_URL)=' ~/.env
+
+# Should show same values as production server
+```
+
+### URL Configuration for Workers
+
+**Problem**: Worker getting 401/404 errors when uploading clips
+
+**Cause**: Worker using wrong URL to reach Flask app
+
+**Check**: Worker logs show which URL is being used:
+```bash
+# On worker machine
+tail -f ~/.celery/worker.log | grep "Uploading clip"
+```
+
+**Common misconfigurations**:
+
+1. **HTTP when HTTPS required**:
+   - Wrong: `FLASK_APP_URL=http://10.8.0.1:8080`
+   - Right: `FLASK_APP_URL=https://clips.example.com`
+   - Symptom: 401 UNAUTHORIZED (nginx redirects break auth headers)
+
+2. **Internal URL when external needed**:
+   - Wrong: `FLASK_APP_URL=http://127.0.0.1:8000`
+   - Right: `FLASK_APP_URL=https://clips.example.com`
+   - Symptom: Connection refused or timeout
+
+3. **Wrong port**:
+   - Wrong: `FLASK_APP_URL=http://10.8.0.1:5000` (dev port)
+   - Right: `FLASK_APP_URL=http://10.8.0.1:8000` (prod Gunicorn port)
+   - Or better: Use domain with nginx reverse proxy
+
+**Fix**: Update both server and worker .env files:
+```bash
+# Production server
+cd /opt/clippyfront
+sudo sed -i 's|^FLASK_APP_URL=.*|FLASK_APP_URL=https://clips.example.com|' .env
+sudo systemctl restart gunicorn-clippyfront
+
+# Remote worker
+ssh worker@remote-host
+sed -i 's|^FLASK_APP_URL=.*|FLASK_APP_URL=https://clips.example.com|' ~/.env
+# Then restart worker via your management script
+```
+
 ## Getting Help
 
 1. Check logs in `instance/logs/`

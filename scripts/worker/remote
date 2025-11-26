@@ -67,7 +67,35 @@ case "${COMMAND}" in
     echo "Starting worker on ${REMOTE_HOST}..."
     ssh -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} bash << 'ENDSSH'
 cd ~/ClippyFront
-nohup ./scripts/worker/start-celery-versioned.sh tundra-gpu "gpu,celery" 2 >> worker.log 2>&1 &
+
+# Create dev worker .env if it doesn't exist
+if [[ ! -f .env.worker ]]; then
+  cat > .env.worker << 'EOF'
+# Development worker configuration
+TABLE_PREFIX=dev_
+REDIS_URL=redis://10.8.0.1:6379/0
+REDIS_DB=0
+CELERY_BROKER_URL=redis://10.8.0.1:6379/0
+CELERY_RESULT_BACKEND=redis://10.8.0.1:6379/0
+DATABASE_URL=postgresql://postgres:8675309@10.8.0.1/clippy_front
+FLASK_APP_URL=http://10.8.0.1:5000
+MEDIA_BASE_URL=http://10.8.0.1:5000
+WORKER_API_KEY=y5qknbhck7IEzEDErjezi6-0hmiyi9f-3_0jgonBc3g
+USE_GPU_QUEUE=1
+# Local instance path for avatar/media cache
+CLIPPY_INSTANCE_PATH=/home/winter/ClippyFront/instance
+EOF
+fi
+
+# Backup original .env and use worker config
+if [[ -f .env ]] && [[ ! -f .env.dev-backup ]]; then
+  mv .env .env.dev-backup
+fi
+cp .env.worker .env
+
+# Remote GPU workers should ONLY process the gpu queue, not celery queue
+# Pass 0 as 4th argument for dev (Redis DB 0), or 1 for production (Redis DB 1)
+nohup ./scripts/worker/start-celery-versioned.sh tundra-gpu "gpu" 2 0 >> worker.log 2>&1 &
 sleep 2
 ps aux | grep celery | grep -v grep | head -2
 ENDSSH
@@ -83,15 +111,50 @@ ENDSSH
     echo "Restarting worker on ${REMOTE_HOST}..."
     # Kill existing workers
     ssh -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} "pkill -9 -f 'celery.*worker' 2>/dev/null || true"
+
+    # Wait for processes to terminate
     sleep 2
 
-    # Verify they're dead
-    echo "Verifying workers stopped..."
-    ssh -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} "pgrep -f 'celery.*worker' && echo 'ERROR: Workers still running!' || echo 'All workers stopped.'"
+    # Verify they're dead (before starting new ones)
+    if ssh -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} "pgrep -f 'celery.*worker' >/dev/null 2>&1"; then
+      echo "WARNING: Some workers still running after kill signal, waiting..."
+      sleep 3
+      # Force kill any stragglers
+      ssh -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} "pkill -9 -f 'celery.*worker' 2>/dev/null || true"
+      sleep 1
+    fi
 
     # Start new worker using the script (which handles backgrounding properly)
     echo "Starting new worker..."
-    ssh -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} "cd ~/ClippyFront && bash ./scripts/worker/start-celery-versioned.sh tundra-gpu 'gpu,celery' 2 >> worker.log 2>&1 &"
+    ssh -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} bash << 'ENDSSH'
+cd ~/ClippyFront
+
+# Create dev worker .env if it doesn't exist
+if [[ ! -f .env.worker ]]; then
+  cat > .env.worker << 'EOF'
+# Development worker configuration
+TABLE_PREFIX=dev_
+REDIS_URL=redis://10.8.0.1:6379/0
+REDIS_DB=0
+CELERY_BROKER_URL=redis://10.8.0.1:6379/0
+CELERY_RESULT_BACKEND=redis://10.8.0.1:6379/0
+DATABASE_URL=postgresql://postgres:8675309@10.8.0.1/clippy_front
+FLASK_APP_URL=http://10.8.0.1:5000
+MEDIA_BASE_URL=http://10.8.0.1:5000
+WORKER_API_KEY=y5qknbhck7IEzEDErjezi6-0hmiyi9f-3_0jgonBc3g
+USE_GPU_QUEUE=1
+# Local instance path for avatar/media cache
+CLIPPY_INSTANCE_PATH=/home/winter/ClippyFront/instance
+EOF
+fi
+
+# Use worker config
+cp .env.worker .env
+
+# Remote GPU workers should ONLY process the gpu queue, not celery queue
+# Pass 0 as 4th argument for dev (Redis DB 0), or 1 for production (Redis DB 1)
+bash ./scripts/worker/start-celery-versioned.sh tundra-gpu 'gpu' 2 0 >> worker.log 2>&1 &
+ENDSSH
 
     sleep 3
 

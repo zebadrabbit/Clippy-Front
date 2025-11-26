@@ -58,6 +58,64 @@
     }
     if (stepStr === '4') {
       try { renderCompileSummary(); } catch (_) {}
+      // Load preview image after DOM is ready
+      setTimeout(() => {
+        const previewImg = document.querySelector('.compilation-preview-img');
+        const placeholder = document.querySelector('.preview-placeholder');
+
+        console.log('Step 4: Found elements', {
+          img: previewImg,
+          placeholder: placeholder,
+          imgDisplay: previewImg?.style?.display,
+          placeholderDisplay: placeholder?.style?.display
+        });
+
+        if (previewImg && placeholder) {
+          // Force reset to initial state
+          placeholder.style.display = 'flex';
+          placeholder.style.visibility = 'visible';
+          previewImg.style.display = 'none';
+          previewImg.style.visibility = 'hidden';
+
+          // Track loading state
+          let hasLoaded = false;
+          let hasFailed = false;
+
+          // Set up handlers
+          previewImg.onload = function() {
+            if (hasFailed) {
+              console.log('onload ignored - already failed');
+              return;
+            }
+            hasLoaded = true;
+            console.log('onload fired - showing image, hiding placeholder');
+            placeholder.style.display = 'none';
+            placeholder.style.visibility = 'hidden';
+            this.style.display = 'block';
+            this.style.visibility = 'visible';
+          };
+
+          previewImg.onerror = function() {
+            if (hasLoaded) {
+              console.log('onerror ignored - already loaded');
+              return;
+            }
+            hasFailed = true;
+            console.error('onerror fired - showing error message');
+            this.style.display = 'none';
+            this.style.visibility = 'hidden';
+            placeholder.innerHTML = '<div class="text-center text-muted py-5"><i class="bi bi-image"></i><br>Preview unavailable</div>';
+          };
+
+          // Load the image
+          const cacheBuster = Date.now();
+          const newSrc = `/projects/${wizard.projectId}/compilation-preview?t=${cacheBuster}`;
+          console.log('Setting image src to:', newSrc);
+          previewImg.src = newSrc;
+        } else {
+          console.error('Could not find preview elements');
+        }
+      }, 150);
     }
     if (stepStr === '3' && wizard.projectId) {
       // Auto-refresh Arrange lists so user doesn't need to click refresh
@@ -525,6 +583,7 @@
     const payload = {
       name: (fd.get('name') || '').toString(),
       description: (fd.get('description') || '').toString(),
+      tags: (fd.get('tags') || '').toString(),
       max_clip_duration: parseInt(fd.get('max_len') || '300', 10),
       platform_preset: (fd.get('platform_preset') || 'youtube').toString(),
       compilation_length: compilationLengthValue,
@@ -1145,8 +1204,26 @@
           <div class="mb-1"><strong>Background Music:</strong> ${wizard.selectedMusicId ? `Yes (${document.getElementById('music-volume')?.value || 30}% volume)` : 'None'}</div>
           <div class="text-muted">Clip limits: max ${s.max_len || 0}s • max clips ${s.max_clips || 0}${s.compilation_length && s.compilation_length !== 'auto' ? ` • Target length: ${Math.floor(parseInt(s.compilation_length)/60)}m` : ''}${s.start_date || s.end_date ? ` • Dates: ${escapeHtml(s.start_date || '—')} → ${escapeHtml(s.end_date || '—')}` : ''}</div>
         </div>
-        <div class="compile-right">
-          <div class="d-flex justify-content-between align-items-center">
+        <div class="compile-middle small">
+          <h6 class="mb-2">Preview</h6>
+          ${clipCount > 0 ? `
+            <div class="preview-container" style="position: relative; min-height: 160px;">
+              <img class="compilation-preview-img img-fluid rounded border"
+                   alt="Compilation Preview"
+                   style="max-width: 100%; max-height: 300px; display: none; width: 100%;">
+              <div class="preview-placeholder bg-dark border rounded d-flex align-items-center justify-content-center text-muted" style="position: absolute; top: 0; left: 0; right: 0; height: 160px; display: flex;">
+                <div class="text-center">
+                  <div class="spinner-border spinner-border-sm mb-2" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                  </div>
+                  <div class="small">Loading preview...</div>
+                </div>
+              </div>
+            </div>
+          ` : '<div class="text-muted small">No clips to preview</div>'}
+        </div>
+        <div class="compile-right small">
+          <div class="d-flex justify-content-between align-items-center mb-2">
             <h6 class="mb-0">Clips <span class="text-muted small">(${clipCount})</span></h6>
           </div>
           <div class="compile-clip-list">${itemsHtml || '<div class="text-muted small">No clips selected.</div>'}</div>
@@ -1643,7 +1720,28 @@
   });
 
   // Default routing states on load
-  gotoStep(1);
+  // Check if we're loading an existing project
+  if (window.wizardExistingProject) {
+    wizard.projectId = window.wizardExistingProject.id;
+    const step = window.wizardExistingProject.initialStep || 1;
+    console.log('[Wizard] Loading existing project:', wizard.projectId, 'at step:', step);
+
+    // Pre-fill project name and description if on step 1
+    if (step === 1) {
+      const nameInput = document.querySelector('#setup-form input[name="name"]');
+      const descInput = document.querySelector('#setup-form textarea[name="description"]');
+      if (nameInput && window.wizardExistingProject.name) {
+        nameInput.value = window.wizardExistingProject.name;
+      }
+      if (descInput && window.wizardExistingProject.description) {
+        descInput.value = window.wizardExistingProject.description;
+      }
+    }
+
+    gotoStep(step);
+  } else {
+    gotoStep(1);
+  }
   updateTwitchWarning();
   // Render summary when entering Step 4
   document.querySelector('#wizard-chevrons li[data-step="4"]')?.addEventListener('click', () => {

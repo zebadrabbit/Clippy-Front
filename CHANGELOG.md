@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.3] - 2025-11-26
+
+### Added
+- **Wizard Step Navigation**: Direct linking to specific wizard steps via URL parameters
+  - Backend route now handles `project_id` and `step` query parameters
+  - Project ownership validation before loading existing projects
+  - Support for steps 1-4 with proper initialization
+  - Example: `/projects/wizard?project_id=29&step=3` opens Arrange timeline directly
+  - Flash message when project not found or access denied
+
+### Changed
+- **Projects Page UI**: Draft status badge now uses bright cyan color (bg-info) instead of muted gray
+  - Improved visibility and distinction from other status types
+  - Downloading status moved to blue (bg-primary) to avoid color conflict
+  - All status colors: Draft (cyan), Downloading (blue), Ready (blue), Compiling (yellow), Completed (green), Failed (red)
+
+### Fixed
+- Wizard no longer redirects to step 1 when opening with `?step=` parameter
+- Project loading from URL now properly restores project data in wizard interface
+- Lint issues: removed trailing whitespace and unnecessary f-string
+
+---
+
 ## [1.0.2] - 2025-11-23
 
 ### Added

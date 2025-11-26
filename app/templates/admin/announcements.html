@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="row">
+    <h2 class="mb-3"><i class="bi bi-gear"></i> Admin Dashboard</h2>
+    <div class="col-12 col-lg-3 mb-3 mb-lg-0">
+      {% set active_page = 'announcements' %}
+      {% include 'admin/_includes/sidebar.html' with context %}
+    </div>
+    <div class="col-12 col-lg-9">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3>System Announcements</h3>
+        <a class="btn btn-primary" href="{{ url_for('admin.announcement_create') }}">
+          <i class="bi bi-plus"></i> New Announcement
+        </a>
+      </div>
+
+      {% if announcements %}
+      <div class="table-responsive">
+        <table class="table table-hover">
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th>Created</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for announcement in announcements %}
+            <tr>
+              <td>
+                <strong>{{ announcement.title }}</strong>
+                <div class="text-muted small">{{ announcement.message[:100] }}{% if announcement.message|length > 100 %}...{% endif %}</div>
+              </td>
+              <td>
+                <span class="badge bg-{{ announcement.announcement_type.value }}">
+                  {{ announcement.announcement_type.value|upper }}
+                </span>
+              </td>
+              <td>
+                {% if announcement.active %}
+                  <span class="badge bg-success">Active</span>
+                {% else %}
+                  <span class="badge bg-secondary">Inactive</span>
+                {% endif %}
+              </td>
+              <td>{{ announcement.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+              <td>
+                <div class="btn-group btn-group-sm">
+                  <a href="{{ url_for('admin.announcement_edit', announcement_id=announcement.id) }}"
+                     class="btn btn-outline-secondary" title="Edit">
+                    <i class="bi bi-pencil"></i>
+                  </a>
+                  <form method="POST" action="{{ url_for('admin.announcement_toggle', announcement_id=announcement.id) }}" class="d-inline">
+                    <button type="submit" class="btn btn-outline-{{ 'warning' if announcement.active else 'success' }}"
+                            title="{{ 'Deactivate' if announcement.active else 'Activate' }}">
+                      <i class="bi bi-{{ 'pause' if announcement.active else 'play' }}"></i>
+                    </button>
+                  </form>
+                  <form method="POST" action="{{ url_for('admin.announcement_delete', announcement_id=announcement.id) }}"
+                        class="d-inline" onsubmit="return confirm('Delete this announcement?')">
+                    <button type="submit" class="btn btn-outline-danger" title="Delete">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="alert alert-info">
+        <i class="bi bi-info-circle"></i> No announcements yet. Create one to get started.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

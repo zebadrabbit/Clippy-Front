@@ -42,6 +42,69 @@ importlib.import_module("app.api.templates")
 importlib.import_module("app.api.tags")
 importlib.import_module("app.api.teams")
 importlib.import_module("app.api.notifications")
+importlib.import_module("app.api.project_metadata")
+importlib.import_module("app.api.compilation_preview")
+
+
+# ============================================================================
+# Announcement API Endpoints
+# ============================================================================
+
+
+@api_bp.route("/announcements", methods=["GET"])
+@login_required
+def get_active_announcements():
+    """Get active announcements not dismissed by current user."""
+    from app.models import Announcement
+
+    announcements = (
+        Announcement.query.filter_by(active=True)
+        .order_by(Announcement.created_at.desc())
+        .all()
+    )
+
+    # Filter out announcements dismissed by this user
+    active_announcements = [
+        a for a in announcements if not a.is_dismissed_by(current_user.id)
+    ]
+
+    return jsonify({"announcements": [a.to_dict() for a in active_announcements]})
+
+
+@api_bp.route("/announcements/<int:announcement_id>/dismiss", methods=["POST"])
+@login_required
+def dismiss_announcement(announcement_id):
+    """Mark an announcement as dismissed for the current user."""
+    from app.models import Announcement, DismissedAnnouncement, db
+
+    # Verify announcement exists
+    Announcement.query.get_or_404(announcement_id)
+
+    # Check if already dismissed
+    existing = DismissedAnnouncement.query.filter_by(
+        user_id=current_user.id, announcement_id=announcement_id
+    ).first()
+
+    if existing:
+        return jsonify({"message": "Already dismissed"}), 200
+
+    # Create dismissal record
+    try:
+        dismissal = DismissedAnnouncement(
+            user_id=current_user.id, announcement_id=announcement_id
+        )
+        db.session.add(dismissal)
+        db.session.commit()
+        return jsonify({"message": "Announcement dismissed"}), 200
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error dismissing announcement: {e}")
+        return jsonify({"error": "Failed to dismiss announcement"}), 500
+
+
+# ============================================================================
+# Twitch & Discord Integration Endpoints
+# ============================================================================
 
 
 @api_bp.route("/twitch/clips", methods=["GET"])

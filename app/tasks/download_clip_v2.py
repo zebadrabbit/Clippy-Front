@@ -56,7 +56,7 @@ def _upload_clip_to_server(
     """
     import requests
 
-    api_url = os.environ.get("SERVER_API_URL", "http://10.8.0.1:5000")
+    api_url = os.environ.get("FLASK_APP_URL", "http://10.8.0.1:5000")
     api_key = os.environ.get("WORKER_API_KEY")
 
     if not api_key:

@@ -31,6 +31,9 @@ def create_project_api():
 
     description = (data.get("description") or "").strip() or None
 
+    # Tags (comma-separated string)
+    tags = (data.get("tags") or "").strip() or None
+
     # Check if a platform preset was specified
     platform_preset_value = data.get("platform_preset")
     preset_settings = None
@@ -125,6 +128,7 @@ def create_project_api():
         project = Project(
             name=unique_name,
             description=description,
+            tags=tags,
             user_id=current_user.id,
             max_clip_duration=max_clip_duration,
             output_resolution=output_resolution,
@@ -1498,5 +1502,6 @@ def get_project_details_api(project_id: int):
             "output_resolution": project.output_resolution,
             "output_format": project.output_format,
             "fps": project.fps,
+            "tags": project.tags,
         }
     )

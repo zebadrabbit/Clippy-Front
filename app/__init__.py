@@ -55,8 +55,6 @@ def create_app(config_class=None):
     # auto-detection during pytest to keep tests hermetic.
     _is_pytest = bool(os.environ.get("PYTEST_CURRENT_TEST"))
     preferred_instance = os.environ.get("CLIPPY_INSTANCE_PATH")
-    if not _is_pytest and not preferred_instance and os.path.isdir("/mnt/clippyfront"):
-        preferred_instance = "/mnt/clippyfront"
 
     if preferred_instance:
         # Ensure the directory exists before constructing the app
@@ -223,10 +221,15 @@ def create_app(config_class=None):
             "yes",
             "on",
         }:
+            # Ensure instance directory exists
             if not os.path.isdir(app.instance_path):
-                raise RuntimeError(
-                    f"Required instance mount is missing: {app.instance_path}. Configure CLIPPY_INSTANCE_PATH or mount the host path to this location."
-                )
+                try:
+                    os.makedirs(app.instance_path, exist_ok=True)
+                    app.logger.info(f"Created instance directory: {app.instance_path}")
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Cannot create instance directory {app.instance_path}: {e}"
+                    ) from e
             # Basic writability check: create instance/tmp if needed
             probe_dir = os.path.join(app.instance_path, "tmp")
             os.makedirs(probe_dir, exist_ok=True)

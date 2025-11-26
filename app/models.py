@@ -4,6 +4,7 @@ Database models for Clippy application.
 This module contains all SQLAlchemy models defining the database schema
 for users, projects, media files, clips, and related entities.
 """
+import os
 import secrets
 from datetime import datetime
 from enum import Enum
@@ -14,6 +15,10 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 # Initialize SQLAlchemy instance
 db = SQLAlchemy()
+
+
+# Get table prefix from environment at module load time
+_TABLE_PREFIX = os.environ.get("TABLE_PREFIX", "")
 
 
 class UserRole(Enum):
@@ -323,7 +328,7 @@ class User(UserMixin, db.Model):
     and user preferences for the video compilation platform.
     """
 
-    __tablename__ = "users"
+    __tablename__ = f"{_TABLE_PREFIX}users"
 
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False, index=True)
@@ -355,7 +360,7 @@ class User(UserMixin, db.Model):
     watermark_disabled = db.Column(db.Boolean, default=False, nullable=False)
 
     # Tier/Plan assignment (quotas). Nullable for legacy rows; default applied in app logic.
-    tier_id = db.Column(db.Integer, db.ForeignKey("tiers.id"))
+    tier_id = db.Column(db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}tiers.id"))
 
     # External service connections
     discord_user_id = db.Column(db.String(100), unique=True)
@@ -511,22 +516,28 @@ class Project(db.Model):
     clips, processing status, and output settings.
     """
 
-    __tablename__ = "projects"
+    __tablename__ = f"{_TABLE_PREFIX}projects"
 
     id = db.Column(db.Integer, primary_key=True)
     # Short, opaque identifier for URL usage (non-sequential, URL-safe)
     public_id = db.Column(db.String(32), unique=True, index=True)
     name = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text)
+    # Comma-separated tags for categorization
+    tags = db.Column(db.Text)
 
     # Project ownership and status
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}users.id"), nullable=False
+    )
     status = db.Column(
         db.Enum(ProjectStatus), default=ProjectStatus.DRAFT, nullable=False
     )
 
     # Team collaboration (optional)
-    team_id = db.Column(db.Integer, db.ForeignKey("teams.id"), nullable=True)
+    team_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}teams.id"), nullable=True
+    )
 
     # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
@@ -560,11 +571,17 @@ class Project(db.Model):
     vertical_align = db.Column(db.String(10), default="center")  # left, center, right
 
     # Intro/Outro media references
-    intro_media_id = db.Column(db.Integer, db.ForeignKey("media_files.id"))
-    outro_media_id = db.Column(db.Integer, db.ForeignKey("media_files.id"))
+    intro_media_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}media_files.id")
+    )
+    outro_media_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}media_files.id")
+    )
 
     # Background music settings
-    background_music_id = db.Column(db.Integer, db.ForeignKey("media_files.id"))
+    background_music_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}media_files.id")
+    )
     music_volume = db.Column(db.Float, default=0.3)  # 0.0 to 1.0
     music_start_mode = db.Column(
         db.String(20), default="after_intro"
@@ -655,7 +672,7 @@ class MediaFile(db.Model):
     intro videos, outro videos, transitions, and collected clips.
     """
 
-    __tablename__ = "media_files"
+    __tablename__ = f"{_TABLE_PREFIX}media_files"
 
     id = db.Column(db.Integer, primary_key=True)
     filename = db.Column(db.String(255), nullable=False)
@@ -678,8 +695,10 @@ class MediaFile(db.Model):
     framerate = db.Column(db.Float)
 
     # Ownership and project association
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    project_id = db.Column(db.Integer, db.ForeignKey("projects.id"))
+    user_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}users.id"), nullable=False
+    )
+    project_id = db.Column(db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}projects.id"))
 
     # Timestamps
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
@@ -727,7 +746,7 @@ class Clip(db.Model):
     or uploaded directly by users.
     """
 
-    __tablename__ = "clips"
+    __tablename__ = f"{_TABLE_PREFIX}clips"
 
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200), nullable=False)
@@ -749,10 +768,14 @@ class Clip(db.Model):
     view_count = db.Column(db.Integer)  # number of views on platform
 
     # Project association
-    project_id = db.Column(db.Integer, db.ForeignKey("projects.id"), nullable=False)
+    project_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}projects.id"), nullable=False
+    )
 
     # Media file reference
-    media_file_id = db.Column(db.Integer, db.ForeignKey("media_files.id"))
+    media_file_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}media_files.id")
+    )
     media_file = db.relationship("MediaFile", backref="clips")
 
     # Clip timing and order
@@ -794,16 +817,28 @@ class Clip(db.Model):
 media_tags = db.Table(
     "media_tags",
     db.Column(
-        "media_file_id", db.Integer, db.ForeignKey("media_files.id"), primary_key=True
+        "media_file_id",
+        db.Integer,
+        db.ForeignKey(f"{_TABLE_PREFIX}media_files.id"),
+        primary_key=True,
     ),
-    db.Column("tag_id", db.Integer, db.ForeignKey("tags.id"), primary_key=True),
+    db.Column(
+        "tag_id", db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}tags.id"), primary_key=True
+    ),
     db.Column("created_at", db.DateTime, default=datetime.utcnow, nullable=False),
 )
 
 clip_tags = db.Table(
     "clip_tags",
-    db.Column("clip_id", db.Integer, db.ForeignKey("clips.id"), primary_key=True),
-    db.Column("tag_id", db.Integer, db.ForeignKey("tags.id"), primary_key=True),
+    db.Column(
+        "clip_id",
+        db.Integer,
+        db.ForeignKey(f"{_TABLE_PREFIX}clips.id"),
+        primary_key=True,
+    ),
+    db.Column(
+        "tag_id", db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}tags.id"), primary_key=True
+    ),
     db.Column("created_at", db.DateTime, default=datetime.utcnow, nullable=False),
 )
 
@@ -816,7 +851,7 @@ class Tag(db.Model):
     hierarchical relationships (parent/child tags) and color coding.
     """
 
-    __tablename__ = "tags"
+    __tablename__ = f"{_TABLE_PREFIX}tags"
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), nullable=False, index=True)
@@ -827,11 +862,11 @@ class Tag(db.Model):
     color = db.Column(db.String(7), default="#6c757d")  # Hex color code
 
     # Ownership (user-specific tags or global)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    user_id = db.Column(db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}users.id"))
     is_global = db.Column(db.Boolean, default=False)  # System-wide tags (admin only)
 
     # Hierarchical tags (optional parent-child relationship)
-    parent_id = db.Column(db.Integer, db.ForeignKey("tags.id"))
+    parent_id = db.Column(db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}tags.id"))
     children = db.relationship(
         "Tag", backref=db.backref("parent", remote_side=[id]), lazy="dynamic"
     )
@@ -861,8 +896,10 @@ class Tag(db.Model):
     use_count = db.Column(db.Integer, default=0)  # Number of times tag is used
 
     __table_args__ = (
-        db.UniqueConstraint("user_id", "slug", name="uix_user_tag_slug"),
-        db.Index("ix_tags_user_name", "user_id", "name"),
+        db.UniqueConstraint(
+            "user_id", "slug", name=f"{_TABLE_PREFIX}uix_user_tag_slug"
+        ),
+        db.Index(f"{_TABLE_PREFIX}ix_tags_user_name", "user_id", "name"),
     )
 
     @property
@@ -894,7 +931,7 @@ class ProcessingJob(db.Model):
     tasks handled by Celery workers.
     """
 
-    __tablename__ = "processing_jobs"
+    __tablename__ = f"{_TABLE_PREFIX}processing_jobs"
 
     id = db.Column(db.Integer, primary_key=True)
     celery_task_id = db.Column(db.String(100), unique=True, nullable=False)
@@ -903,8 +940,10 @@ class ProcessingJob(db.Model):
     job_type = db.Column(
         db.String(50), nullable=False
     )  # 'compile_video', 'download_clip', etc.
-    project_id = db.Column(db.Integer, db.ForeignKey("projects.id"))
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    project_id = db.Column(db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}projects.id"))
+    user_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}users.id"), nullable=False
+    )
 
     # Status tracking
     status = db.Column(db.String(50), default="pending")
@@ -965,7 +1004,7 @@ class Tier(db.Model):
       - is_unlimited: shortcut to bypass all checks (admin/test tier)
     """
 
-    __tablename__ = "tiers"
+    __tablename__ = f"{_TABLE_PREFIX}tiers"
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), unique=True, nullable=False, index=True)
@@ -1035,11 +1074,13 @@ class RenderUsage(db.Model):
     to enable monthly aggregation and quota enforcement.
     """
 
-    __tablename__ = "render_usage"
+    __tablename__ = f"{_TABLE_PREFIX}render_usage"
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    project_id = db.Column(db.Integer, db.ForeignKey("projects.id"))
+    user_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}users.id"), nullable=False
+    )
+    project_id = db.Column(db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}projects.id"))
     seconds_used = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
@@ -1057,7 +1098,7 @@ class SystemSetting(db.Model):
     remain in environment/.env and are not stored here.
     """
 
-    __tablename__ = "system_settings"
+    __tablename__ = f"{_TABLE_PREFIX}system_settings"
 
     id = db.Column(db.Integer, primary_key=True)
     key = db.Column(db.String(100), unique=True, nullable=False, index=True)
@@ -1072,7 +1113,7 @@ class SystemSetting(db.Model):
     description = db.Column(db.Text)
 
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    updated_by = db.Column(db.Integer, db.ForeignKey("users.id"))
+    updated_by = db.Column(db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}users.id"))
     updated_by_user = db.relationship(
         "User", backref=db.backref("settings_updates", lazy="dynamic")
     )
@@ -1088,7 +1129,7 @@ class Theme(db.Model):
     and optional watermark. One theme can be marked active.
     """
 
-    __tablename__ = "themes"
+    __tablename__ = f"{_TABLE_PREFIX}themes"
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), unique=True, nullable=False, index=True)
@@ -1135,7 +1176,7 @@ class Theme(db.Model):
     )
 
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    updated_by = db.Column(db.Integer, db.ForeignKey("users.id"))
+    updated_by = db.Column(db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}users.id"))
     updated_by_user = db.relationship(
         "User", backref=db.backref("theme_updates", lazy="dynamic")
     )
@@ -1189,10 +1230,12 @@ class CompilationTask(db.Model):
     output settings overrides.
     """
 
-    __tablename__ = "compilation_tasks"
+    __tablename__ = f"{_TABLE_PREFIX}compilation_tasks"
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}users.id"), nullable=False
+    )
     name = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text)
 
@@ -1242,12 +1285,16 @@ class ScheduledTask(db.Model):
     migrated to a recurring type if further edits are needed.
     """
 
-    __tablename__ = "scheduled_tasks"
+    __tablename__ = f"{_TABLE_PREFIX}scheduled_tasks"
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}users.id"), nullable=False
+    )
     task_id = db.Column(
-        db.Integer, db.ForeignKey("compilation_tasks.id"), nullable=False
+        db.Integer,
+        db.ForeignKey(f"{_TABLE_PREFIX}compilation_tasks.id"),
+        nullable=False,
     )
 
     schedule_type = db.Column(
@@ -1302,14 +1349,16 @@ class Team(db.Model):
     Each team has an owner and can have multiple members with different roles.
     """
 
-    __tablename__ = "teams"
+    __tablename__ = f"{_TABLE_PREFIX}teams"
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(128), nullable=False)
     description = db.Column(db.Text)
 
     # Team ownership
-    owner_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    owner_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}users.id"), nullable=False
+    )
 
     # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
@@ -1398,11 +1447,15 @@ class TeamMembership(db.Model):
     Tracks which users belong to which teams and their roles.
     """
 
-    __tablename__ = "team_memberships"
+    __tablename__ = f"{_TABLE_PREFIX}team_memberships"
 
     id = db.Column(db.Integer, primary_key=True)
-    team_id = db.Column(db.Integer, db.ForeignKey("teams.id"), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    team_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}teams.id"), nullable=False
+    )
+    user_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}users.id"), nullable=False
+    )
 
     role = db.Column(
         db.Enum(
@@ -1431,7 +1484,9 @@ class TeamMembership(db.Model):
 
     # Unique constraint: a user can only be in a team once
     __table_args__ = (
-        db.UniqueConstraint("team_id", "user_id", name="unique_team_member"),
+        db.UniqueConstraint(
+            "team_id", "user_id", name=f"{_TABLE_PREFIX}unique_team_member"
+        ),
     )
 
     def __repr__(self) -> str:
@@ -1447,7 +1502,7 @@ class ActivityLog(db.Model):
     and activity feeds.
     """
 
-    __tablename__ = "activity_logs"
+    __tablename__ = f"{_TABLE_PREFIX}activity_logs"
 
     id = db.Column(db.Integer, primary_key=True)
 
@@ -1462,9 +1517,15 @@ class ActivityLog(db.Model):
     )
 
     # Relationships to entities
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    team_id = db.Column(db.Integer, db.ForeignKey("teams.id"), nullable=True)
-    project_id = db.Column(db.Integer, db.ForeignKey("projects.id"), nullable=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}users.id"), nullable=False
+    )
+    team_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}teams.id"), nullable=True
+    )
+    project_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}projects.id"), nullable=True
+    )
 
     # Additional context (JSON for flexibility)
     # Examples:
@@ -1491,9 +1552,11 @@ class ActivityLog(db.Model):
 
     # Indexes for efficient querying
     __table_args__ = (
-        db.Index("idx_activity_team_created", "team_id", "created_at"),
-        db.Index("idx_activity_project_created", "project_id", "created_at"),
-        db.Index("idx_activity_user_created", "user_id", "created_at"),
+        db.Index(f"{_TABLE_PREFIX}idx_activity_team_created", "team_id", "created_at"),
+        db.Index(
+            f"{_TABLE_PREFIX}idx_activity_project_created", "project_id", "created_at"
+        ),
+        db.Index(f"{_TABLE_PREFIX}idx_activity_user_created", "user_id", "created_at"),
     )
 
     def __repr__(self) -> str:
@@ -1531,17 +1594,23 @@ class TeamInvitation(db.Model):
     Invitations have unique tokens and can be accepted or declined.
     """
 
-    __tablename__ = "team_invitations"
+    __tablename__ = f"{_TABLE_PREFIX}team_invitations"
 
     id = db.Column(db.Integer, primary_key=True)
 
     # Invitation details
-    team_id = db.Column(db.Integer, db.ForeignKey("teams.id"), nullable=False)
-    invited_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    team_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}teams.id"), nullable=False
+    )
+    invited_by_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}users.id"), nullable=False
+    )
     email = db.Column(db.String(255), nullable=False, index=True)
 
     # Invited user (if they already have an account)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}users.id"), nullable=True
+    )
 
     # Role to assign when accepted
     role = db.Column(
@@ -1660,12 +1729,14 @@ class Notification(db.Model):
     allow users to stay informed about important events.
     """
 
-    __tablename__ = "notifications"
+    __tablename__ = f"{_TABLE_PREFIX}notifications"
 
     id = db.Column(db.Integer, primary_key=True)
 
     # Recipient
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}users.id"), nullable=False
+    )
 
     # Notification type (reuses ActivityType enum)
     notification_type = db.Column(
@@ -1673,11 +1744,17 @@ class Notification(db.Model):
     )
 
     # Context (what the notification is about)
-    team_id = db.Column(db.Integer, db.ForeignKey("teams.id"), nullable=True)
-    project_id = db.Column(db.Integer, db.ForeignKey("projects.id"), nullable=True)
+    team_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}teams.id"), nullable=True
+    )
+    project_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}projects.id"), nullable=True
+    )
 
     # Optional actor (who triggered the notification)
-    actor_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    actor_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}users.id"), nullable=True
+    )
 
     # Message and metadata
     message = db.Column(db.Text, nullable=False)
@@ -1706,8 +1783,10 @@ class Notification(db.Model):
 
     # Indexes for efficient queries
     __table_args__ = (
-        db.Index("ix_notifications_user_created", user_id, created_at.desc()),
-        db.Index("ix_notifications_user_read", user_id, is_read),
+        db.Index(
+            f"{_TABLE_PREFIX}ix_notifications_user_created", user_id, created_at.desc()
+        ),
+        db.Index(f"{_TABLE_PREFIX}ix_notifications_user_read", user_id, is_read),
     )
 
     def __repr__(self) -> str:
@@ -1758,11 +1837,14 @@ class NotificationPreferences(db.Model):
     Controls which events trigger in-app vs email notifications.
     """
 
-    __tablename__ = "notification_preferences"
+    __tablename__ = f"{_TABLE_PREFIX}notification_preferences"
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(
-        db.Integer, db.ForeignKey("users.id"), nullable=False, unique=True
+        db.Integer,
+        db.ForeignKey(f"{_TABLE_PREFIX}users.id"),
+        nullable=False,
+        unique=True,
     )
 
     # Email notification preferences (per event type)
@@ -1828,3 +1910,113 @@ class NotificationPreferences(db.Model):
             db.session.add(prefs)
             db.session.commit()
         return prefs
+
+
+class AnnouncementType(Enum):
+    """
+    Enumeration for announcement types/severity levels.
+
+    - INFO: General information (blue)
+    - SUCCESS: Positive updates (green)
+    - WARNING: Important notices (yellow)
+    - DANGER: Critical alerts (red)
+    """
+
+    INFO = "info"
+    SUCCESS = "success"
+    WARNING = "warning"
+    DANGER = "danger"
+
+
+class Announcement(db.Model):
+    """
+    System announcements displayed as dismissable banners.
+
+    Admins can create announcements that appear on the project dashboard
+    until users dismiss them individually.
+    """
+
+    __tablename__ = f"{_TABLE_PREFIX}announcements"
+
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    message = db.Column(db.Text, nullable=False)
+    announcement_type = db.Column(
+        db.Enum(AnnouncementType), nullable=False, default=AnnouncementType.INFO
+    )
+    active = db.Column(db.Boolean, default=True, nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    # Relationships
+    dismissed_by = db.relationship(
+        "DismissedAnnouncement",
+        back_populates="announcement",
+        cascade="all, delete-orphan",
+    )
+
+    def __repr__(self) -> str:
+        return f"<Announcement {self.id}: {self.title}>"
+
+    def to_dict(self) -> dict:
+        """Convert announcement to dictionary."""
+        return {
+            "id": self.id,
+            "title": self.title,
+            "message": self.message,
+            "type": self.announcement_type.value,
+            "active": self.active,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+    def is_dismissed_by(self, user_id: int) -> bool:
+        """Check if this announcement was dismissed by the given user."""
+        return (
+            db.session.query(DismissedAnnouncement)
+            .filter_by(user_id=user_id, announcement_id=self.id)
+            .first()
+            is not None
+        )
+
+
+class DismissedAnnouncement(db.Model):
+    """
+    Tracks which announcements have been dismissed by which users.
+
+    This allows announcements to be shown to all users but dismissed
+    individually, maintaining user preferences.
+    """
+
+    __tablename__ = f"{_TABLE_PREFIX}dismissed_announcements"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey(f"{_TABLE_PREFIX}users.id"),
+        nullable=False,
+        index=True,
+    )
+    announcement_id = db.Column(
+        db.Integer,
+        db.ForeignKey(f"{_TABLE_PREFIX}announcements.id"),
+        nullable=False,
+        index=True,
+    )
+    dismissed_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    # Unique constraint: a user can only dismiss an announcement once
+    __table_args__ = (
+        db.UniqueConstraint(
+            "user_id", "announcement_id", name=f"{_TABLE_PREFIX}uq_user_announcement"
+        ),
+    )
+
+    # Relationships
+    user = db.relationship("User", backref="dismissed_announcements")
+    announcement = db.relationship("Announcement", back_populates="dismissed_by")
+
+    def __repr__(self) -> str:
+        return f"<DismissedAnnouncement user={self.user_id} announcement={self.announcement_id}>"

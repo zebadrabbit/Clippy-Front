@@ -689,26 +689,27 @@
 
 .wizard-nav { gap: 0.75rem; }
 
-/* Compile step: summary + clip list layout */
+/* Compile step: summary + preview + clip list layout */
 .compile-summary {
     display: grid;
-    grid-template-columns: 1fr minmax(260px, 420px);
+    grid-template-columns: minmax(200px, 280px) minmax(280px, 1fr) minmax(240px, 360px);
     gap: 16px;
 }
 @media (max-width: 992px) {
     .compile-summary { grid-template-columns: 1fr; }
 }
-.compile-left {
+.compile-left, .compile-middle, .compile-right {
     background: rgba(255,255,255,0.03);
     border: 1px solid rgba(255,255,255,0.06);
     border-radius: 10px;
     padding: 12px 14px;
 }
-.compile-right {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 10px;
-    padding: 10px 12px;
+.compile-middle {
+    display: flex;
+    flex-direction: column;
+}
+.compile-middle h6 {
+    margin-bottom: 0.75rem;
 }
 .compile-clip-list {
     max-height: 320px; /* increased for better visibility */

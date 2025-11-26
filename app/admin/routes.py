@@ -27,6 +27,8 @@ from sqlalchemy import func
 from werkzeug.utils import secure_filename
 
 from app.models import (
+    Announcement,
+    AnnouncementType,
     Clip,
     MediaFile,
     MediaType,
@@ -2084,3 +2086,165 @@ def _handle_theme_uploads(theme: Theme) -> None:
         except Exception as e:
             current_app.logger.error(f"Upload failed for {key}: {e}")
             flash(f"Failed to upload {key}", "danger")
+
+
+# ============================================================================
+# Announcement Management Routes
+# ============================================================================
+
+
+@admin_bp.route("/announcements")
+@login_required
+@admin_required
+def announcements_list():
+    """
+    List all system announcements.
+
+    Returns:
+        Response: Rendered announcements list template
+    """
+    announcements = Announcement.query.order_by(Announcement.created_at.desc()).all()
+    return render_template("admin/announcements.html", announcements=announcements)
+
+
+@admin_bp.route("/announcements/create", methods=["GET", "POST"])
+@login_required
+@admin_required
+def announcement_create():
+    """
+    Create a new announcement.
+
+    Returns:
+        Response: Form template or redirect to announcements list
+    """
+    if request.method == "POST":
+        title = request.form.get("title", "").strip()
+        message = request.form.get("message", "").strip()
+        announcement_type = request.form.get("type", "info")
+        active = request.form.get("active") == "on"
+
+        if not title or not message:
+            flash("Title and message are required.", "danger")
+            return redirect(url_for("admin.announcement_create"))
+
+        try:
+            announcement = Announcement(
+                title=title,
+                message=message,
+                announcement_type=AnnouncementType(announcement_type),
+                active=active,
+            )
+            db.session.add(announcement)
+            db.session.commit()
+            flash("Announcement created successfully.", "success")
+            return redirect(url_for("admin.announcements_list"))
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Error creating announcement: {e}")
+            flash("Failed to create announcement.", "danger")
+            return redirect(url_for("admin.announcement_create"))
+
+    return render_template("admin/announcement_form.html", announcement=None)
+
+
+@admin_bp.route("/announcements/<int:announcement_id>/edit", methods=["GET", "POST"])
+@login_required
+@admin_required
+def announcement_edit(announcement_id):
+    """
+    Edit an existing announcement.
+
+    Args:
+        announcement_id: ID of the announcement to edit
+
+    Returns:
+        Response: Form template or redirect to announcements list
+    """
+    announcement = Announcement.query.get_or_404(announcement_id)
+
+    if request.method == "POST":
+        title = request.form.get("title", "").strip()
+        message = request.form.get("message", "").strip()
+        announcement_type = request.form.get("type", "info")
+        active = request.form.get("active") == "on"
+
+        if not title or not message:
+            flash("Title and message are required.", "danger")
+            return redirect(
+                url_for("admin.announcement_edit", announcement_id=announcement_id)
+            )
+
+        try:
+            announcement.title = title
+            announcement.message = message
+            announcement.announcement_type = AnnouncementType(announcement_type)
+            announcement.active = active
+            announcement.updated_at = datetime.utcnow()
+            db.session.commit()
+            flash("Announcement updated successfully.", "success")
+            return redirect(url_for("admin.announcements_list"))
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Error updating announcement: {e}")
+            flash("Failed to update announcement.", "danger")
+            return redirect(
+                url_for("admin.announcement_edit", announcement_id=announcement_id)
+            )
+
+    return render_template("admin/announcement_form.html", announcement=announcement)
+
+
+@admin_bp.route("/announcements/<int:announcement_id>/delete", methods=["POST"])
+@login_required
+@admin_required
+def announcement_delete(announcement_id):
+    """
+    Delete an announcement.
+
+    Args:
+        announcement_id: ID of the announcement to delete
+
+    Returns:
+        Response: Redirect to announcements list
+    """
+    announcement = Announcement.query.get_or_404(announcement_id)
+
+    try:
+        db.session.delete(announcement)
+        db.session.commit()
+        flash("Announcement deleted successfully.", "success")
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error deleting announcement: {e}")
+        flash("Failed to delete announcement.", "danger")
+
+    return redirect(url_for("admin.announcements_list"))
+
+
+@admin_bp.route("/announcements/<int:announcement_id>/toggle", methods=["POST"])
+@login_required
+@admin_required
+def announcement_toggle(announcement_id):
+    """
+    Toggle announcement active status.
+
+    Args:
+        announcement_id: ID of the announcement to toggle
+
+    Returns:
+        Response: Redirect to announcements list
+    """
+    announcement = Announcement.query.get_or_404(announcement_id)
+
+    try:
+        announcement.active = not announcement.active
+        announcement.updated_at = datetime.utcnow()
+        db.session.commit()
+        status = "activated" if announcement.active else "deactivated"
+        flash(f"Announcement {status} successfully.", "success")
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error toggling announcement: {e}")
+        flash("Failed to toggle announcement.", "danger")
+
+    return redirect(url_for("admin.announcements_list"))

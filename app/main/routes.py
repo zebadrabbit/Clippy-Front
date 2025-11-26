@@ -1566,15 +1566,41 @@ def project_wizard():
 
     This endpoint currently serves the UI scaffolding. Back-end wiring for
     downloading and compilation can be integrated with Celery tasks.
+
+    URL Parameters:
+        project_id (int, optional): Load an existing project for editing
+        step (int, optional): Start at a specific wizard step (1-4)
     """
     # Get Discord channel ID from user's profile if available
     discord_channel_id = getattr(current_user, "discord_channel_id", "") or ""
+
+    # Check if we're loading an existing project
+    existing_project = None
+    initial_step = 1
+
+    project_id = request.args.get("project_id", type=int)
+    if project_id:
+        # Verify project exists and belongs to current user
+        existing_project = Project.query.filter_by(
+            id=project_id, user_id=current_user.id
+        ).first()
+
+        if not existing_project:
+            flash("Project not found or you do not have access to it.", "error")
+            return redirect(url_for("main.projects"))
+
+    # Get requested step from URL
+    step = request.args.get("step", type=int)
+    if step and 1 <= step <= 4:
+        initial_step = step
 
     return render_template(
         "main/project_wizard.html",
         title="Project Wizard",
         media_types=MediaType,
         discord_channel_id=discord_channel_id,
+        existing_project=existing_project,
+        initial_step=initial_step,
     )
 
 
@@ -2719,3 +2745,141 @@ def remove_profile_image():
         )
         flash("Failed to remove profile image.", "danger")
     return redirect(url_for("main.profile"))
+
+
+@main_bp.route("/projects/<int:project_id>/compilation-preview")
+@login_required
+def compilation_preview_thumb(project_id: int):
+    """Generate a preview thumbnail from a random clip at a random position."""
+    import os
+    import random
+    import subprocess
+    import tempfile
+
+    current_app.logger.info(f"Compilation preview requested for project {project_id}")
+
+    project = Project.query.filter_by(id=project_id, user_id=current_user.id).first()
+    if not project:
+        current_app.logger.warning(f"Project {project_id} not found")
+        return jsonify({"error": "Project not found"}), 404
+
+    # Get clips that have been downloaded
+    clips = (
+        Clip.query.filter_by(project_id=project.id)
+        .filter(Clip.is_downloaded == True)  # noqa: E712
+        .filter(Clip.media_file_id != None)  # noqa: E711
+        .all()
+    )
+
+    if not clips:
+        current_app.logger.warning(
+            f"No clips available for preview (project {project_id})"
+        )
+        return jsonify({"error": "No media available"}), 404
+
+    # Pick a random clip
+    clip = random.choice(clips)
+    target_media = clip.media_file
+
+    if not target_media or not target_media.file_path:
+        return jsonify({"error": "No media file available"}), 404
+
+    current_app.logger.info(
+        f"Generating preview from clip {clip.id}: {target_media.filename}"
+    )
+
+    # Pick a random time between 10% and 60% into the clip
+    if target_media.duration and target_media.duration > 2:
+        seek_time = random.uniform(
+            target_media.duration * 0.1,
+            min(target_media.duration * 0.6, target_media.duration - 1),
+        )
+    else:
+        seek_time = 0.5
+
+    current_app.logger.info(f"Seeking to {seek_time:.2f}s in {target_media.filename}")
+
+    try:
+        # Get ffmpeg from environment or use system default
+        ffmpeg_bin = os.environ.get("FFMPEG_BINARY", "/usr/bin/ffmpeg")
+
+        # Verify ffmpeg exists
+        if not os.path.exists(ffmpeg_bin):
+            # Fall back to searching bin/ directory
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            bin_ffmpeg = os.path.join(project_root, "bin", "ffmpeg")
+            if os.path.exists(bin_ffmpeg):
+                ffmpeg_bin = bin_ffmpeg
+            else:
+                current_app.logger.error(
+                    f"ffmpeg not found at {ffmpeg_bin} or {bin_ffmpeg}"
+                )
+                return jsonify({"error": "ffmpeg not available"}), 500
+
+        current_app.logger.info(f"Using ffmpeg: {ffmpeg_bin}")
+
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+            thumb_path = tmp.name
+
+        current_app.logger.info(
+            f"Running: {ffmpeg_bin} -ss {seek_time:.2f} -i {target_media.file_path}"
+        )
+
+        cmd = [
+            ffmpeg_bin,
+            "-ss",
+            str(seek_time),
+            "-i",
+            target_media.file_path,
+            "-frames:v",
+            "1",
+            "-q:v",
+            "2",
+            "-y",
+            thumb_path,
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+
+        if result.returncode != 0:
+            current_app.logger.error(
+                f"ffmpeg failed (code {result.returncode}): {result.stderr}"
+            )
+            try:
+                os.unlink(thumb_path)
+            except Exception:
+                pass
+            return jsonify({"error": "Failed to generate preview"}), 500
+
+        if not os.path.exists(thumb_path) or os.path.getsize(thumb_path) == 0:
+            current_app.logger.error("Preview file was not created or is empty")
+            try:
+                os.unlink(thumb_path)
+            except Exception:
+                pass
+            return jsonify({"error": "Preview generation produced no output"}), 500
+
+        current_app.logger.info(
+            f"Preview generated successfully: {thumb_path} ({os.path.getsize(thumb_path)} bytes)"
+        )
+
+        def cleanup():
+            try:
+                os.unlink(thumb_path)
+            except Exception as e:
+                current_app.logger.warning(f"Failed to cleanup temp file: {e}")
+
+        response = send_file(thumb_path, mimetype="image/jpeg", as_attachment=False)
+        response.call_on_close(cleanup)
+        return response
+
+    except subprocess.TimeoutExpired:
+        current_app.logger.error("Preview generation timed out after 30s")
+        try:
+            os.unlink(thumb_path)
+        except Exception:
+            pass
+        return jsonify({"error": "Preview generation timed out"}), 500
+    except Exception as e:
+        current_app.logger.error(f"Preview generation failed: {e}", exc_info=True)
+        return jsonify({"error": "Failed to generate preview"}), 500

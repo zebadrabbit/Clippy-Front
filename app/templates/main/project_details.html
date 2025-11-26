@@ -3,8 +3,48 @@
 {% block content %}
 <div class="container py-4">
   <div class="d-flex justify-content-between align-items-center mb-3">
-    <div>
-      <h2 class="mb-0"><i class="bi bi-folder"></i> {{ project.name }}</h2>
+    <div class="flex-grow-1 me-3">
+      <div id="project-header-display">
+        <h2 class="mb-0">
+          <i class="bi bi-folder"></i>
+          <span id="project-name-display">{{ project.name }}</span>
+          <button class="btn btn-sm btn-outline-secondary ms-2" id="edit-project-btn" title="Edit project details">
+            <i class="bi bi-pencil"></i>
+          </button>
+        </h2>
+        {% if project.tags %}
+        <div class="mt-2">
+          {% for tag in project.tags.split(',') %}
+            <span class="badge bg-secondary">{{ tag.strip() }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% if project.description %}
+        <p class="text-muted mt-2 mb-0">{{ project.description }}</p>
+        {% endif %}
+      </div>
+      <div id="project-header-edit" class="d-none">
+        <div class="mb-2">
+          <label class="form-label small mb-1">Project Name</label>
+          <input type="text" class="form-control" id="project-name-input" value="{{ project.name }}">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small mb-1">Tags <span class="text-muted">(comma-separated)</span></label>
+          <input type="text" class="form-control" id="project-tags-input" value="{{ project.tags or '' }}" placeholder="gaming, highlights, funny">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small mb-1">Description</label>
+          <textarea class="form-control" id="project-description-input" rows="2">{{ project.description or '' }}</textarea>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-sm btn-primary" id="save-project-btn">
+            <i class="bi bi-check-lg"></i> Save
+          </button>
+          <button class="btn btn-sm btn-secondary" id="cancel-edit-btn">
+            <i class="bi bi-x-lg"></i> Cancel
+          </button>
+        </div>
+      </div>
     </div>
     <div>
       <button class="btn btn-outline-primary btn-sm" id="saveAsTemplateBtn">
@@ -13,13 +53,9 @@
     </div>
   </div>
 
-  {% if project.description %}
-  <p class="text-muted">{{ project.description }}</p>
-  {% endif %}
-
   <div class="row g-4">
     <!-- Clips Card -->
-    <div class="col-lg-7">
+    <div class="col-lg-4">
       <div class="card h-100">
         <div class="card-header card-header--primary d-flex justify-content-between align-items-center">
           <strong>Clips</strong>
@@ -31,12 +67,11 @@
             {% endif %}
           </small>
         </div>
-        <div class="card-body">
+        <div class="card-body" style="max-height: 600px; overflow-y: auto;">
           {% if clips %}
-          <div class="row row-cols-1 row-cols-md-2 g-3">
+          <div class="d-flex flex-column gap-3">
             {% for c in clips %}
-            <div class="col">
-              <div class="border rounded p-3 h-100 clip-card position-relative" data-preview-url="{% if c.media_file %}{{ url_for('main.media_preview', media_id=c.media_file.id) }}{% endif %}">
+              <div class="border rounded p-3 clip-card position-relative" data-preview-url="{% if c.media_file %}{{ url_for('main.media_preview', media_id=c.media_file.id) }}{% endif %}">
                 <div class="d-flex align-items-start">
                   {% if c.media_file and c.media_file.thumbnail_path %}
                     <div class="position-relative me-3" style="width: 120px; height: 68px;">
@@ -64,7 +99,6 @@
                   </div>
                 </div>
               </div>
-            </div>
             {% endfor %}
           </div>
           {% else %}
@@ -75,7 +109,7 @@
     </div>
 
     <!-- Compilation Card -->
-    <div class="col-lg-5">
+    <div class="col-lg-8">
       <div class="card h-100">
         <div class="card-header card-header--primary"><strong>Compilation</strong></div>
         <div class="card-body d-flex flex-column">
@@ -108,13 +142,15 @@
               </video>
             </div>
             <div class="mt-auto d-flex gap-2">
+              <a class="btn btn-outline-primary" href="{{ url_for('main.project_wizard', project_id=project.id, step=3) }}">
+                <i class="bi bi-pencil"></i> Edit Timeline
+              </a>
               {% if download_url %}
                 <a class="btn btn-primary" href="{{ download_url }}"><i class="bi bi-download"></i> Download</a>
               {% endif %}
               <button class="btn btn-success" id="recompileBtn" data-project-id="{{ project.id }}">
                 <i class="bi bi-arrow-clockwise"></i> Recompile
               </button>
-              <button class="btn btn-outline-secondary" disabled title="Coming soon"><i class="bi bi-youtube"></i> Share to YouTube</button>
             </div>
             <div class="border-top pt-3 mt-3">
               <h6 class="mb-3">Compilation Elements</h6>
@@ -209,7 +245,15 @@
               </dl>
             </div>
           {% else %}
-            <p class="text-muted mb-0">No compiled output yet. Click Compile to start.</p>
+            <div class="d-flex flex-column h-100">
+              <p class="text-muted mb-3">No compiled output yet.</p>
+              <div class="mt-auto">
+                <a class="btn btn-primary w-100 mb-2" href="{{ url_for('main.project_wizard', project_id=project.id, step=3) }}">
+                  <i class="bi bi-pencil"></i> Edit Timeline &amp; Compile
+                </a>
+                <p class="text-muted small mb-0">Arrange your clips and create the compilation</p>
+              </div>
+            </div>
           {% endif %}
         </div>
       </div>
@@ -415,6 +459,77 @@ document.getElementById('saveAsTemplateBtn')?.addEventListener('click', async fu
             feedbackEl.textContent = 'Failed to apply preset';
             feedbackEl.className = 'text-danger ms-2';
             applyBtn.disabled = false;
+        }
+    });
+})();
+
+// Project metadata editing
+(function() {
+    const editBtn = document.getElementById('edit-project-btn');
+    const cancelBtn = document.getElementById('cancel-edit-btn');
+    const saveBtn = document.getElementById('save-project-btn');
+    const displaySection = document.getElementById('project-header-display');
+    const editSection = document.getElementById('project-header-edit');
+    const nameInput = document.getElementById('project-name-input');
+    const tagsInput = document.getElementById('project-tags-input');
+    const descInput = document.getElementById('project-description-input');
+    const nameDisplay = document.getElementById('project-name-display');
+
+    const projectId = {{ project.id }};
+
+    editBtn?.addEventListener('click', function() {
+        displaySection.classList.add('d-none');
+        editSection.classList.remove('d-none');
+        nameInput.focus();
+    });
+
+    cancelBtn?.addEventListener('click', function() {
+        editSection.classList.add('d-none');
+        displaySection.classList.remove('d-none');
+        // Reset values
+        nameInput.value = nameDisplay.textContent.trim();
+        tagsInput.value = '{{ project.tags or '' }}';
+        descInput.value = '{{ project.description or '' }}';
+    });
+
+    saveBtn?.addEventListener('click', async function() {
+        const name = nameInput.value.trim();
+        if (!name) {
+            alert('Project name cannot be empty');
+            return;
+        }
+
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="bi bi-hourglass"></i> Saving...';
+
+        try {
+            const response = await fetch(`/api/projects/${projectId}/metadata`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                },
+                body: JSON.stringify({
+                    name: name,
+                    tags: tagsInput.value.trim(),
+                    description: descInput.value.trim()
+                })
+            });
+
+            if (response.ok) {
+                // Reload to show updated data
+                window.location.reload();
+            } else {
+                const error = await response.json();
+                alert(`Error: ${error.error || 'Failed to update project'}`);
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="bi bi-check-lg"></i> Save';
+            }
+        } catch (err) {
+            console.error('Failed to update project:', err);
+            alert('Failed to update project');
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="bi bi-check-lg"></i> Save';
         }
     });
 })();

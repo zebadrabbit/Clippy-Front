@@ -11,8 +11,17 @@
 
 <div class="container py-4">
   <div class="d-flex justify-content-between align-items-center mb-3">
-    <h2 class="mb-0"><i class="bi bi-magic"></i> New Project Wizard</h2>
-  <a class="btn btn-outline-secondary" href="{{ url_for('main.projects') }}">Back to Projects</a>
+    <h2 class="mb-0">
+      <i class="bi bi-magic"></i>
+      {% if existing_project %}
+        Edit Project: {{ existing_project.name }}
+      {% else %}
+        New Project Wizard
+      {% endif %}
+    </h2>
+  <a class="btn btn-outline-secondary" href="{% if existing_project %}{{ url_for('main.project_details_by_public', public_id=existing_project.public_id) }}{% else %}{{ url_for('main.projects') }}{% endif %}">
+    {% if existing_project %}Back to Project{% else %}Back to Projects{% endif %}
+  </a>
   </div>
 
   <div class="card">
@@ -54,8 +63,10 @@
               <div class="col-md-6">
                 <label class="form-label">Project Name</label>
                 <input class="form-control" name="name" placeholder="My Compilation">
+                <label class="form-label mt-3">Tags <span class="text-muted">(comma-separated, optional)</span></label>
+                <input class="form-control" name="tags" placeholder="gaming, highlights, funny">
                 <label class="form-label mt-3">Description (optional)</label>
-                <textarea class="form-control" name="description" rows="4" placeholder="Short description..."></textarea>
+                <textarea class="form-control" name="description" rows="3" placeholder="Short description..."></textarea>
               </div>
               <div class="col-md-5 offset-md-1">
                 <div class="card audio-norm-card">
@@ -546,5 +557,16 @@
 
 {% block scripts %}
 {{ super() }}
+<script>
+  // Initialize wizard with existing project if provided
+  {% if existing_project %}
+  window.wizardExistingProject = {
+    id: {{ existing_project.id }},
+    name: {{ existing_project.name|tojson }},
+    description: {{ existing_project.description|tojson if existing_project.description else 'null' }},
+    initialStep: {{ initial_step }}
+  };
+  {% endif %}
+</script>
 <script src="{{ url_for('static', filename='js/wizard.js') }}"></script>
 {% endblock %}

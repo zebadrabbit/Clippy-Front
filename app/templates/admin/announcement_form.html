@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="row">
+    <h2 class="mb-3"><i class="bi bi-gear"></i> Admin Dashboard</h2>
+    <div class="col-12 col-lg-3 mb-3 mb-lg-0">
+      {% set active_page = 'announcements' %}
+      {% include 'admin/_includes/sidebar.html' with context %}
+    </div>
+    <div class="col-12 col-lg-9">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="mb-0">
+            {% if announcement %}
+              Edit Announcement
+            {% else %}
+              Create New Announcement
+            {% endif %}
+          </h3>
+        </div>
+        <div class="card-body">
+          <form method="POST">
+            <div class="mb-3">
+              <label for="title" class="form-label">Title <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" id="title" name="title"
+                     value="{{ announcement.title if announcement else '' }}"
+                     placeholder="Enter announcement title" required maxlength="200">
+            </div>
+
+            <div class="mb-3">
+              <label for="message" class="form-label">Message <span class="text-danger">*</span></label>
+              <textarea class="form-control" id="message" name="message" rows="4"
+                        placeholder="Enter announcement message (supports HTML)" required>{{ announcement.message if announcement else '' }}</textarea>
+              <div class="form-text">You can use HTML formatting in the message.</div>
+            </div>
+
+            <div class="mb-3">
+              <label for="type" class="form-label">Type</label>
+              <select class="form-select" id="type" name="type">
+                <option value="info" {% if announcement and announcement.announcement_type.value == 'info' %}selected{% endif %}>Info (Blue)</option>
+                <option value="success" {% if announcement and announcement.announcement_type.value == 'success' %}selected{% endif %}>Success (Green)</option>
+                <option value="warning" {% if announcement and announcement.announcement_type.value == 'warning' %}selected{% endif %}>Warning (Yellow)</option>
+                <option value="danger" {% if announcement and announcement.announcement_type.value == 'danger' %}selected{% endif %}>Danger (Red)</option>
+              </select>
+            </div>
+
+            <div class="mb-3 form-check">
+              <input type="checkbox" class="form-check-input" id="active" name="active"
+                     {% if not announcement or announcement.active %}checked{% endif %}>
+              <label class="form-check-label" for="active">
+                Active (visible to users)
+              </label>
+            </div>
+
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-primary">
+                <i class="bi bi-check"></i> Save Announcement
+              </button>
+              <a href="{{ url_for('admin.announcements_list') }}" class="btn btn-secondary">
+                <i class="bi bi-x"></i> Cancel
+              </a>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -2,8 +2,8 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "1.0.2"
-__version_info__ = (1, 0, 2)
+__version__ = "1.0.3"
+__version_info__ = (1, 0, 3)
 
 # Version history tracking
 VERSION_HISTORY = {
@@ -167,6 +167,11 @@ VERSION_HISTORY = {
         "Celebration particle explosion effect and music timing fix: added Canvas 2D-based particle celebration (450 particles, physics simulation) "
         "that triggers automatically on successful compilation. Background music now properly stops before outro (when 'End: before outro' is set) "
         "using atrim filter to cut audio at calculated endpoint with 2-second fadeout. Both features deployed to remote workers."
+    ),
+    "1.0.3": (
+        "Wizard step navigation and UI polish: fixed wizard URL parameter handling to support direct links to specific steps (e.g., /projects/wizard?project_id=29&step=3). "
+        "Backend now parses project_id and step query params, validates project ownership, and passes initial_step to template. "
+        "Draft projects now display with brighter cyan badge (bg-info) instead of muted gray for better visibility on projects page."
     ),
 }
 

@@ -1457,13 +1457,17 @@ def process_uploaded_media_task(
         if not media:
             return {"status": "error", "error": f"Media file {media_id} not found"}
 
-        if not media.file_path or not Path(media.file_path).exists():
+        # Expand canonical /instance/... path to full absolute path
+        from app.storage import instance_canonicalize, instance_expand
+
+        expanded_path = instance_expand(media.file_path)
+        if not expanded_path or not Path(expanded_path).exists():
             return {
                 "status": "error",
-                "error": f"File not found: {media.file_path}",
+                "error": f"File not found: {media.file_path} (expanded: {expanded_path})",
             }
 
-        file_path = Path(media.file_path)
+        file_path = Path(expanded_path)
         results = {"status": "success", "media_id": media_id}
 
         # Generate thumbnail for video files
@@ -1480,13 +1484,12 @@ def process_uploaded_media_task(
                 stem = file_path.stem
                 thumb_path = dest_dir / f"{stem}_thumb.jpg"
 
+                app.logger.info(f"Generating thumbnail: {thumb_path} from {file_path}")
                 subprocess.run(
                     [
                         _resolve_binary(app, "ffmpeg"),
                         *_cfg_args(app, "ffmpeg", "thumbnail"),
                         "-y",
-                        "-ss",
-                        str(app.config.get("THUMBNAIL_TIMESTAMP_SECONDS", 1)),
                         "-i",
                         str(file_path),
                         "-frames:v",
@@ -1501,8 +1504,19 @@ def process_uploaded_media_task(
                     timeout=30,
                 )
 
-                media.thumbnail_path = str(thumb_path)
-                results["thumbnail"] = str(thumb_path)
+                if not thumb_path.exists():
+                    app.logger.error(
+                        f"Thumbnail generation claimed success but file doesn't exist: {thumb_path}"
+                    )
+                    raise FileNotFoundError(f"Thumbnail not created: {thumb_path}")
+
+                # Canonicalize the thumbnail path back to /instance/... format
+                canonical_thumb = instance_canonicalize(str(thumb_path))
+                app.logger.info(
+                    f"Thumbnail created at {thumb_path}, canonical path: {canonical_thumb}"
+                )
+                media.thumbnail_path = canonical_thumb
+                results["thumbnail"] = canonical_thumb
 
             except Exception as e:
                 app.logger.warning(f"Thumbnail generation failed for {media_id}: {e}")

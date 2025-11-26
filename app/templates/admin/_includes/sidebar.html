@@ -9,6 +9,9 @@
     <a class="list-group-item list-group-item-action d-flex align-items-center gap-2 {{ 'active' if active_page == 'projects' else '' }}" href="{{ url_for('admin.projects') }}">
       <i class="bi bi-folder2-open"></i> <span>Manage Projects</span>
     </a>
+    <a class="list-group-item list-group-item-action d-flex align-items-center gap-2 {{ 'active' if active_page == 'announcements' else '' }}" href="{{ url_for('admin.announcements_list') }}">
+      <i class="bi bi-megaphone"></i> <span>Announcements</span>
+    </a>
     <a class="list-group-item list-group-item-action d-flex align-items-center gap-2 {{ 'active' if active_page == 'themes' else '' }}" href="{{ url_for('admin.themes_list') }}">
       <i class="bi bi-palette"></i> <span>Themes</span>
     </a>

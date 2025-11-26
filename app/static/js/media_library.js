@@ -71,6 +71,12 @@
         if (grid && col) { grid.prepend(col); attachCardHandlers(col); updateBulkBar(); }
         // Clear Dropzone preview/icon and reset state for a clean area
         try { dz.removeFile(file); } catch (_) {}
+
+        // Auto-refresh thumbnail when background processing completes
+        const mime = resp.mime || '';
+        if (mime.startsWith('video/') || mime.startsWith('audio/')) {
+          pollThumbnail(resp.id, col);
+        }
       });
       this.on('error', function(file, errorMessage, xhr) {
         console.error('Upload error:', errorMessage, xhr);
@@ -82,6 +88,44 @@
       });
     }
   });
+
+  function pollThumbnail(mediaId, col) {
+    const thumbnailUrl = THUMB_URL_TPL.replace('0', mediaId);
+
+    // Wait a tiny bit for the DOM to settle
+    setTimeout(function() {
+      const imgEl = col.querySelector('img.img-fluid');
+      if (!imgEl) {
+        console.log('No img element found for polling, media ID:', mediaId);
+        return;
+      }
+
+      let pollCount = 0;
+      const maxPolls = 20; // 10 seconds max (500ms * 20)
+
+      console.log('Starting thumbnail polling for media ID:', mediaId);
+
+      const pollInterval = setInterval(function() {
+        // Try to load thumbnail with cache-busting timestamp
+        const testImg = new Image();
+        testImg.onload = function() {
+          // Successfully loaded, update the actual thumbnail
+          imgEl.src = thumbnailUrl + '?t=' + Date.now();
+          clearInterval(pollInterval);
+          console.log('Thumbnail loaded for media ID:', mediaId);
+        };
+        testImg.onerror = function() {
+          // Still not ready, continue polling
+          pollCount++;
+          if (pollCount >= maxPolls) {
+            clearInterval(pollInterval);
+            console.log('Thumbnail polling timeout for media ID:', mediaId);
+          }
+        };
+        testImg.src = thumbnailUrl + '?t=' + Date.now();
+      }, 500);
+    }, 100);
+  }
 
   function createMediaCard(item){
     const col = document.createElement('div'); col.className = 'col';

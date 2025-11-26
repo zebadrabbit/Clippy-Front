@@ -7,6 +7,26 @@
   <div class="text-muted">Welcome, {{ current_user.username }}</div>
   </div>
 
+  <!-- Announcements -->
+  {% if profile_incomplete %}
+  <div class="alert alert-warning alert-dismissible fade show" role="alert" id="profile-setup-alert">
+    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+    <strong>Complete Your Profile</strong>
+    <p class="mb-0">Set up your Twitch and Discord credentials to start fetching clips.
+      <a href="{{ url_for('auth.profile') }}" class="alert-link">Go to Profile</a>
+    </p>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+  </div>
+  {% endif %}
+
+  {% for announcement in announcements %}
+  <div class="alert alert-{{ announcement.announcement_type.value }} alert-dismissible fade show" role="alert" id="announcement-{{ announcement.id }}">
+    <strong>{{ announcement.title }}</strong>
+    <div>{{ announcement.message|safe }}</div>
+    <button type="button" class="btn-close" aria-label="Close" onclick="dismissAnnouncement({{ announcement.id }})"></button>
+  </div>
+  {% endfor %}
+
   <!-- Stats -->
   <div class="row g-3 mb-4">
     <div class="col-md-3">
@@ -161,6 +181,29 @@
 {% block scripts %}
   {{ super() }}
   <script>
+    // Dismiss announcement
+    function dismissAnnouncement(announcementId) {
+      fetch('/api/announcements/' + announcementId + '/dismiss', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+      .then(function(response) {
+        if (response.ok) {
+          const alert = document.getElementById('announcement-' + announcementId);
+          if (alert) {
+            const bsAlert = new bootstrap.Alert(alert);
+            bsAlert.close();
+          }
+        }
+      })
+      .catch(function(err) {
+        console.error('Failed to dismiss announcement:', err);
+      });
+    }
+
+    // Project preview hover effect
     (function(){
       const cards = document.querySelectorAll('.project-card');
       cards.forEach(function(card){

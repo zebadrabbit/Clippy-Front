@@ -13,7 +13,27 @@ All remaining tasks are **low priority** enhancements for future releases. Core 
 
 ### Optional Enhancements (v1.1.0+)
 
-#### 1. Advanced Notification Features (8-12 hours) - v1.1.0 Candidate
+#### 1. Preview Video Generation (4-6 hours) - v1.1.0 Candidate
+**Description:** Generate low-resolution preview videos that reflect actual compilation output with transformations applied
+
+**Features:**
+1. **GPU/CPU Worker Preview Rendering** (3-4 hours)
+   - Render 480p 10fps preview video on worker
+   - Apply same filters/transformations as final compilation (portrait crop, zoom, etc.)
+   - Cache previews for fast subsequent loads
+   - Background task with progress indicator
+
+2. **Preview Player Integration** (1-2 hours)
+   - Replace static thumbnail with video player
+   - Inline playback in compile step
+   - Seek controls for quick scrubbing
+   - Fallback to static thumbnail if preview fails
+
+**Current State:** Static thumbnail preview showing random frame from random clip (original orientation, no transformations)
+
+---
+
+#### 2. Advanced Notification Features (8-12 hours) - v1.1.0 Candidate
 **Description:** Enhance the existing SSE-based notification system with additional features
 
 **Features:**
@@ -130,10 +150,11 @@ All remaining tasks are **low priority** enhancements for future releases. Core 
 
 | Enhancement | Estimated Time | Target Release |
 |-------------|----------------|----------------|
+| Preview Video Generation | 4-6 hours | v1.1.0 |
 | Advanced Notifications | 8-12 hours | v1.1.0 |
 | Advanced Team Features | 12-16 hours | v1.2.0 |
 | Tag System Enhancements | 6-8 hours | v1.3.0 |
-| **TOTAL** | **26-36 hours** | **Q1 2026** |
+| **TOTAL** | **30-42 hours** | **Q1 2026** |
 
 ---
 
@@ -163,7 +184,7 @@ All remaining tasks are **low priority** enhancements for future releases. Core 
 ## 🎯 Implementation Priority
 
 ### Recommended Order
-1. **v1.1.0** - Advanced Notifications (highest user impact)
+1. **v1.1.0** - Preview Video Generation + Advanced Notifications (highest user impact)
 2. **v1.2.0** - Advanced Team Features (enterprise adoption)
 3. **v1.3.0** - Tag System Enhancements (power user workflows)
 
