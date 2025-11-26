@@ -70,7 +70,7 @@
       <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xl-4 g-3">
         {% for p in projects %}
           <div class="col">
-            <div class="card h-100 project-card position-relative">
+            <div class="card h-100 project-card position-relative" data-status="{{ p.status.value if p.status else 'draft' }}">
               <a class="text-decoration-none stretched-link" href="{{ url_for('main.project_details_by_public', public_id=p.public_id) if p.public_id else url_for('main.project_details', project_id=p.id) }}">
                 <div class="project-media position-relative">
                   {% set thumb_url = None %}
@@ -121,15 +121,7 @@
 
                   {# Status badge #}
                   {% if p.status %}
-                    {% set status_class = {
-                      'draft': 'bg-info',
-                      'downloading': 'bg-primary',
-                      'ready': 'bg-primary',
-                      'compiling': 'bg-warning text-dark',
-                      'completed': 'bg-success',
-                      'failed': 'bg-danger'
-                    } %}
-                    <span class="badge {{ status_class.get(p.status.value, 'bg-secondary') }} position-absolute top-0 start-0 m-2" style="opacity:0.9;">
+                    <span class="badge bg-status-{{ p.status.value }} position-absolute top-0 start-0 m-2" style="opacity:0.9;">
                       {{ p.status.value|title }}
                     </span>
                   {% endif %}

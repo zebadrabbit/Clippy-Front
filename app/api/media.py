@@ -416,9 +416,23 @@ def list_project_media_api(project_id: int):
             "music": MediaType.MUSIC,
         }
 
-        q = MediaFile.query.filter_by(user_id=current_user.id)
+        # Include both user's media and public library items
         if type_q in type_map:
-            q = q.filter_by(media_type=type_map[type_q])
+            # For library media types (intro/outro/transition/music), include public items
+            from sqlalchemy import or_
+
+            media_type_val = type_map[type_q]
+            q = MediaFile.query.filter(
+                MediaFile.media_type == media_type_val,
+                or_(
+                    MediaFile.user_id == current_user.id,
+                    MediaFile.is_public.is_(True),
+                ),
+            )
+        else:
+            # For other types, only show user's media
+            q = MediaFile.query.filter_by(user_id=current_user.id)
+
         q = q.order_by(MediaFile.uploaded_at.desc())
 
         items = []
@@ -435,6 +449,7 @@ def list_project_media_api(project_id: int):
                     "media_type": mf.media_type.value
                     if hasattr(mf.media_type, "value")
                     else str(mf.media_type),
+                    "is_public": mf.is_public if hasattr(mf, "is_public") else False,
                     "thumbnail_url": url_for(
                         "main.media_thumbnail", media_id=mf.id, _external=True
                     )

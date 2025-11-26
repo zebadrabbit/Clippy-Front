@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="mb-0"><i class="bi bi-collection-play"></i> Public Media Library</h2>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#uploadModal">
+      <i class="bi bi-cloud-upload"></i> Upload Media
+    </button>
+  </div>
+
+  <div class="row">
+    <div class="col-12 col-lg-3 mb-4 mb-lg-0">
+      {% set active_page = 'public_library' %}
+      {% include 'admin/_includes/sidebar.html' with context %}
+    </div>
+    <div class="col-12 col-lg-9">
+      <!-- Filter Tabs -->
+      <ul class="nav nav-pills mb-3">
+        <li class="nav-item">
+          <a class="nav-link {{ 'active' if not active_filter else '' }}" href="{{ url_for('admin.public_library') }}">
+            All ({{ counts.intro + counts.outro + counts.transition + counts.music }})
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link {{ 'active' if active_filter == 'intro' else '' }}" href="{{ url_for('admin.public_library', type='intro') }}">
+            Intros ({{ counts.intro }})
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link {{ 'active' if active_filter == 'outro' else '' }}" href="{{ url_for('admin.public_library', type='outro') }}">
+            Outros ({{ counts.outro }})
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link {{ 'active' if active_filter == 'transition' else '' }}" href="{{ url_for('admin.public_library', type='transition') }}">
+            Transitions ({{ counts.transition }})
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link {{ 'active' if active_filter == 'music' else '' }}" href="{{ url_for('admin.public_library', type='music') }}">
+            Music ({{ counts.music }})
+          </a>
+        </li>
+      </ul>
+
+      <!-- Media Grid -->
+      {% if public_media %}
+      <div class="row g-3">
+        {% for media in public_media %}
+        <div class="col-md-6 col-lg-4">
+          <div class="card h-100 media-card" data-type="{{ media.media_type.value if media.media_type else '' }}">
+            <div class="position-relative">
+              {% if media.thumbnail_path %}
+              <img src="{{ url_for('main.media_thumbnail', media_id=media.id) }}" class="card-img-top media-thumb" alt="{{ media.filename }}" style="height: 180px; object-fit: cover;">
+              {% elif media.mime_type and media.mime_type.startswith('audio') %}
+              <div class="d-flex align-items-center justify-content-center media-thumb" style="height: 180px; background: var(--bs-card-bg);">
+                <i class="bi bi-music-note-beamed" style="font-size: 3rem;"></i>
+              </div>
+              {% else %}
+              <div class="d-flex align-items-center justify-content-center bg-secondary text-white media-thumb" style="height: 180px;">
+                <i class="bi bi-file-earmark-music display-3"></i>
+              </div>
+              {% endif %}
+            </div>
+            <div class="card-body">
+              <h6 class="card-title text-truncate" title="{{ media.original_filename }}">
+                {{ media.original_filename }}
+              </h6>
+              {% if media.description %}
+              <p class="card-text small text-muted">{{ media.description }}</p>
+              {% endif %}
+              <ul class="list-unstyled small mb-0 mt-2">
+                {% if media.media_type %}
+                <li>
+                  <span class="badge text-bg-{{ media.media_type.value }}" data-role="type-badge">{{ media.media_type.value|title }}</span>
+                </li>
+                {% endif %}
+                <li><span class="text-muted">{{ (media.file_size / 1024 / 1024)|round(2) }} MB</span></li>
+                {% if media.mime_type and (media.mime_type.startswith('video') or media.mime_type.startswith('audio')) and media.duration %}
+                <li><span class="text-muted"><i class="bi bi-clock"></i> {{ media.duration_formatted }}</span></li>
+                {% endif %}
+                <li><span class="text-muted">{{ media.uploaded_at.strftime('%Y-%m-%d') }}</span></li>
+              </ul>
+            </div>
+            <div class="card-footer bg-transparent border-top-0">
+              <div class="d-flex gap-2">
+                <form method="POST" action="{{ url_for('admin.public_library_toggle', media_id=media.id) }}" class="flex-grow-1">
+                  <button type="submit" class="btn btn-sm btn-outline-secondary w-100">
+                    <i class="bi bi-eye{{ '' if media.is_public else '-slash' }}"></i>
+                    {{ 'Make Private' if media.is_public else 'Make Public' }}
+                  </button>
+                </form>
+                <form method="POST" action="{{ url_for('admin.public_library_delete', media_id=media.id) }}"
+                      onsubmit="return confirm('Delete this media file? This action cannot be undone.');">
+                  <button type="submit" class="btn btn-sm btn-outline-danger">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="alert alert-info">
+        <i class="bi bi-info-circle"></i>
+        No public media files found. Upload some media to get started.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Upload Modal -->
+<div class="modal fade" id="uploadModal" tabindex="-1" aria-labelledby="uploadModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="uploadModalLabel">Upload Public Media</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="POST" action="{{ url_for('admin.public_library_upload') }}" enctype="multipart/form-data">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label for="mediaType" class="form-label">Media Type</label>
+            <select class="form-select" id="mediaType" name="media_type" required>
+              <option value="intro">Intro</option>
+              <option value="outro">Outro</option>
+              <option value="transition">Transition</option>
+              <option value="music">Music</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label for="mediaFile" class="form-label">File</label>
+            <input type="file" class="form-control" id="mediaFile" name="file" accept="video/*,audio/*" required>
+            <div class="form-text">
+              Supported formats: MP4, WebM, MP3, OGG, WAV
+            </div>
+          </div>
+          <div class="mb-3">
+            <label for="mediaDescription" class="form-label">Description (optional)</label>
+            <textarea class="form-control" id="mediaDescription" name="description" rows="2"
+                      placeholder="Brief description of this media file"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Upload</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

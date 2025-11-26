@@ -700,6 +700,9 @@ class MediaFile(db.Model):
     )
     project_id = db.Column(db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}projects.id"))
 
+    # Public library flag - if True, available to all users
+    is_public = db.Column(db.Boolean, default=False, nullable=False, index=True)
+
     # Timestamps
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 

@@ -822,6 +822,7 @@ def media_library():
     query = current_user.media_files
 
     # Always exclude CLIP and COMPILATION from the default library view (user uploads only)
+    # Also exclude public library items (is_public=True)
     allowed_types = {
         MediaType.INTRO,
         MediaType.OUTRO,
@@ -829,9 +830,12 @@ def media_library():
         MediaType.MUSIC,
     }
     if type_filter and type_filter in [t.value for t in allowed_types]:
-        query = query.filter_by(media_type=MediaType(type_filter))
+        query = query.filter_by(media_type=MediaType(type_filter), is_public=False)
     else:
-        query = query.filter(MediaFile.media_type.in_(list(allowed_types)))
+        query = query.filter(
+            MediaFile.media_type.in_(list(allowed_types)),
+            MediaFile.is_public.is_(False),
+        )
 
     media_pagination = query.order_by(MediaFile.uploaded_at.desc()).paginate(
         page=page, per_page=per_page, error_out=False
@@ -1201,7 +1205,7 @@ def media_upload():
         try:
             from app.tasks.media_maintenance import process_uploaded_media_task
 
-            queue_name = "cpu"
+            queue_name = "celery"  # Default queue
             try:
                 from app.tasks.celery_app import celery_app as _celery
 
@@ -1219,6 +1223,7 @@ def media_upload():
                     queue_name = "cpu"
                 elif "gpu" in active_queues:
                     queue_name = "gpu"
+                # else fallback to "celery"
             except Exception:
                 pass
 

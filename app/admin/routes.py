@@ -2248,3 +2248,297 @@ def announcement_toggle(announcement_id):
         flash("Failed to toggle announcement.", "danger")
 
     return redirect(url_for("admin.announcements_list"))
+
+
+# ========================================
+# Public Library Management
+# ========================================
+
+
+@admin_bp.route("/public-library")
+@login_required
+@admin_required
+def public_library():
+    """
+    Public library management page.
+
+    Shows all media files marked as public and allows admin to
+    upload new public media or toggle existing media visibility.
+
+    Returns:
+        Response: Public library template
+    """
+    media_type_filter = request.args.get("type")
+
+    query = MediaFile.query.filter_by(is_public=True)
+
+    if media_type_filter:
+        try:
+            media_type = MediaType(media_type_filter)
+            query = query.filter_by(media_type=media_type)
+        except ValueError:
+            pass
+
+    public_media = query.order_by(MediaFile.uploaded_at.desc()).all()
+
+    # Get counts by type
+    counts = {
+        "intro": MediaFile.query.filter_by(
+            is_public=True, media_type=MediaType.INTRO
+        ).count(),
+        "outro": MediaFile.query.filter_by(
+            is_public=True, media_type=MediaType.OUTRO
+        ).count(),
+        "transition": MediaFile.query.filter_by(
+            is_public=True, media_type=MediaType.TRANSITION
+        ).count(),
+        "music": MediaFile.query.filter_by(
+            is_public=True, media_type=MediaType.MUSIC
+        ).count(),
+    }
+
+    return render_template(
+        "admin/public_library.html",
+        public_media=public_media,
+        counts=counts,
+        active_filter=media_type_filter,
+    )
+
+
+@admin_bp.route("/public-library/upload", methods=["POST"])
+@login_required
+@admin_required
+def public_library_upload():
+    """
+    Upload a new file to the public library.
+
+    Returns:
+        Response: Redirect to public library with status message
+    """
+    import hashlib
+    import mimetypes
+
+    import app.storage as storage_lib
+
+    if "file" not in request.files:
+        flash("No file uploaded.", "danger")
+        return redirect(url_for("admin.public_library"))
+
+    file = request.files["file"]
+    media_type_str = request.form.get("media_type", "intro")
+    description = request.form.get("description", "").strip()
+
+    if not file or file.filename == "":
+        flash("No file selected.", "danger")
+        return redirect(url_for("admin.public_library"))
+
+    try:
+        media_type = MediaType(media_type_str)
+    except ValueError:
+        flash("Invalid media type.", "danger")
+        return redirect(url_for("admin.public_library"))
+
+    try:
+        # Build storage path (use admin user's library)
+        original_name = os.path.basename(file.filename or "")
+        safe_name = secure_filename(original_name) or "uploaded_file"
+        mime_type = file.content_type or "application/octet-stream"
+
+        # Determine subfolder based on media type
+        if media_type == MediaType.INTRO:
+            user_dir = storage_lib.intros_dir(current_user, None, library=True)
+        elif media_type == MediaType.OUTRO:
+            user_dir = storage_lib.outros_dir(current_user, None, library=True)
+        elif media_type == MediaType.TRANSITION:
+            user_dir = storage_lib.transitions_dir(current_user, None, library=True)
+        elif media_type == MediaType.MUSIC:
+            base_lib = storage_lib.library_root(current_user)
+            user_dir = os.path.join(base_lib, "music")
+        else:
+            base_lib = storage_lib.library_root(current_user)
+            user_dir = os.path.join(base_lib, "media")
+
+        storage_lib.ensure_dirs(user_dir)
+
+        # Handle duplicate filenames
+        base_path = os.path.join(user_dir, safe_name)
+        dest_path = base_path
+        counter = 1
+        while os.path.exists(dest_path):
+            name_part, ext_part = os.path.splitext(safe_name)
+            dest_path = os.path.join(user_dir, f"{name_part}_{counter}{ext_part}")
+            counter += 1
+        unique_name = os.path.basename(dest_path)
+
+        # Save file
+        file.save(dest_path)
+
+        # Compute checksum
+        checksum = None
+        try:
+            h = hashlib.sha256()
+            with open(dest_path, "rb") as fh:
+                for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                    h.update(chunk)
+            checksum = h.hexdigest()
+        except Exception:
+            checksum = None
+
+        # Improve MIME detection
+        try:
+            if not mime_type or mime_type in (
+                "application/octet-stream",
+                "binary/octet-stream",
+            ):
+                try:
+                    import magic  # type: ignore
+
+                    ms = magic.Magic(mime=True)
+                    detected = ms.from_file(dest_path)
+                    if detected:
+                        mime_type = detected
+                except Exception:
+                    guessed, _ = mimetypes.guess_type(dest_path)
+                    if guessed:
+                        mime_type = guessed
+        except Exception:
+            pass
+
+        # Create MediaFile record marked as public
+        media = MediaFile(
+            filename=unique_name,
+            original_filename=original_name,
+            description=description,
+            file_path=storage_lib.instance_canonicalize(dest_path) or dest_path,
+            file_size=os.path.getsize(dest_path),
+            mime_type=mime_type,
+            media_type=media_type,
+            user_id=current_user.id,
+            project_id=None,
+            is_public=True,
+            checksum=checksum,
+        )
+
+        db.session.add(media)
+        db.session.commit()
+
+        # Queue background task to generate thumbnail and extract metadata
+        try:
+            from app.tasks.media_maintenance import process_uploaded_media_task
+
+            queue_name = "celery"  # Default queue
+            try:
+                from app.tasks.celery_app import celery_app as _celery
+
+                i = _celery.control.inspect(timeout=1.0)
+                active_queues = set()
+                if i:
+                    aq = i.active_queues() or {}
+                    for _worker, queues in aq.items():
+                        for q in queues or []:
+                            qname = q.get("name") if isinstance(q, dict) else None
+                            if qname:
+                                active_queues.add(qname)
+
+                if "cpu" in active_queues:
+                    queue_name = "cpu"
+                elif "gpu" in active_queues:
+                    queue_name = "gpu"
+                # else fallback to "celery"
+            except Exception:
+                pass
+
+            process_uploaded_media_task.apply_async(
+                args=(media.id,),
+                kwargs={
+                    "generate_thumbnail": bool(
+                        mime_type and mime_type.startswith("video")
+                    )
+                },
+                queue=queue_name,
+            )
+            current_app.logger.info(
+                f"Queued media processing for public media {media.id} on {queue_name}"
+            )
+        except Exception as e:
+            current_app.logger.warning(
+                f"Failed to queue media processing for {media.id}: {e}"
+            )
+
+        flash(
+            f"Public {media_type.value} uploaded successfully: {original_name}",
+            "success",
+        )
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error uploading public media: {e}", exc_info=True)
+        flash("Failed to upload file.", "danger")
+
+    return redirect(url_for("admin.public_library"))
+
+
+@admin_bp.route("/public-library/<int:media_id>/toggle", methods=["POST"])
+@login_required
+@admin_required
+def public_library_toggle(media_id):
+    """
+    Toggle public visibility of a media file.
+
+    Args:
+        media_id: ID of the media file
+
+    Returns:
+        Response: Redirect to public library
+    """
+    media = MediaFile.query.get_or_404(media_id)
+
+    try:
+        media.is_public = not media.is_public
+        db.session.commit()
+
+        status = "public" if media.is_public else "private"
+        flash(f"Media marked as {status}.", "success")
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error toggling media visibility: {e}")
+        flash("Failed to update media visibility.", "danger")
+
+    return redirect(url_for("admin.public_library"))
+
+
+@admin_bp.route("/public-library/<int:media_id>/delete", methods=["POST"])
+@login_required
+@admin_required
+def public_library_delete(media_id):
+    """
+    Delete a media file from the public library.
+
+    Args:
+        media_id: ID of the media file to delete
+
+    Returns:
+        Response: Redirect to public library
+    """
+    media = MediaFile.query.get_or_404(media_id)
+
+    try:
+        # Delete physical files
+        if media.file_path and os.path.exists(media.file_path):
+            os.remove(media.file_path)
+
+        if media.thumbnail_path and os.path.exists(media.thumbnail_path):
+            os.remove(media.thumbnail_path)
+
+        db.session.delete(media)
+        db.session.commit()
+
+        flash("Media file deleted successfully.", "success")
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error deleting media: {e}", exc_info=True)
+        flash("Failed to delete media file.", "danger")
+
+    return redirect(url_for("admin.public_library"))

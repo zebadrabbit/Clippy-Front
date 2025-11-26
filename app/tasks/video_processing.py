@@ -589,3 +589,28 @@ def resolve_binary(app, name: str) -> str:
     if os.path.exists(local_bin):
         return local_bin
     return name
+
+
+def ffmpeg_render_preview(input_path, output_path):
+    """
+    Render a low-res preview video (480p, 10fps) from input_path to output_path.
+    """
+    import subprocess
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        input_path,
+        "-vf",
+        "scale=480:-2,fps=10",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "32",
+        "-an",
+        output_path,
+    ]
+    subprocess.run(cmd, check=True)

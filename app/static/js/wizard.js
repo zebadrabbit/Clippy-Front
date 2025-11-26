@@ -1850,11 +1850,21 @@
       card.className = 'card';
       card.style.width = '160px';
       card.style.cursor = 'pointer';
+      const imgWrapper = document.createElement('div');
+      imgWrapper.style.position = 'relative';
       const img = document.createElement('img');
       img.className = 'card-img-top';
       img.alt = it.original_filename || it.filename;
       img.src = it.thumbnail_url || '';
       img.onerror = () => { img.classList.add('d-none'); };
+      imgWrapper.appendChild(img);
+      if (it.is_public) {
+        const badge = document.createElement('span');
+        badge.className = 'badge bg-info position-absolute top-0 start-0 m-1';
+        badge.style.fontSize = '0.6rem';
+        badge.innerHTML = '<i class="bi bi-globe2"></i> Public';
+        imgWrapper.appendChild(badge);
+      }
       const body = document.createElement('div');
       body.className = 'card-body p-2';
       const title = document.createElement('div');
@@ -1869,7 +1879,7 @@
       });
       body.appendChild(title);
       body.appendChild(btn);
-      card.appendChild(img);
+      card.appendChild(imgWrapper);
       card.appendChild(body);
       el.appendChild(card);
     });
@@ -1906,11 +1916,21 @@
       const card = document.createElement('div');
       card.className = 'card';
       card.style.width = '160px';
+      const imgWrapper = document.createElement('div');
+      imgWrapper.style.position = 'relative';
       const img = document.createElement('img');
       img.className = 'card-img-top';
       img.alt = it.original_filename || it.filename;
       img.src = it.thumbnail_url || '';
       img.onerror = () => { img.classList.add('d-none'); };
+      imgWrapper.appendChild(img);
+      if (it.is_public) {
+        const badge = document.createElement('span');
+        badge.className = 'badge bg-info position-absolute top-0 start-0 m-1';
+        badge.style.fontSize = '0.6rem';
+        badge.innerHTML = '<i class="bi bi-globe2"></i> Public';
+        imgWrapper.appendChild(badge);
+      }
       const body = document.createElement('div');
       body.className = 'card-body p-2';
       const row = document.createElement('div');
@@ -1934,7 +1954,7 @@
       row.appendChild(cb);
       row.appendChild(title);
       body.appendChild(row);
-      card.appendChild(img);
+      card.appendChild(imgWrapper);
       card.appendChild(body);
       container.appendChild(card);
     });
@@ -1956,6 +1976,15 @@
       card.className = 'card';
       card.style.width = '160px';
       card.style.cursor = 'pointer';
+      card.style.position = 'relative';
+      if (it.is_public) {
+        const badge = document.createElement('span');
+        badge.className = 'badge bg-info position-absolute top-0 start-0 m-2';
+        badge.style.fontSize = '0.6rem';
+        badge.style.zIndex = '10';
+        badge.innerHTML = '<i class="bi bi-globe2"></i> Public';
+        card.appendChild(badge);
+      }
       const body = document.createElement('div');
       body.className = 'card-body p-2';
       const icon = document.createElement('div');
