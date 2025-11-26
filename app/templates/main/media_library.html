@@ -11,13 +11,39 @@
        data-thumbnail-url-template="{{ url_for('main.media_thumbnail', media_id=0) }}"
        class="d-none"></div>
   <div class="d-flex justify-content-between align-items-center mb-3">
-    <h2 class="mb-0"><i class="bi bi-collection-play"></i> Media Library</h2>
+    <h2 class="mb-0 d-flex align-items-center">
+      <i class="bi bi-collection-play"></i> Media Library
+      <button type="button" class="btn btn-sm btn-link text-muted p-0 ms-2"
+              data-bs-toggle="popover"
+              data-bs-placement="bottom"
+              data-bs-title="Quick Start: Media Library"
+              data-bs-html="true"
+              data-bs-content='<p class="mb-2">Your personal video library for compilations:</p>
+                               <ul class="small mb-2">
+                                 <li><strong>Upload</strong> files or download from sources</li>
+                                 <li><strong>Tag</strong> files for easy searching</li>
+                                 <li><strong>Organize</strong> by type (intro, clip, outro, transition)</li>
+                                 <li><strong>Reuse</strong> content across projects</li>
+                               </ul>
+                               <div class="mt-2 pt-2 border-top">
+                                 <a href="{{ url_for("help.topic", topic="media-library") }}" class="btn btn-sm btn-outline-primary w-100">
+                                   <i class="bi bi-book me-1"></i> Full Guide
+                                 </a>
+                               </div>'>
+        <i class="bi bi-question-circle-fill"></i>
+      </button>
+    </h2>
   </div>
 
   <!-- Upload Zone (Dropzone) -->
   <div class="card mb-4">
-    <div class="card-header card-header--primary">
+    <div class="card-header card-header--primary d-flex align-items-center justify-content-between">
       <strong>Upload Media</strong>
+      <i class="bi bi-question-circle text-light help-icon"
+         data-bs-toggle="tooltip"
+         data-bs-placement="top"
+         data-bs-html="true"
+         title="Drag and drop files here or click to browse. Supported: MP4, MOV, AVI, MKV, WebM. Max size depends on your tier."></i>
     </div>
     <div class="card-body">
       <div class="row g-3 align-items-center">

@@ -41,6 +41,7 @@ ClippyFront is a Flask-based web application for organizing media and assembling
 - **[Tiers & Quotas](docs/TIERS-AND-QUOTAS.md)** - Subscription system
 - **[Worker Versioning](docs/WORKER-VERSION-CHECKING.md)** - Version compatibility
 - **[Error Handling Audit](docs/ERROR_HANDLING_AUDIT.md)** - Error handling analysis (v0.13.0+)
+- **[Help System](docs/HELP_SYSTEM.md)** - User help implementation guide (v0.14.0+)
 - **[Changelog](CHANGELOG.md)** - Release history
 
 ## Quick Start
@@ -91,6 +92,17 @@ See [Installation Guide](docs/INSTALLATION.md) for complete setup.
 - **Branded overlays** with author/game text and avatars
 - **Progress tracking** with live logs
 - **Direct project navigation** - compiles redirect to project details page
+
+### User Help System (v0.14.0+)
+
+- **Wiki-style documentation** accessible throughout the app
+- **Contextual help** with tooltips and popovers on key UI elements
+- **Searchable topics** covering all features
+- **Markdown-based content** for easy updates
+- **Quick-start guides** in project wizard, media library, and other pages
+- Help accessible via navigation icon or direct links
+
+See [Help System](docs/HELP_SYSTEM.md) for implementation details.
 
 ### Worker System (v0.12.0+)
 

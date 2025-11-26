@@ -1,0 +1,87 @@
+/* Contextual Help Styles */
+
+.help-icon {
+    font-size: 0.9em;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+    cursor: help;
+}
+
+.help-icon:hover {
+    opacity: 1;
+}
+
+.help-popover-content {
+    max-width: 350px;
+}
+
+.help-popover-content ul {
+    padding-left: 1.2rem;
+    margin-bottom: 0.5rem;
+}
+
+.help-popover-content li {
+    margin-bottom: 0.25rem;
+}
+
+.help-popover-content code {
+    background-color: rgba(var(--bs-dark-rgb), 0.1);
+    padding: 0.2rem 0.4rem;
+    border-radius: 0.25rem;
+    font-size: 0.85em;
+}
+
+/* Help section in cards */
+.card .help-section {
+    background-color: rgba(var(--bs-info-rgb), 0.05);
+    border-left: 3px solid var(--bs-info);
+    padding: 0.75rem 1rem;
+    margin: 1rem 0;
+    border-radius: 0.25rem;
+}
+
+.card .help-section .help-title {
+    font-weight: 600;
+    color: var(--bs-info);
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.card .help-section .help-content {
+    font-size: 0.9rem;
+    line-height: 1.6;
+}
+
+/* Inline help tooltips */
+.tooltip-inner {
+    max-width: 300px;
+    text-align: left;
+}
+
+/* Help link in navigation */
+.nav-link[title="Help Center"] {
+    font-size: 1.25rem;
+    opacity: 0.8;
+    transition: opacity 0.2s;
+}
+
+.nav-link[title="Help Center"]:hover {
+    opacity: 1;
+}
+
+/* Bootstrap popover customization for help */
+.popover {
+    max-width: 400px;
+}
+
+.popover-header {
+    background-color: var(--bs-primary);
+    color: white;
+    font-weight: 600;
+}
+
+.popover-body {
+    font-size: 0.9rem;
+}

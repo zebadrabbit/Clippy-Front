@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" class="mb-3">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{{ url_for('help.index') }}">Help Center</a></li>
+            <li class="breadcrumb-item active" aria-current="page">Search</li>
+        </ol>
+    </nav>
+
+    <h1 class="mb-4">
+        <i class="bi bi-search"></i>
+        Search Help
+    </h1>
+
+    <!-- Search Form -->
+    <div class="row mb-4">
+        <div class="col-lg-8">
+            <form action="{{ url_for('help.search') }}" method="get">
+                <div class="input-group input-group-lg">
+                    <span class="input-group-text">
+                        <i class="bi bi-search"></i>
+                    </span>
+                    <input type="text" class="form-control" name="q" value="{{ query }}" placeholder="Search help topics..." autocomplete="off">
+                    <button class="btn btn-primary" type="submit">Search</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Search Results -->
+    {% if query %}
+    <div class="row">
+        <div class="col-lg-10">
+            <h5 class="mb-3">
+                {% if results %}
+                    Found {{ results|length }} result{{ 's' if results|length != 1 else '' }} for "{{ query }}"
+                {% else %}
+                    No results found for "{{ query }}"
+                {% endif %}
+            </h5>
+
+            {% if results %}
+            <div class="list-group">
+                {% for result in results %}
+                <a href="{{ url_for('help.topic', topic=result.slug) }}" class="list-group-item list-group-item-action">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h6 class="mb-1">{{ result.title }}</h6>
+                    </div>
+                    <p class="mb-1 text-muted small">{{ result.snippet }}</p>
+                </a>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle me-2"></i>
+                Try different keywords or browse topics from the <a href="{{ url_for('help.index') }}" class="alert-link">Help Center</a>.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

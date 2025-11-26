@@ -2,8 +2,8 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "1.0.3"
-__version_info__ = (1, 0, 3)
+__version__ = "1.0.4"
+__version_info__ = (1, 0, 4)
 
 # Version history tracking
 VERSION_HISTORY = {
@@ -172,6 +172,13 @@ VERSION_HISTORY = {
         "Wizard step navigation and UI polish: fixed wizard URL parameter handling to support direct links to specific steps (e.g., /projects/wizard?project_id=29&step=3). "
         "Backend now parses project_id and step query params, validates project ownership, and passes initial_step to template. "
         "Draft projects now display with brighter cyan badge (bg-info) instead of muted gray for better visibility on projects page."
+    ),
+    "1.0.4": (
+        "Enhanced progress bar and timeline UI: CSS Tricks animated striped progress bar with smooth transitions and theme-aware gradient colors. "
+        "Progress animates smoothly (1% every 20ms) to target value, stays at 100% on completion, and triggers celebration confetti from bar location. "
+        "Timeline confirmation redesigned as large pill-shaped button with secondary background, auto-disables when timeline empty. "
+        "Fixed orphaned static separators when clips removed (rebuildSeparators now called in RemoveClipCommand execute/undo). "
+        "Progress label shows dynamic text: 'Ready.' → 'Compiling...' → '100%' with theme-aware colors."
     ),
 }
 

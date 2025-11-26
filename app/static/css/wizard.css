@@ -79,10 +79,22 @@
 
 /* Timeline uses horizontal, scrollable block items */
 #timeline {
-    min-height: 180px;
+    min-height: 200px;
     background: linear-gradient(transparent 23px, rgba(255,255,255,0.06) 24px), linear-gradient(90deg, transparent 23px, rgba(255,255,255,0.06) 24px);
     background-size: 24px 24px, 24px 24px; /* subtle grid */
     border-radius: 8px;
+    position: relative;
+}
+
+/* Dark overlay to improve card visibility against grid */
+#timeline::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 8px;
+    pointer-events: none;
+    z-index: 0;
 }
 
 .timeline-list {
@@ -93,6 +105,8 @@
     overflow-x: auto;
     padding: 12px 8px;
     scroll-snap-type: x proximity;
+    position: relative;
+    z-index: 1;
 }
 
 .timeline-card {
@@ -226,12 +240,29 @@
     font-weight: 700;
 }
 
-/* timeline info badge (transitions) */
+/* timeline info footer (status line for transitions/music) */
+#timeline-info {
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.8);
+    padding: 0.5rem 1rem;
+    min-height: 2.5rem;
+    display: flex;
+    align-items: center;
+}
+
 #timeline-info .timeline-transitions {
-    border-radius: 8px;
-    background: rgba(13,110,253,0.12);
-    color: #d1e9ff;
-    border: 1px solid rgba(13,110,253,0.4);
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.8);
+    padding: 0;
+    margin: 0;
+    display: inline;
+}
+
+#timeline-info .btn-remove-music {
+    vertical-align: middle;
+    padding: 0.1rem 0.3rem;
+    font-size: 0.8rem;
 }
 
 /* emphasize clip visual boundaries */
@@ -792,3 +823,110 @@
 
 /* Thicker compile progress bar that aligns visually with the clip box */
 .progress.compile-progress { height: 14px; border-radius: 10px; }
+
+/* Compile progress bar label */
+#compile-progress-label {
+  position: relative;
+  margin: 0 0 0.5em;
+  font-weight: 600;
+  color: var(--bs-body-color);
+}
+
+#compile-progress-label:after {
+  content: attr(data-value) '%';
+  position: absolute;
+  right: 0;
+}
+
+/* Compile progress bar */
+progress[value].compile {
+  appearance: none;
+  border: none;
+  width: 100%;
+  height: 30px;
+  background-color: whiteSmoke;
+  border-radius: 3px;
+  box-shadow: 0 2px 3px rgba(0,0,0,.5) inset;
+  position: relative;
+  margin: 0 0 1.5em;
+  transition: all 0.3s ease-out;
+}
+
+/* Smooth progress updates */
+progress[value].compile {
+  --progress-value: 0;
+}
+
+progress[value].compile::-webkit-progress-bar {
+  background-color: whiteSmoke;
+  border-radius: 3px;
+  box-shadow: 0 2px 3px rgba(0,0,0,.5) inset;
+}
+
+progress[value].compile::-webkit-progress-value {
+  position: relative;
+  background-image:
+    -webkit-linear-gradient(135deg,
+                           transparent,
+                           transparent 33%,
+                           rgba(0,0,0,.1) 33%,
+                           rgba(0,0,0,.1) 66%,
+                           transparent 66%),
+    -webkit-linear-gradient(top,
+                          rgba(255, 255, 255, .25),
+                          rgba(0,0,0,.2)),
+    -webkit-linear-gradient(left, var(--bs-primary), var(--bs-accent, var(--bs-secondary)));
+  background-size: 35px 30px, 100% 100%, 100% 100%;
+  border-radius: 3px;
+  animation: animate-stripes 5s linear infinite;
+  transition: width 0.5s ease-out;
+}
+
+@keyframes animate-stripes {
+  100% { background-position: -100px 0; }
+}
+
+progress[value].compile::-webkit-progress-value:after {
+  content: '';
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  top: 12px;
+  right: 7px;
+  background-color: white;
+  border-radius: 100%;
+}
+
+progress[value].compile::-moz-progress-bar {
+  background-image:
+    -moz-linear-gradient(135deg,
+                         transparent,
+                         transparent 33%,
+                         rgba(0,0,0,.1) 33%,
+                         rgba(0,0,0,.1) 66%,
+                         transparent 66%),
+    -moz-linear-gradient(top,
+                        rgba(255, 255, 255, .25),
+                        rgba(0,0,0,.2)),
+    -moz-linear-gradient(left, var(--bs-primary), var(--bs-accent, var(--bs-secondary)));
+  background-size: 35px 30px, 100% 100%, 100% 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease-out;
+}
+
+/* Fallback for older browsers */
+.progress-bar {
+  background-color: whiteSmoke;
+  border-radius: 3px;
+  box-shadow: 0 2px 3px rgba(0,0,0,.5) inset;
+  width: 100%;
+  height: 30px;
+}
+
+.progress-bar span {
+  background-color: royalblue;
+  border-radius: 3px;
+  display: block;
+  text-indent: -9999px;
+  height: 30px;
+}

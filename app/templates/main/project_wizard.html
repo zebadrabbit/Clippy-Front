@@ -3,6 +3,49 @@
 {% block styles %}
 {{ super() }}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/wizard.css') }}">
+<style>
+  /* Larger checkbox for timeline confirmation */
+  #arranged-confirm {
+    width: 1.5em;
+    height: 1.5em;
+    cursor: pointer;
+  }
+  #arranged-confirm + label {
+    cursor: pointer;
+    font-size: 1.1rem;
+    font-weight: 500;
+    margin-left: 0.5rem;
+  }
+  .timeline-confirm-box {
+    background: var(--bs-secondary-bg);
+    border: none;
+    border-radius: 2rem;
+    padding: 1.25rem 2rem;
+    text-align: center;
+    transition: all 0.2s ease;
+    display: inline-block;
+    max-width: fit-content;
+    margin: 0 auto;
+  }
+  .timeline-confirm-box:hover {
+    background: var(--bs-secondary);
+    color: white;
+  }
+  .timeline-confirm-box:hover #arranged-confirm + label {
+    color: white;
+  }
+  .timeline-confirm-box .form-check {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+  }
+  .timeline-confirm-box .form-check-label {
+    font-size: 1.3rem;
+    font-weight: 600;
+    margin-bottom: 0;
+  }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -11,13 +54,32 @@
 
 <div class="container py-4">
   <div class="d-flex justify-content-between align-items-center mb-3">
-    <h2 class="mb-0">
+    <h2 class="mb-0 d-flex align-items-center">
       <i class="bi bi-magic"></i>
       {% if existing_project %}
         Edit Project: {{ existing_project.name }}
       {% else %}
         New Project Wizard
       {% endif %}
+      <button type="button" class="btn btn-sm btn-link text-muted p-0 ms-2"
+              data-bs-toggle="popover"
+              data-bs-placement="bottom"
+              data-bs-title="Quick Start: Creating Projects"
+              data-bs-html="true"
+              data-bs-content='<p class="mb-2">The wizard guides you through 4 simple steps:</p>
+                               <ol class="small mb-2">
+                                 <li><strong>Setup:</strong> Choose source and configure settings</li>
+                                 <li><strong>Get Clips:</strong> Fetch videos from Twitch/Discord</li>
+                                 <li><strong>Arrange:</strong> Build your timeline</li>
+                                 <li><strong>Compile:</strong> Render the final video</li>
+                               </ol>
+                               <div class="mt-2 pt-2 border-top">
+                                 <a href="{{ url_for("help.topic", topic="creating-projects") }}" class="btn btn-sm btn-outline-primary w-100">
+                                   <i class="bi bi-book me-1"></i> Full Guide
+                                 </a>
+                               </div>'>
+        <i class="bi bi-question-circle-fill"></i>
+      </button>
     </h2>
   <a class="btn btn-outline-secondary" href="{% if existing_project %}{{ url_for('main.project_details_by_public', public_id=existing_project.public_id) }}{% else %}{{ url_for('main.projects') }}{% endif %}">
     {% if existing_project %}Back to Project{% else %}Back to Projects{% endif %}
@@ -41,7 +103,14 @@
       <div class="wizard-step" data-step="1">
         <form id="setup-form" class="row g-3">
           <div class="col-md-4">
-            <label class="form-label">Route</label>
+            <label class="form-label d-flex align-items-center">
+              Route
+              <i class="bi bi-question-circle text-muted ms-1 help-icon"
+                 data-bs-toggle="tooltip"
+                 data-bs-placement="top"
+                 data-bs-html="true"
+                 title="<strong>Twitch:</strong> Fetch clips from your Twitch channel<br><strong>Discord:</strong> Download videos from Discord messages"></i>
+            </label>
             <select class="form-select" name="route" id="route-select">
               <option value="twitch" selected>Twitch</option>
               <option value="discord">Discord</option>
@@ -74,6 +143,11 @@
                     <div class="d-flex align-items-center gap-2 audio-norm-head">
                       <input class="form-check-input" type="checkbox" id="audio-norm-enabled">
                       <label class="form-label mb-0" for="audio-norm-enabled">Audio Normalization</label>
+                      <i class="bi bi-question-circle text-light ms-1 help-icon"
+                         data-bs-toggle="tooltip"
+                         data-bs-placement="top"
+                         data-bs-html="true"
+                         title="Ensures consistent volume across all clips. Recommended for compilations with clips from different sources."></i>
                     </div>
                     <span class="small" style="opacity: .85;">optional</span>
                   </div>
@@ -286,7 +360,7 @@
         </div>
 
         <!-- Keyboard Shortcuts Help -->
-        <div class="alert alert-light border d-flex justify-content-between align-items-center mb-3">
+        <div class="alert alert-light border d-flex justify-content-between align-items-center mb-3 d-none">
           <div>
             <strong><i class="bi bi-keyboard"></i> Keyboard Shortcuts:</strong>
             <span class="ms-2 small text-muted">
@@ -303,10 +377,19 @@
           <div class="card">
             <div class="card-header">Timeline</div>
             <div class="card-body" id="timeline">
-              <div id="timeline-info" class="mb-2"></div>
               <div class="timeline-drop-indicator" id="timeline-drop-top"></div>
               <div class="timeline-list" id="timeline-list"></div>
               <div class="timeline-drop-indicator" id="timeline-drop-bottom"></div>
+            </div>
+            <div class="card-footer bg-dark border-top d-flex justify-content-between align-items-center">
+              <div id="timeline-info"></div>
+              <div class="text-muted small">
+                <i class="bi bi-keyboard"></i>
+                <kbd>↑</kbd>/<kbd>↓</kbd> Navigate •
+                <kbd>Delete</kbd> Remove •
+                <kbd>Ctrl+S</kbd> Save •
+                <kbd>Ctrl+Z</kbd>/<kbd>Ctrl+Y</kbd> Undo/Redo
+              </div>
             </div>
           </div>
         </div>
@@ -488,9 +571,13 @@
           </div>
         </div>
 
-        <div class="form-check mt-3">
-          <input class="form-check-input" type="checkbox" id="arranged-confirm">
-          <label class="form-check-label" for="arranged-confirm">I have arranged my timeline</label>
+        <div class="text-center mt-3">
+          <div class="timeline-confirm-box">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="arranged-confirm">
+              <label class="form-check-label" for="arranged-confirm">I have arranged my timeline</label>
+            </div>
+          </div>
         </div>
         <div class="d-flex justify-content-between wizard-nav mt-4">
           <button class="btn btn-outline-secondary" data-prev="2">Back: Get Clips</button>
@@ -524,8 +611,13 @@
         </div>
 
         <!-- Progress Bar -->
-        <div class="progress compile-progress mb-3" role="progressbar" aria-label="Compile" aria-valuemin="0" aria-valuemax="100" style="height: 25px">
-          <div class="progress-bar progress-bar-striped" id="compile-progress" style="width: 0%">0%</div>
+        <div class="mb-3">
+          <p id="compile-progress-label" data-value="0">Ready.</p>
+          <progress id="compile-progress-bar" max="100" value="0" class="compile">
+            <div class="progress-bar">
+              <span style="width: 0%">0%</span>
+            </div>
+          </progress>
         </div>
 
         <!-- Compile Log -->

@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+
+{% block styles %}
+{{ super() }}
+<style>
+    .help-content {
+        line-height: 1.8;
+    }
+    .help-content h2 {
+        margin-top: 2rem;
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid rgba(var(--bs-border-color-rgb), 0.3);
+    }
+    .help-content h3 {
+        margin-top: 1.5rem;
+        margin-bottom: 0.75rem;
+    }
+    .help-content h4 {
+        margin-top: 1rem;
+        margin-bottom: 0.5rem;
+    }
+    .help-content img {
+        max-width: 100%;
+        height: auto;
+        border-radius: 0.5rem;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        margin: 1rem 0;
+    }
+    .help-content pre {
+        background-color: rgba(var(--bs-dark-rgb), 0.05);
+        padding: 1rem;
+        border-radius: 0.5rem;
+        overflow-x: auto;
+    }
+    .help-content code {
+        background-color: rgba(var(--bs-dark-rgb), 0.05);
+        padding: 0.2rem 0.4rem;
+        border-radius: 0.25rem;
+        font-size: 0.9em;
+    }
+    .help-content pre code {
+        background-color: transparent;
+        padding: 0;
+    }
+    .help-content table {
+        width: 100%;
+        margin: 1rem 0;
+    }
+    .help-content table th {
+        background-color: rgba(var(--bs-primary-rgb), 0.1);
+    }
+    .help-toc {
+        position: sticky;
+        top: 2rem;
+    }
+    .help-toc ul {
+        list-style: none;
+        padding-left: 1rem;
+    }
+    .help-toc a {
+        color: inherit;
+        text-decoration: none;
+    }
+    .help-toc a:hover {
+        color: var(--bs-primary);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" class="mb-3">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{{ url_for('help.index') }}">Help Center</a></li>
+            <li class="breadcrumb-item active" aria-current="page">{{ title }}</li>
+        </ol>
+    </nav>
+
+    <div class="row">
+        <!-- Main Content -->
+        <div class="col-lg-9">
+            <article class="help-content">
+                {{ content|safe }}
+            </article>
+
+            <!-- Related Topics -->
+            {% if related %}
+            <div class="mt-5 pt-4 border-top">
+                <h4 class="mb-3">Related Topics</h4>
+                <div class="row g-3">
+                    {% for rel_topic in related %}
+                    <div class="col-md-4">
+                        <a href="{{ url_for('help.topic', topic=rel_topic.slug) }}" class="card text-decoration-none h-100">
+                            <div class="card-body">
+                                <h6 class="card-title">{{ rel_topic.title }}</h6>
+                                <p class="card-text text-muted small">Learn more <i class="bi bi-arrow-right"></i></p>
+                            </div>
+                        </a>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Feedback -->
+            <div class="mt-4 pt-4 border-top">
+                <p class="text-muted small">
+                    <i class="bi bi-chat-left-text me-1"></i>
+                    Was this helpful? If you have feedback or need additional help, please contact your administrator.
+                </p>
+            </div>
+        </div>
+
+        <!-- Sidebar with TOC -->
+        <div class="col-lg-3">
+            {% if toc %}
+            <div class="help-toc">
+                <h6 class="text-muted mb-3">On This Page</h6>
+                {{ toc|safe }}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

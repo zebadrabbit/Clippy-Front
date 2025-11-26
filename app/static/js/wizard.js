@@ -310,6 +310,7 @@
           // Store HTML for undo
           this.cardHTML = card.outerHTML;
           card.remove();
+          rebuildSeparators();
         }
         saveTimelineOrder().catch(() => {});
       },
@@ -337,6 +338,7 @@
           removeBtn.addEventListener('click', handleRemoveClip);
         }
 
+        rebuildSeparators();
         saveTimelineOrder().catch(() => {});
       }
     };
@@ -1307,6 +1309,20 @@
   // Arrange gating
   const next3Btn = document.getElementById('next-3');
   const arrangedConfirm = document.getElementById('arranged-confirm');
+
+  // Function to check if timeline has clips
+  function updateArrangedConfirmState() {
+    const timelineList = document.getElementById('timeline-list');
+    const hasClips = timelineList && timelineList.querySelectorAll('.timeline-card[data-clip-id]').length > 0;
+    if (arrangedConfirm) {
+      arrangedConfirm.disabled = !hasClips;
+      if (!hasClips) {
+        arrangedConfirm.checked = false;
+        if (next3Btn) next3Btn.disabled = true;
+      }
+    }
+  }
+
   arrangedConfirm?.addEventListener('change', () => { if (next3Btn) next3Btn.disabled = !arrangedConfirm.checked; });
   document.getElementById('next-3')?.addEventListener('click', async () => {
     try { await saveTimelineOrder(); } catch (_) {}
@@ -1396,6 +1412,8 @@
         const chk = document.getElementById('arranged-confirm');
         if (chk) { chk.checked = false; chk.dispatchEvent(new Event('change')); }
       }
+      // Update disabled state
+      if (typeof updateArrangedConfirmState === 'function') updateArrangedConfirmState();
     });
     card.appendChild(rm);
 
@@ -1464,6 +1482,7 @@
   const card = makeTimelineCard({ title: `Outro`, subtitle: item.original_filename || item.filename, thumbUrl: item.thumbnail_url || '', kind: 'outro', durationSec: item.duration, previewUrl: item.preview_url || '' });
     card.classList.add('timeline-outro');
     list.appendChild(card);
+    if (typeof updateArrangedConfirmState === 'function') updateArrangedConfirmState();
     rebuildSeparators();
   }
 
@@ -1558,6 +1577,8 @@
     }
     // Apply transition visual if any transitions are selected
     updateSeparatorLabels();
+    // Update arranged confirm state
+    if (typeof updateArrangedConfirmState === 'function') updateArrangedConfirmState();
   }
 
   function updateSeparatorLabels(){
@@ -1583,16 +1604,53 @@
 
   // Compile and poll
   let compTimer = null;
+  let currentProgress = 0;
+  let targetProgress = 0;
+  let progressAnimationFrame = null;
+
+  function animateProgress() {
+    if (currentProgress < targetProgress) {
+      currentProgress = Math.min(currentProgress + 1, targetProgress);
+      const barEl = document.getElementById('compile-progress-bar');
+      if (barEl) barEl.value = currentProgress;
+      const labelEl = document.getElementById('compile-progress-label');
+      if (labelEl) {
+        labelEl.setAttribute('data-value', currentProgress);
+      }
+      progressAnimationFrame = setTimeout(animateProgress, 20);
+    } else if (currentProgress > targetProgress) {
+      currentProgress = Math.max(currentProgress - 1, targetProgress);
+      const barEl = document.getElementById('compile-progress-bar');
+      if (barEl) barEl.value = currentProgress;
+      const labelEl = document.getElementById('compile-progress-label');
+      if (labelEl) {
+        labelEl.setAttribute('data-value', currentProgress);
+      }
+      progressAnimationFrame = setTimeout(animateProgress, 20);
+    }
+  }
+
   document.getElementById('start-compile')?.addEventListener('click', async () => {
   if (!wizard.projectId) { alert('No project loaded yet.'); return; }
-    const bar = document.getElementById('compile-progress');
+    const barEl = document.getElementById('compile-progress-bar');
     const log = document.getElementById('compile-log');
     // Disable start during active compilation
     const startBtn = document.getElementById('start-compile');
     if (startBtn) startBtn.disabled = true;
-    bar.style.width = '0%'; bar.textContent = '0%';
+
+    // Reset progress bar
+    currentProgress = 0;
+    targetProgress = 0;
+    if (barEl) barEl.value = 0;
+    const labelEl = document.getElementById('compile-progress-label');
+    if (labelEl) {
+        labelEl.textContent = 'Compiling...';
+      labelEl.setAttribute('data-value', '0');
+    }
+
     document.getElementById('cancel-compile').disabled = false;
-    renderCompileSummary();
+    // Don't re-render summary here - it destroys the preview image
+    // renderCompileSummary();
   log.textContent = 'Splicing your highlights together…';
     try {
       const body = { };
@@ -1641,7 +1699,9 @@
           const st = s.state || s.status;
           const meta = s.info || {};
           const pct = Math.max(0, Math.min(100, Math.floor(meta.progress || 0)));
-          bar.style.width = pct + '%'; bar.textContent = pct + '%';
+          targetProgress = pct;
+          if (progressAnimationFrame) clearTimeout(progressAnimationFrame);
+          animateProgress();
           // Show current stage/step in log window if provided
           const stage = meta.stage || meta.step || meta.phase || meta.task || '';
           const msg = meta.message || meta.detail || meta.status || '';
@@ -1651,16 +1711,26 @@
           if (parts.length) log.textContent = parts.join(' ') + `\n${pct}%`;
           if (st === 'SUCCESS') {
             clearInterval(compTimer);
+            if (progressAnimationFrame) clearTimeout(progressAnimationFrame);
             document.getElementById('cancel-compile').disabled = true;
             if (startBtn) startBtn.disabled = true; // keep disabled after success
-            log.textContent = "Show’s in the can!";
+            // Ensure progress bar reaches 100% and stays there
+            targetProgress = 100;
+            currentProgress = 100;
+            const barEl = document.getElementById('compile-progress-bar');
+            if (barEl) barEl.value = 100;
+            const labelEl = document.getElementById('compile-progress-label');
+            if (labelEl) labelEl.setAttribute('data-value', '100');
+            log.textContent = "Show's in the can!";
             document.getElementById('next-4').disabled = false;
             document.getElementById('export-ready').classList.remove('d-none');
 
             // 🎉 Trigger celebration particle effect!
-            if (window.triggerCelebration) {
-              window.triggerCelebration();
-            }
+            setTimeout(() => {
+              if (window.triggerCelebration) {
+                window.triggerCelebration();
+              }
+            }, 300);
             try { await refreshExportInfo(); } catch (e) {
               const dl = document.getElementById('download-output');
               dl.classList.remove('disabled');
@@ -1695,6 +1765,7 @@
   });
   document.getElementById('cancel-compile')?.addEventListener('click', () => {
     if (compTimer) { clearInterval(compTimer); }
+    if (progressAnimationFrame) clearTimeout(progressAnimationFrame);
     document.getElementById('compile-log').textContent = 'Cut canceled.';
     const startBtn = document.getElementById('start-compile');
     if (startBtn) startBtn.disabled = false;
@@ -1917,25 +1988,17 @@
     const tl = document.getElementById('timeline');
     const info = document.getElementById('timeline-info');
     const list = document.getElementById('timeline-list');
-    if (!tl || !list) return;
-    let badge = (info || tl).querySelector('.timeline-transitions');
-    if (!badge) {
-      badge = document.createElement('div');
-      badge.className = 'timeline-item alert py-1 px-2 mb-2 timeline-transitions';
-    }
-    // Place badge in the dedicated info area if present
-    if (info) {
-      info.innerHTML = '';
-      info.appendChild(badge);
-    } else {
-      tl.insertBefore(badge, list);
-    }
+    if (!info) return;
+
+    // Always show the status bar, don't create/remove it
     const count = (wizard.selectedTransitionIds || []).length;
     const rand = document.getElementById('transitions-randomize')?.checked;
     const transText = count ? `Transitions: ${count}${count>1 ? (rand ? ' (randomized)' : ' (cycled)') : ''}` : 'No transitions';
 
     // Add music info
     let musicText = '';
+    let removeBtn = null;
+
     if (wizard.selectedMusicId) {
       const musicList = document.getElementById('music-list');
       const selectedCard = musicList?.querySelector('.border-primary .small.text-truncate.text-center');
@@ -1943,30 +2006,26 @@
       const volume = document.getElementById('music-volume')?.value || 30;
       musicText = ` | Music: ${musicName} (${volume}%)`;
 
-      // Add remove button
-      if (!badge.querySelector('.btn-remove-music')) {
-        const removeBtn = document.createElement('button');
-        removeBtn.className = 'btn btn-sm btn-outline-danger ms-2 btn-remove-music';
-        removeBtn.innerHTML = '<i class="bi bi-x-circle"></i>';
-        removeBtn.title = 'Remove background music';
-        removeBtn.addEventListener('click', () => {
-          wizard.selectedMusicId = null;
-          document.querySelectorAll('#music-list .card').forEach(c => c.classList.remove('border', 'border-primary'));
-          renderTransitionsBadge();
-        });
-        badge.appendChild(removeBtn);
-      }
+      // Create remove button
+      removeBtn = document.createElement('button');
+      removeBtn.className = 'btn btn-sm btn-outline-danger ms-2 btn-remove-music';
+      removeBtn.innerHTML = '<i class="bi bi-x-circle"></i>';
+      removeBtn.title = 'Remove background music';
+      removeBtn.addEventListener('click', () => {
+        wizard.selectedMusicId = null;
+        document.querySelectorAll('#music-list .card').forEach(c => c.classList.remove('border', 'border-primary'));
+        renderTransitionsBadge();
+      });
     } else {
-      // Remove the button if no music
-      badge.querySelector('.btn-remove-music')?.remove();
+      musicText = ' | No music';
     }
 
-    badge.textContent = transText + musicText;
-    // Re-append button if it exists
-    const existingBtn = badge.querySelector('.btn-remove-music');
-    if (existingBtn) {
-      badge.textContent = transText + musicText;
-      badge.appendChild(existingBtn);
+    // Update status bar content
+    info.textContent = transText + musicText;
+
+    // Append remove button if music is selected
+    if (removeBtn) {
+      info.appendChild(removeBtn);
     }
 
     // Tint separators/labels accordingly
@@ -2466,13 +2525,13 @@
       }
     }
 
-    // Create explosion from center of chevron area
-    const chevronEl = document.getElementById('wizard-chevrons');
+    // Create explosion from progress bar location (or center if not found)
+    const progressEl = document.getElementById('compile-progress-bar');
     let centerX = canvas.width / 2;
-    let centerY = canvas.height / 4;
+    let centerY = canvas.height / 2;
 
-    if (chevronEl) {
-      const rect = chevronEl.getBoundingClientRect();
+    if (progressEl) {
+      const rect = progressEl.getBoundingClientRect();
       centerX = rect.left + rect.width / 2;
       centerY = rect.top + rect.height / 2;
     }

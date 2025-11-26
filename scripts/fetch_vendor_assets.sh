@@ -10,8 +10,9 @@ DZ_DIR="$VENDOR_DIR/dropzone"
 VJS_DIR="$VENDOR_DIR/videojs"
 JQ_DIR="$VENDOR_DIR/jquery"
 BCP_DIR="$VENDOR_DIR/bootstrap-colorpicker"
+LDBAR_DIR="$VENDOR_DIR/ldbar"
 
-mkdir -p "$DZ_DIR" "$VJS_DIR" "$JQ_DIR" "$BCP_DIR/css" "$BCP_DIR/js"
+mkdir -p "$DZ_DIR" "$VJS_DIR" "$JQ_DIR" "$BCP_DIR/css" "$BCP_DIR/js" "$LDBAR_DIR"
 
 # Dropzone 5.9.3
 DZ_JS_URL="https://cdn.jsdelivr.net/npm/dropzone@5.9.3/dist/min/dropzone.min.js"
@@ -51,3 +52,12 @@ curl -fsSL "$BCP_JS_URL" -o "$BCP_DIR/js/bootstrap-colorpicker.min.js"
 echo "Fetching Bootstrap Colorpicker CSS..."
 curl -fsSL "$BCP_CSS_URL" -o "$BCP_DIR/css/bootstrap-colorpicker.min.css"
 echo "Vendor assets fetched to: $BCP_DIR"
+
+# loading-bar (loading.io) - correct repo
+LDBAR_JS_URL="https://cdn.jsdelivr.net/gh/loadingio/loading-bar@master/dist/loading-bar.min.js"
+LDBAR_CSS_URL="https://cdn.jsdelivr.net/gh/loadingio/loading-bar@master/dist/loading-bar.min.css"
+echo "Fetching loading-bar JS..."
+curl -fsSL "$LDBAR_JS_URL" -o "$LDBAR_DIR/ldBar.min.js"
+echo "Fetching loading-bar CSS..."
+curl -fsSL "$LDBAR_CSS_URL" -o "$LDBAR_DIR/ldBar.min.css"
+echo "Vendor assets fetched to: $LDBAR_DIR"

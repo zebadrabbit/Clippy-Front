@@ -9,6 +9,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.4] - 2025-11-26
+
+### Added
+- **Enhanced Progress Bar**: CSS Tricks animated striped progress bar with smooth transitions
+  - Diagonal striped animation that moves infinitely across the bar
+  - Theme-aware gradient using `--bs-primary` and `--bs-accent` (or `--bs-secondary`) colors
+  - Smooth 0.5s transition animation between progress values (increments by 1% every 20ms)
+  - Progress label shows percentage on right, status text on left
+  - Label uses theme text color (`--bs-body-color`) for proper light/dark mode support
+  - Progress bar stays at 100% on completion with celebration confetti triggered after animation
+
+- **Timeline Confirmation UI**: Redesigned "I have arranged my timeline" checkpoint
+  - Large pill-shaped button with secondary background and no border
+  - Centered layout with 1.3rem bold text and larger checkbox (1.5em)
+  - Hover effect changes to secondary color with white text
+  - Checkbox auto-disables when timeline is empty (no clips)
+  - Auto-enables when clips are added to timeline
+
+- **Celebration Positioning**: Confetti now explodes from progress bar location instead of top chevrons
+  - Centers particles at current scroll position for better visibility on step 4
+
+### Changed
+- **Progress Bar States**: Dynamic label text based on compilation state
+  - "Ready." - Initial state before compilation starts
+  - "Compiling..." - During active compilation
+  - "100%" - On completion with full progress bar
+
+### Fixed
+- **Static Separator Cleanup**: Orphaned "static" markers now properly removed when clips deleted
+  - `rebuildSeparators()` now called in both `RemoveClipCommand.execute()` and `.undo()`
+  - Separators correctly rebuild after any timeline modification
+
+- **Progress Bar Completion**: Bar no longer drains to 0% after reaching 100%
+  - Animation timer cleared on SUCCESS state
+  - Both `currentProgress` and `targetProgress` locked at 100
+  - Progress value explicitly set and maintained
+
+---
+
 ## [1.0.3] - 2025-11-26
 
 ### Added

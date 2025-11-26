@@ -971,6 +971,11 @@ def register_blueprints(flask_app):
 
     flask_app.register_blueprint(admin_bp, url_prefix="/admin")
 
+    # Help system routes
+    from app.help.routes import help_bp
+
+    flask_app.register_blueprint(help_bp, url_prefix="/help")
+
 
 def register_template_filters(app: Flask) -> None:
     """

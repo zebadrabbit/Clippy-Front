@@ -2,36 +2,102 @@
 
 {% block content %}
 <div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="mb-0"><i class="bi bi-info-circle"></i> System Information</h2>
+  </div>
+
   <div class="row">
-    <h2 class="mb-3"><i class="bi bi-gear"></i> Admin Dashboard</h2>
-    <div class="col-12 col-lg-3 mb-3 mb-lg-0">
+    <div class="col-12 col-lg-3 mb-4 mb-lg-0">
       {% set active_page = 'system' %}
       {% include 'admin/_includes/sidebar.html' with context %}
     </div>
     <div class="col-12 col-lg-9">
+      <!-- Database Stats -->
       <div class="row g-3 mb-4">
-    <div class="col-md-3"><div class="card text-center"><div class="card-body"><div class="h4 mb-0">{{ db_stats.users }}</div><small class="text-muted">Users</small></div></div></div>
-    <div class="col-md-3"><div class="card text-center"><div class="card-body"><div class="h4 mb-0">{{ db_stats.projects }}</div><small class="text-muted">Projects</small></div></div></div>
-    <div class="col-md-3"><div class="card text-center"><div class="card-body"><div class="h4 mb-0">{{ db_stats.media_files }}</div><small class="text-muted">Media Files</small></div></div></div>
-    <div class="col-md-3"><div class="card text-center"><div class="card-body"><div class="h4 mb-0">{{ db_stats.clips }}</div><small class="text-muted">Clips</small></div></div></div>
-  </div>
-      <div class="card mb-4"><div class="card-header"><strong>Storage</strong></div>
-    <div class="card-body">
-      <p>Total: {{ '%.1f'|format(storage_stats.total_size_mb) }} MB</p>
-      <ul class="mb-0">
-        {% for k,v in storage_stats.by_type.items() %}
-          <li>{{ k.title() }}: {{ '%.1f'|format(v) }} MB</li>
-        {% endfor %}
-      </ul>
-    </div>
-  </div>
-      <div class="card"><div class="card-header"><strong>Jobs</strong></div>
-    <div class="card-body">
-      <ul class="mb-0">
-        {% for k,v in job_stats.items() %}<li>{{ k.title() }}: {{ v }}</li>{% endfor %}
-      </ul>
-    </div>
-  </div>
+        <div class="col-md-3">
+          <div class="card">
+            <div class="card-body text-center">
+              <i class="bi bi-people display-4 text-primary"></i>
+              <h3 class="mt-2">{{ db_stats.users }}</h3>
+              <p class="text-muted mb-0">Users</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card">
+            <div class="card-body text-center">
+              <i class="bi bi-folder2-open display-4 text-success"></i>
+              <h3 class="mt-2">{{ db_stats.projects }}</h3>
+              <p class="text-muted mb-0">Projects</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card">
+            <div class="card-body text-center">
+              <i class="bi bi-collection-play display-4 text-info"></i>
+              <h3 class="mt-2">{{ db_stats.media_files }}</h3>
+              <p class="text-muted mb-0">Media Files</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card">
+            <div class="card-body text-center">
+              <i class="bi bi-film display-4 text-warning"></i>
+              <h3 class="mt-2">{{ db_stats.clips }}</h3>
+              <p class="text-muted mb-0">Clips</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Storage Information -->
+      <div class="card mb-4">
+        <div class="card-header card-header--primary d-flex align-items-center">
+          <i class="bi bi-hdd me-2"></i>
+          <strong>Storage Usage</strong>
+        </div>
+        <div class="card-body">
+          <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span class="fw-semibold">Total Storage</span>
+              <span class="badge bg-primary">{{ '%.1f'|format(storage_stats.total_size_mb) }} MB</span>
+            </div>
+          </div>
+          <hr>
+          <div class="row g-3">
+            {% for k, v in storage_stats.by_type.items() %}
+            <div class="col-md-6">
+              <div class="d-flex justify-content-between align-items-center">
+                <span class="text-muted">{{ k.title() }}</span>
+                <span class="badge bg-secondary">{{ '%.1f'|format(v) }} MB</span>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Job Statistics -->
+      <div class="card">
+        <div class="card-header card-header--accent d-flex align-items-center">
+          <i class="bi bi-cpu me-2"></i>
+          <strong>Job Statistics</strong>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            {% for k, v in job_stats.items() %}
+            <div class="col-md-6">
+              <div class="d-flex justify-content-between align-items-center">
+                <span class="text-muted">{{ k.title() }}</span>
+                <span class="badge bg-info">{{ v }}</span>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
