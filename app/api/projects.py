@@ -971,29 +971,11 @@ def generate_preview_api(project_id: int):
     ):
         return jsonify({"error": "Project has no clips to preview"}), 400
 
-    # TODO: Preview generation was removed during Worker API Migration (Phase 5)
-    # The generate_preview_task was part of the deprecated video_processing.py tasks
-    # that required direct database access. To restore this feature, we need to:
-    # 1. Create a new preview task using the v2 API-based approach
-    # 2. Add preview generation endpoints to the worker API
-    # 3. Implement preview logic similar to compile_video_task_v2
-    #
-    # For now, return a "not implemented" error to prevent crashes
-    logger.warning(
-        "preview_not_implemented",
-        project_id=project_id,
-        user_id=current_user.id,
-        message="Preview generation temporarily disabled during worker migration",
-    )
-    return (
-        jsonify(
-            {
-                "error": "Preview generation is temporarily unavailable",
-                "message": "This feature is being updated for the new worker architecture. Please use the full compilation instead.",
-            }
-        ),
-        501,  # Not Implemented
-    )
+    # Queue preview generation task
+    from app.tasks.preview_video import generate_preview_video_task
+
+    task = generate_preview_video_task.apply_async(args=(project.id,), queue="cpu")
+    return jsonify({"task_id": task.id, "status": "queued"}), 202
 
     # Original preview code commented out for reference - all code below is unreachable
     # intro_id = data.get("intro_id")

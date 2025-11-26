@@ -345,3 +345,18 @@ fieldset:disabled .btn-primary {
 .badge.bg-status-compiling { background-color: var(--bs-warning) !important; color: #000 !important; }
 .badge.bg-status-completed { background-color: var(--bs-success) !important; color: #fff !important; }
 .badge.bg-status-failed { background-color: var(--bs-danger) !important; color: #fff !important; }
+
+.project-media {
+    aspect-ratio: 16/9;
+    min-height: 160px;
+    max-height: 220px;
+    background: var(--bs-card-bg);
+    border-top-left-radius: calc(var(--bs-card-border-radius, .375rem));
+    border-top-right-radius: calc(var(--bs-card-border-radius, .375rem));
+    overflow: hidden;
+}
+.project-media img,
+.project-media video {
+    object-fit: cover;
+    max-height: 220px;
+}

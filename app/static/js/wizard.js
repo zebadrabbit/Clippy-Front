@@ -58,64 +58,104 @@
     }
     if (stepStr === '4') {
       try { renderCompileSummary(); } catch (_) {}
-      // Load preview image after DOM is ready
+      // --- Preview loader for compile step ---
+      // Tries to load preview video, falls back to static image if unavailable
+      // Auto-detect preview orientation and media type (video vs image)
       setTimeout(() => {
+        const container = document.querySelector('.preview-container');
         const previewImg = document.querySelector('.compilation-preview-img');
+        const previewVideo = document.querySelector('.compilation-preview-video');
         const placeholder = document.querySelector('.preview-placeholder');
+        if (!container || !previewImg || !previewVideo || !placeholder || !wizard.projectId) return;
 
-        console.log('Step 4: Found elements', {
-          img: previewImg,
-          placeholder: placeholder,
-          imgDisplay: previewImg?.style?.display,
-          placeholderDisplay: placeholder?.style?.display
-        });
+        // Guess orientation from platform preset first
+        const portraitPresets = new Set(['youtube_shorts','tiktok','instagram_reel','instagram_story']);
+        let isPortrait = false;
+        try {
+          const presetEl = document.querySelector('[data-platform-preset]');
+          const presetVal = presetEl?.getAttribute('data-platform-preset') || '';
+          if (portraitPresets.has(presetVal)) isPortrait = true;
+        } catch(_) {}
+        container.classList.add(isPortrait ? 'aspect-portrait' : 'aspect-landscape');
 
-        if (previewImg && placeholder) {
-          // Force reset to initial state
-          placeholder.style.display = 'flex';
-          placeholder.style.visibility = 'visible';
-          previewImg.style.display = 'none';
-          previewImg.style.visibility = 'hidden';
-
-          // Track loading state
-          let hasLoaded = false;
-          let hasFailed = false;
-
-          // Set up handlers
-          previewImg.onload = function() {
-            if (hasFailed) {
-              console.log('onload ignored - already failed');
-              return;
-            }
-            hasLoaded = true;
-            console.log('onload fired - showing image, hiding placeholder');
-            placeholder.style.display = 'none';
-            placeholder.style.visibility = 'hidden';
-            this.style.display = 'block';
-            this.style.visibility = 'visible';
-          };
-
-          previewImg.onerror = function() {
-            if (hasLoaded) {
-              console.log('onerror ignored - already loaded');
-              return;
-            }
-            hasFailed = true;
-            console.error('onerror fired - showing error message');
-            this.style.display = 'none';
-            this.style.visibility = 'hidden';
-            placeholder.innerHTML = '<div class="text-center text-muted py-5"><i class="bi bi-image"></i><br>Preview unavailable</div>';
-          };
-
-          // Load the image
-          const cacheBuster = Date.now();
-          const newSrc = `/projects/${wizard.projectId}/compilation-preview?t=${cacheBuster}`;
-          console.log('Setting image src to:', newSrc);
-          previewImg.src = newSrc;
-        } else {
-          console.error('Could not find preview elements');
+        function elevateOrientationFromVideo() {
+          // If metadata indicates portrait, adjust class
+          if (previewVideo.videoHeight > previewVideo.videoWidth) {
+            container.classList.remove('aspect-landscape');
+            container.classList.add('aspect-portrait');
+          } else {
+            container.classList.remove('aspect-portrait');
+            container.classList.add('aspect-landscape');
+          }
         }
-      }, 150);
+
+        function showVideo(src) {
+          previewVideo.src = src;
+          previewVideo.style.display = 'block';
+          previewImg.style.display = 'none';
+          placeholder.style.display = 'none';
+          previewVideo.load();
+        }
+        function showImage(src) {
+          previewImg.src = src;
+          previewImg.style.display = 'block';
+          previewVideo.style.display = 'none';
+          placeholder.style.display = 'none';
+        }
+
+        previewVideo.addEventListener('loadedmetadata', elevateOrientationFromVideo);
+
+        // Try to load preview video first
+        // Trigger preview generation if needed then fetch
+        function loadPreviewAsset(){
+          const cacheBuster = Date.now();
+          const previewUrl = `/projects/${wizard.projectId}/compilation-preview?t=${cacheBuster}`;
+          fetch(previewUrl, { method: 'HEAD' })
+            .then(resp => {
+              const type = resp.headers.get('Content-Type');
+              if (type && type.startsWith('video')) {
+                showVideo(previewUrl);
+              } else {
+                showImage(previewUrl);
+              }
+            })
+            .catch(() => showImage(previewUrl));
+        }
+        function pollTask(taskId, attempt=0){
+          fetch(`/api/tasks/${taskId}`)
+            .then(r => r.json())
+            .then(data => {
+              if (data.state === 'SUCCESS' && data.result && data.result.preview) {
+                loadPreviewAsset();
+              } else if (data.state === 'FAILURE') {
+                placeholder.innerHTML = '<div class="text-center text-danger py-5"><i class="bi bi-exclamation-triangle"></i><br>Preview failed</div>';
+              } else {
+                const delay = Math.min(2000, 500 + attempt*250);
+                setTimeout(() => pollTask(taskId, attempt+1), delay);
+              }
+            })
+            .catch(() => {
+              const delay = Math.min(2000, 500 + attempt*250);
+              setTimeout(() => pollTask(taskId, attempt+1), delay);
+            });
+        }
+        // Request preview task
+        fetch(`/api/projects/${wizard.projectId}/preview`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clip_ids: wizard.selectedClipIds || [] })
+        })
+          .then(r => r.json())
+          .then(resp => {
+            if (resp.task_id) {
+              pollTask(resp.task_id);
+            } else {
+              // If not queued (error or 501), fallback to direct asset (may be thumbnail only)
+              loadPreviewAsset();
+            }
+          })
+          .catch(() => loadPreviewAsset());
+      }, 180);
     }
     if (stepStr === '3' && wizard.projectId) {
       // Auto-refresh Arrange lists so user doesn't need to click refresh
@@ -1213,6 +1253,12 @@
               <img class="compilation-preview-img img-fluid rounded border"
                    alt="Compilation Preview"
                    style="max-width: 100%; max-height: 300px; display: none; width: 100%;">
+              <video class="compilation-preview-video img-fluid rounded border"
+                     alt="Compilation Preview"
+                     style="max-width: 100%; max-height: 300px; display: none; width: 100%;"
+                     muted playsinline>
+                Your browser does not support the video tag.
+              </video>
               <div class="preview-placeholder bg-dark border rounded d-flex align-items-center justify-content-center text-muted" style="position: absolute; top: 0; left: 0; right: 0; height: 160px; display: flex;">
                 <div class="text-center">
                   <div class="spinner-border spinner-border-sm mb-2" role="status">
