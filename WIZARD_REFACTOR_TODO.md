@@ -15,10 +15,10 @@
 - [x] Test Step 2 fetching and downloading
 - [x] Test navigation between Step 1 ↔ Step 2
 
-## Phase 3: Arrange Step
-- [ ] Extract Step 3 HTML to step_arrange.html
-- [ ] Create step-arrange.js (DnD, media selection)
-- [ ] Create commands.js (undo/redo)
+## Phase 3: Arrange Step ✓
+- [x] Extract Step 3 HTML to step_arrange.html
+- [x] Create step-arrange.js (DnD, media selection)
+- [x] Create commands.js (undo/redo)
 - [ ] Test timeline drag & drop
 - [ ] Test intro/outro/transition selection
 - [ ] Test navigation Step 2 ↔ Step 3
