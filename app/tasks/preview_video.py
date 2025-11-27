@@ -37,27 +37,24 @@ def _build_preview_filter(project, target_width, target_height):
     )
 
     if is_portrait_output:
-        # Portrait: apply zoom and crop
+        # Portrait: apply zoom and crop (matching compile_video_v2.py logic)
         zoom_factor = vertical_zoom / 100.0
 
-        # Calculate scaled dimensions after zoom
-        scaled_width = f"iw*{zoom_factor}"
-
+        # Determine crop position based on alignment
         if vertical_align == "left":
             crop_x = "0"
         elif vertical_align == "right":
-            crop_x = f"({scaled_width})-{target_width}"
+            crop_x = "iw-ow"
         else:  # center
-            crop_x = f"(({scaled_width})-{target_width})/2"
+            crop_x = "(iw-ow)/2"
 
-        # For preview, simplify to avoid pad dimension issues
-        # Just scale, crop to width, then scale to final dimensions
-        scale_filter = f"scale=iw*{zoom_factor}:ih*{zoom_factor},crop=min(iw\\,{target_width}):ih:if(gt(iw\\,{target_width})\\,({crop_x})\\,0):0,scale={target_width}:{target_height}:force_original_aspect_ratio=decrease,pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:black"
+        # Scale up by zoom factor, crop to fit width, then pad to canvas size
+        scale_filter = f"scale=iw*{zoom_factor}:ih*{zoom_factor},crop={target_width}:ih:{crop_x}:0,pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:black"
     else:
         # Landscape: simple scale
         scale_filter = f"scale={target_width}:{target_height}:flags=lanczos"
 
-    # For preview, apply fps reduction and simplify quality
+    # For preview, apply fps reduction
     return f"{scale_filter},fps=10"
 
 
