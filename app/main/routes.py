@@ -1333,7 +1333,12 @@ def media_preview(media_id: int):
     media = db.session.get(MediaFile, media_id)
     if not media:
         return jsonify({"error": "Not found"}), 404
-    if media.user_id != current_user.id and not current_user.is_admin():
+    # Allow access if: user owns it, user is admin, or media is public
+    if (
+        media.user_id != current_user.id
+        and not current_user.is_admin()
+        and not media.is_public
+    ):
         # Avoid leaking file paths
         return jsonify({"error": "Not authorized"}), 403
 
@@ -1355,7 +1360,12 @@ def media_thumbnail(media_id: int):
             f"Thumbnail request for non-existent media_id={media_id}"
         )
         return jsonify({"error": "Not found"}), 404
-    if media.user_id != current_user.id and not current_user.is_admin():
+    # Allow access if: user owns it, user is admin, or media is public
+    if (
+        media.user_id != current_user.id
+        and not current_user.is_admin()
+        and not media.is_public
+    ):
         return jsonify({"error": "Not authorized"}), 403
 
     current_app.logger.info(
