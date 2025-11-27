@@ -6,6 +6,7 @@
 import { CommandHistory, AddClipCommand, RemoveClipCommand } from './commands.js';
 
 let commandHistory = null;
+let isSetupComplete = false;
 
 export async function onEnter(wizard) {
   console.log('[step-arrange] Entering arrange step');
@@ -39,21 +40,20 @@ export async function onEnter(wizard) {
     clips: wizard.selectedClipIds
   });
 
-  // Wire up transition controls
-  setupTransitionControls(wizard);
+  // One-time setup (only run on first enter)
+  if (!isSetupComplete) {
+    setupTabNavigation();
+    setupNavigation(wizard);
+    setupTimelineConfirmation(wizard);
+    setupProjectDetailsForm(wizard);
+    initDetailsAudioNormSlider();
+    initTimelineDragDrop(wizard);
+    setupTransitionControls(wizard);
+    setupMusicControls(wizard);
+    isSetupComplete = true;
+  }
 
-  // Wire up music controls
-  setupMusicControls(wizard);
-
-  // Setup UI
-  setupTabNavigation();
-  setupNavigation(wizard);
-  setupTimelineConfirmation(wizard);
-  setupProjectDetailsForm(wizard);
-  initDetailsAudioNormSlider();
-  initTimelineDragDrop(wizard);
-
-  // Load data
+  // Load data (runs every time)
   await populateClipsGrid(wizard);
   await loadMediaLists(wizard);
   await loadProjectDetails(wizard);
