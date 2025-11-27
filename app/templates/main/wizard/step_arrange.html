@@ -48,9 +48,6 @@
           <i class="bi bi-film"></i> Clips
           <span class="badge bg-secondary ms-auto" id="clips-count-badge">0</span>
         </a>
-        <a href="#" class="list-group-item list-group-item-action" data-arrange-tab="details">
-          <i class="bi bi-gear"></i> Details
-        </a>
         <a href="#" class="list-group-item list-group-item-action" data-arrange-tab="intros">
           <i class="bi bi-play-circle"></i> Intros
         </a>
@@ -62,6 +59,9 @@
         </a>
         <a href="#" class="list-group-item list-group-item-action" data-arrange-tab="music">
           <i class="bi bi-music-note-beamed"></i> Music
+        </a>
+        <a href="#" class="list-group-item list-group-item-action" data-arrange-tab="details">
+          <i class="bi bi-gear"></i> Details
         </a>
       </div>
     </div>
@@ -127,15 +127,15 @@
             <!-- Audio Normalization -->
             <div class="col-12">
               <label class="form-label">Audio Normalization</label>
-              <div class="audio-norm-toggle">
-                <input type="radio" name="audio_norm_profile" id="details-an-off" value="off">
-                <label for="details-an-off">Off</label>
-                <input type="radio" name="audio_norm_profile" id="details-an-podcast" value="podcast" data-db="-16">
-                <label for="details-an-podcast">Podcast (-16 dB)</label>
+              <div class="opt-slider" id="details-audio-norm-slider" data-count="4">
+                <input type="radio" name="audio_norm_profile" id="details-an-music" value="music" data-db="-1">
+                <label for="details-an-music" data-label="Music (-1 dB)"></label>
+                <input type="radio" name="audio_norm_profile" id="details-an-podcast" value="podcast" data-db="-3">
+                <label for="details-an-podcast" data-label="Podcasts (-3 dB)"></label>
                 <input type="radio" name="audio_norm_profile" id="details-an-broadcast" value="broadcast" data-db="-2">
-                <label for="details-an-broadcast">Broadcast (-2 dB)</label>
+                <label for="details-an-broadcast" data-label="Broadcast (-2 dB)"></label>
                 <input type="radio" name="audio_norm_profile" id="details-an-gaming" value="gaming" data-db="-4" checked>
-                <label for="details-an-gaming">Gaming (-4 dB)</label>
+                <label for="details-an-gaming" data-label="Gaming (-4 dB)"></label>
                 <div class="pos" aria-hidden="true"></div>
               </div>
               <input type="hidden" name="audio_norm_db" id="details-audio-norm-db" value="-4">

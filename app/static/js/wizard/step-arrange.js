@@ -50,6 +50,7 @@ export async function onEnter(wizard) {
   setupNavigation(wizard);
   setupTimelineConfirmation(wizard);
   setupProjectDetailsForm(wizard);
+  initDetailsAudioNormSlider();
   initTimelineDragDrop(wizard);
 
   // Load data
@@ -1184,6 +1185,33 @@ function addClipToTimeline(wizard, item) {
 }
 
 /**
+ * Initialize audio normalization slider in Details tab
+ */
+function initDetailsAudioNormSlider() {
+  const slider = document.getElementById('details-audio-norm-slider');
+  if (!slider) return;
+
+  const radios = Array.from(slider.querySelectorAll('input[type="radio"][name="audio_norm_profile"]'));
+  const pos = slider.querySelector('.pos');
+  const hiddenDb = document.getElementById('details-audio-norm-db');
+
+  function update() {
+    const idx = radios.findIndex(r => r.checked);
+    const count = Math.max(1, parseInt(slider.dataset.count || String(radios.length || 4), 10));
+    const step = 100 / count;
+    const left = step * (idx + 0.5);
+
+    if (pos) pos.style.left = left + '%';
+
+    const db = radios[idx]?.dataset.db || '-1';
+    if (hiddenDb) hiddenDb.value = db;
+  }
+
+  radios.forEach(r => r.addEventListener('change', update));
+  update();
+}
+
+/**
  * Load project details into the form
  */
 async function loadProjectDetails(wizard) {
@@ -1202,27 +1230,44 @@ async function loadProjectDetails(wizard) {
     const form = document.getElementById('project-details-form');
     if (!form) return;
 
-    if (project.platform_preset) {
-      document.getElementById('details-platform-preset').value = project.platform_preset;
+    // Platform preset
+    const presetSelect = document.getElementById('details-platform-preset');
+    if (presetSelect && project.platform_preset) {
+      presetSelect.value = project.platform_preset;
     }
-    if (project.output_format) {
-      document.getElementById('details-output-format').value = project.output_format;
+
+    // Output format
+    const formatSelect = document.getElementById('details-output-format');
+    if (formatSelect && project.output_format) {
+      formatSelect.value = project.output_format;
     }
-    if (project.fps) {
-      document.getElementById('details-fps').value = project.fps;
+
+    // FPS
+    const fpsSelect = document.getElementById('details-fps');
+    if (fpsSelect && project.fps) {
+      fpsSelect.value = String(project.fps);
     }
+
+    // Audio normalization
     if (project.audio_norm_profile) {
       const radio = document.getElementById(`details-an-${project.audio_norm_profile}`);
-      if (radio) radio.checked = true;
-      if (project.audio_norm_db) {
-        document.getElementById('details-audio-norm-db').value = project.audio_norm_db;
+      if (radio) {
+        radio.checked = true;
+        // Trigger the slider update
+        radio.dispatchEvent(new Event('change'));
       }
     }
-    if (project.tags) {
-      document.getElementById('details-tags').value = project.tags;
+
+    // Tags
+    const tagsInput = document.getElementById('details-tags');
+    if (tagsInput && project.tags) {
+      tagsInput.value = project.tags;
     }
-    if (project.description) {
-      document.getElementById('details-description').value = project.description;
+
+    // Description
+    const descInput = document.getElementById('details-description');
+    if (descInput && project.description) {
+      descInput.value = project.description;
     }
   } catch (err) {
     console.error('[step-arrange] Error loading project details:', err);
@@ -1235,14 +1280,6 @@ async function loadProjectDetails(wizard) {
 function setupProjectDetailsForm(wizard) {
   const form = document.getElementById('project-details-form');
   if (!form) return;
-
-  // Update audio_norm_db when radio changes
-  form.querySelectorAll('input[name="audio_norm_profile"]').forEach(radio => {
-    radio.addEventListener('change', () => {
-      const db = radio.dataset.db || '0';
-      document.getElementById('details-audio-norm-db').value = db;
-    });
-  });
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
