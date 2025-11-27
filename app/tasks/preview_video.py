@@ -30,14 +30,20 @@ def _build_preview_filter(project, target_width, target_height):
     if is_portrait_output:
         # Portrait: apply zoom and crop
         zoom_factor = vertical_zoom / 100.0
+
+        # Calculate scaled dimensions after zoom
+        scaled_width = f"iw*{zoom_factor}"
+
         if vertical_align == "left":
             crop_x = "0"
         elif vertical_align == "right":
-            crop_x = "iw-ow"
+            crop_x = f"({scaled_width})-{target_width}"
         else:  # center
-            crop_x = "(iw-ow)/2"
+            crop_x = f"(({scaled_width})-{target_width})/2"
 
-        scale_filter = f"scale=iw*{zoom_factor}:ih*{zoom_factor},crop={target_width}:ih:{crop_x}:0,pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:black"
+        # For preview, simplify to avoid pad dimension issues
+        # Just scale, crop to width, then scale to final dimensions
+        scale_filter = f"scale=iw*{zoom_factor}:ih*{zoom_factor},crop=min(iw\\,{target_width}):ih:if(gt(iw\\,{target_width})\\,({crop_x})\\,0):0,scale={target_width}:{target_height}:force_original_aspect_ratio=decrease,pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:black"
     else:
         # Landscape: simple scale
         scale_filter = f"scale={target_width}:{target_height}:flags=lanczos"
