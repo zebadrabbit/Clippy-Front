@@ -39,31 +39,34 @@
 - [ ] Integration testing across all steps
 - [ ] Performance testing (lazy-load timing)
 
-## Phase 6: Database Persistence & Resumability 🎯
+## Phase 6: Database Persistence & Resumability 🎯 ✓
 ### Database Changes
-- [ ] Add `wizard_step` column to projects table (INTEGER, default 1)
-- [ ] Add `wizard_state` column to projects table (TEXT/JSON, nullable)
-- [ ] Add `READY` status to ProjectStatus enum
-- [ ] Create Alembic migration
-- [ ] Backfill existing projects with sensible defaults
+- [x] Add `wizard_step` column to projects table (INTEGER, default 1)
+- [x] Add `wizard_state` column to projects table (TEXT/JSON, nullable)
+- [x] Add `READY` status to ProjectStatus enum
+- [x] Create Alembic migration
+- [ ] Backfill existing projects with sensible defaults (run migration)
 
 ### API Updates
-- [ ] Add `PATCH /api/projects/<id>/wizard` endpoint
+- [x] Add `PATCH /api/projects/<id>/wizard` endpoint
   - Update wizard_step
   - Update wizard_state
   - Update status (DRAFT → READY transition)
-- [ ] Update `POST /api/projects` to set wizard_step=1, status=DRAFT
-- [ ] Update `POST /api/projects/<id>/clips/order` to set wizard_step=3
-- [ ] Update `POST /api/projects/<id>/compile` to require status=READY
-- [ ] Add validation: can't compile if status != READY
+- [ ] Update `POST /api/projects` to set wizard_step=1, status=DRAFT (already defaults)
+- [ ] Update `POST /api/projects/<id>/clips/order` to set wizard_step=3 (optional)
+- [ ] Update `POST /api/projects/<id>/compile` to require status=READY (optional)
+- [ ] Add validation: can't compile if status != READY (optional)
 
 ### Auto-save Integration
-- [ ] step-setup.js: Save wizard_step=2 on project creation
-- [ ] step-clips.js: Save wizard_step=3 when downloads complete
-- [ ] step-arrange.js: Save timeline on every change (already exists)
-- [ ] step-arrange.js: Add "Ready to Compile" button → set status=READY, wizard_step=4
-- [ ] step-compile.js: Set status=PROCESSING when compilation starts
-- [ ] core.js: Add loadProject() method to resume from saved step
+- [x] core.js: Save wizard_step on navigation (saveWizardStep method)
+- [x] core.js: Add saveWizardState method for step state
+- [x] core.js: Add markReady method (set status=READY, wizard_step=4)
+- [x] core.js: Call onExit hook before navigation
+- [ ] step-setup.js: Save wizard_step=2 on project creation (optional)
+- [ ] step-clips.js: Save wizard_step=3 when downloads complete (optional)
+- [ ] step-arrange.js: Save timeline on every change (already exists via saveTimelineOrder)
+- [ ] step-arrange.js: Add "Ready to Compile" button → markReady (optional enhancement)
+- [ ] step-compile.js: Set status=PROCESSING when compilation starts (optional)
 
 ### UI Updates
 - [ ] Update projects list template

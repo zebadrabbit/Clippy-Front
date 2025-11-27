@@ -73,7 +73,19 @@ export class WizardCore {
       return;
     }
 
+    // Call previous step's onExit hook if available
+    if (this.currentStep !== stepNum) {
+      const prevStepName = this.steps[this.currentStep - 1];
+      const prevModule = this.stepModules[prevStepName];
+      if (prevModule && typeof prevModule.onExit === 'function') {
+        await prevModule.onExit(this);
+      }
+    }
+
     this.currentStep = stepNum;
+
+    // Auto-save wizard step to database
+    await this.saveWizardStep(stepNum);
 
     // Update chevron progress
     this.markChevron(stepNum);
@@ -185,6 +197,61 @@ export class WizardCore {
   showToast(message, type = 'info') {
     // TODO: Implement proper toast notifications
     console.log(`[${type.toUpperCase()}] ${message}`);
+  }
+
+  /**
+   * Save wizard step to database
+   */
+  async saveWizardStep(step) {
+    if (!this.projectId) return;
+
+    try {
+      await this.api(`/api/projects/${this.projectId}/wizard`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wizard_step: step })
+      });
+      console.log('[Wizard] Saved wizard_step:', step);
+    } catch (e) {
+      console.warn('[Wizard] Failed to save wizard_step:', e);
+    }
+  }
+
+  /**
+   * Save wizard state to database
+   */
+  async saveWizardState(state) {
+    if (!this.projectId) return;
+
+    try {
+      await this.api(`/api/projects/${this.projectId}/wizard`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wizard_state: state })
+      });
+      console.log('[Wizard] Saved wizard_state');
+    } catch (e) {
+      console.warn('[Wizard] Failed to save wizard_state:', e);
+    }
+  }
+
+  /**
+   * Mark project as ready to compile
+   */
+  async markReady() {
+    if (!this.projectId) return;
+
+    try {
+      await this.api(`/api/projects/${this.projectId}/wizard`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'ready', wizard_step: 4 })
+      });
+      console.log('[Wizard] Project marked as ready');
+      this.showToast('Project ready to compile!', 'success');
+    } catch (e) {
+      console.warn('[Wizard] Failed to mark project ready:', e);
+    }
   }
 
   /**

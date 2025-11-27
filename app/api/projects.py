@@ -1521,3 +1521,92 @@ def get_project_details_api(project_id: int):
             "tags": project.tags,
         }
     )
+
+
+@api_bp.route("/projects/<int:project_id>/wizard", methods=["PATCH"])
+@login_required
+def update_wizard_state_api(project_id: int):
+    """
+    Update wizard state for a project (resumability).
+
+    Request JSON:
+    {
+        "wizard_step": 1-4,  // Optional: current wizard step
+        "wizard_state": {},  // Optional: step-specific state (JSON object)
+        "status": "ready"    // Optional: update status (e.g., DRAFT -> READY)
+    }
+
+    Returns:
+        JSON response with updated project info
+    """
+    from app.models import Project, ProjectStatus, db
+
+    project = Project.query.filter_by(id=project_id, user_id=current_user.id).first()
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+
+    # Update wizard_step (1-4)
+    if "wizard_step" in data:
+        step = int(data["wizard_step"])
+        if 1 <= step <= 4:
+            project.wizard_step = step
+        else:
+            return jsonify({"error": "wizard_step must be 1-4"}), 400
+
+    # Update wizard_state (JSON blob)
+    if "wizard_state" in data:
+        import json
+
+        try:
+            # Validate it's valid JSON and serialize
+            state_obj = data["wizard_state"]
+            if state_obj is not None:
+                project.wizard_state = json.dumps(state_obj)
+            else:
+                project.wizard_state = None
+        except (TypeError, ValueError) as e:
+            return jsonify({"error": f"Invalid wizard_state: {e}"}), 400
+
+    # Update status (e.g., DRAFT -> READY)
+    if "status" in data:
+        status_value = data["status"].lower()
+        try:
+            new_status = ProjectStatus(status_value)
+            # Only allow DRAFT -> READY or READY -> DRAFT transitions via this endpoint
+            if new_status in (ProjectStatus.DRAFT, ProjectStatus.READY):
+                project.status = new_status
+            else:
+                return (
+                    jsonify(
+                        {
+                            "error": f"Cannot set status to {status_value} via wizard endpoint"
+                        }
+                    ),
+                    400,
+                )
+        except ValueError:
+            return jsonify({"error": f"Invalid status: {status_value}"}), 400
+
+    try:
+        db.session.commit()
+        logger.info(
+            "wizard_state_updated",
+            project_id=project.id,
+            wizard_step=project.wizard_step,
+            status=project.status.value,
+        )
+    except Exception as e:
+        db.session.rollback()
+        logger.error("wizard_state_update_failed", project_id=project.id, error=str(e))
+        return jsonify({"error": "Failed to update wizard state"}), 500
+
+    return jsonify(
+        {
+            "id": project.id,
+            "wizard_step": project.wizard_step,
+            "wizard_state": project.wizard_state,
+            "status": project.status.value,
+        }
+    )

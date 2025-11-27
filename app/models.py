@@ -104,12 +104,14 @@ class ProjectStatus(Enum):
     Enumeration for project processing status.
 
     - DRAFT: Project being created/edited
+    - READY: Project configured and ready to compile (wizard complete)
     - PROCESSING: Video compilation in progress
     - COMPLETED: Video compilation finished
     - FAILED: Video compilation failed
     """
 
     DRAFT = "draft"
+    READY = "ready"
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -545,6 +547,10 @@ class Project(db.Model):
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
     completed_at = db.Column(db.DateTime)
+
+    # Wizard state (for resumable wizard workflow)
+    wizard_step = db.Column(db.Integer, default=1, nullable=False)  # 1-4
+    wizard_state = db.Column(db.Text, nullable=True)  # JSON blob for step state
 
     # Processing settings
     max_clip_duration = db.Column(db.Integer, default=30)  # seconds
