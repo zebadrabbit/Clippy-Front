@@ -27,6 +27,15 @@ def _build_preview_filter(project, target_width, target_height):
     vertical_zoom = getattr(project, "vertical_zoom", 100) or 100
     vertical_align = getattr(project, "vertical_align", "center") or "center"
 
+    logger.info(
+        "preview_filter_settings",
+        project_id=project.id,
+        target_size=f"{target_width}x{target_height}",
+        is_portrait=is_portrait_output,
+        vertical_zoom=vertical_zoom,
+        vertical_align=vertical_align,
+    )
+
     if is_portrait_output:
         # Portrait: apply zoom and crop
         zoom_factor = vertical_zoom / 100.0
