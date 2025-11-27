@@ -244,7 +244,23 @@ def generate_preview_video_task(self, project_id, clip_ids=None):
                     ]
 
                     logger.info("preview_processing_clip", clip_id=clip.id, index=i)
-                    subprocess.run(cmd, check=True, capture_output=True, timeout=60)
+                    try:
+                        subprocess.run(cmd, check=True, capture_output=True, timeout=60)
+                    except subprocess.CalledProcessError as e:
+                        stderr = (
+                            e.stderr.decode("utf-8", errors="replace")
+                            if e.stderr
+                            else ""
+                        )
+                        logger.error(
+                            "preview_clip_ffmpeg_failed",
+                            clip_id=clip.id,
+                            index=i,
+                            returncode=e.returncode,
+                            command=" ".join(cmd),
+                            stderr_full=stderr,
+                        )
+                        raise
 
                     if os.path.exists(temp_output) and os.path.getsize(temp_output) > 0:
                         temp_files.append(temp_output)
@@ -296,9 +312,23 @@ def generate_preview_video_task(self, project_id, clip_ids=None):
                         preview_output,
                     ]
 
-                    subprocess.run(
-                        concat_cmd, check=True, capture_output=True, timeout=60
-                    )
+                    try:
+                        subprocess.run(
+                            concat_cmd, check=True, capture_output=True, timeout=60
+                        )
+                    except subprocess.CalledProcessError as e:
+                        stderr = (
+                            e.stderr.decode("utf-8", errors="replace")
+                            if e.stderr
+                            else ""
+                        )
+                        logger.error(
+                            "preview_concat_ffmpeg_failed",
+                            returncode=e.returncode,
+                            command=" ".join(concat_cmd),
+                            stderr_full=stderr,
+                        )
+                        raise
 
                 self.update_state(
                     state="PROGRESS",
@@ -359,9 +389,11 @@ def generate_preview_video_task(self, project_id, clip_ids=None):
                 "preview_ffmpeg_failed",
                 project_id=project_id,
                 returncode=e.returncode,
-                stderr=stderr[:500],
+                stderr_full=stderr,
             )
-            return {"error": f"Video processing failed: {stderr[:200]}"}
+            return {
+                "error": f"Video processing failed: {stderr[-500:] if len(stderr) > 500 else stderr}"
+            }
         except Exception as e:
             logger.error(
                 "preview_failed",
