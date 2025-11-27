@@ -62,11 +62,14 @@
       // Tries to load preview video, falls back to static image if unavailable
       // Auto-detect preview orientation and media type (video vs image)
       setTimeout(() => {
-        const container = document.querySelector('.preview-container');
+        const container = document.querySelector('#compilation-preview');
         const previewImg = document.querySelector('.compilation-preview-img');
         const previewVideo = document.querySelector('.compilation-preview-video');
         const placeholder = document.querySelector('.preview-placeholder');
         if (!container || !previewImg || !previewVideo || !placeholder || !wizard.projectId) return;
+
+        // Show the preview container
+        container.classList.remove('d-none');
 
         // Guess orientation from platform preset first
         const portraitPresets = new Set(['youtube_shorts','tiktok','instagram_reel','instagram_story']);
