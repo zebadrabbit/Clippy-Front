@@ -49,11 +49,13 @@ export async function onEnter(wizard) {
   setupTabNavigation();
   setupNavigation(wizard);
   setupTimelineConfirmation(wizard);
+  setupProjectDetailsForm(wizard);
   initTimelineDragDrop(wizard);
 
   // Load data
   await populateClipsGrid(wizard);
   await loadMediaLists(wizard);
+  await loadProjectDetails(wizard);
 
   // Restore timeline from saved state
   await restoreTimelineFromState(wizard);
@@ -1179,4 +1181,108 @@ function addClipToTimeline(wizard, item) {
   updateArrangedConfirmState();
   populateClipsGrid(wizard);
   wizard.saveWizardState({ selectedClipIds: wizard.selectedClipIds });
+}
+
+/**
+ * Load project details into the form
+ */
+async function loadProjectDetails(wizard) {
+  if (!wizard.projectId) return;
+
+  try {
+    const res = await wizard.api(`/api/projects/${wizard.projectId}`);
+    if (!res.ok) {
+      console.error('[step-arrange] Failed to load project details');
+      return;
+    }
+
+    const project = await res.json();
+
+    // Populate form fields
+    const form = document.getElementById('project-details-form');
+    if (!form) return;
+
+    if (project.platform_preset) {
+      document.getElementById('details-platform-preset').value = project.platform_preset;
+    }
+    if (project.output_format) {
+      document.getElementById('details-output-format').value = project.output_format;
+    }
+    if (project.output_resolution) {
+      document.getElementById('details-output-resolution').value = project.output_resolution;
+    }
+    if (project.fps) {
+      document.getElementById('details-fps').value = project.fps;
+    }
+    if (project.audio_norm_profile) {
+      const radio = document.getElementById(`details-an-${project.audio_norm_profile}`);
+      if (radio) radio.checked = true;
+      if (project.audio_norm_db) {
+        document.getElementById('details-audio-norm-db').value = project.audio_norm_db;
+      }
+    }
+    if (project.tags) {
+      document.getElementById('details-tags').value = project.tags;
+    }
+    if (project.description) {
+      document.getElementById('details-description').value = project.description;
+    }
+  } catch (err) {
+    console.error('[step-arrange] Error loading project details:', err);
+  }
+}
+
+/**
+ * Setup project details form submission
+ */
+function setupProjectDetailsForm(wizard) {
+  const form = document.getElementById('project-details-form');
+  if (!form) return;
+
+  // Update audio_norm_db when radio changes
+  form.querySelectorAll('input[name="audio_norm_profile"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      const db = radio.dataset.db || '0';
+      document.getElementById('details-audio-norm-db').value = db;
+    });
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    if (!wizard.projectId) {
+      wizard.showToast('No project loaded', 'danger');
+      return;
+    }
+
+    const formData = new FormData(form);
+    const payload = {
+      platform_preset: formData.get('platform_preset'),
+      output_format: formData.get('output_format'),
+      output_resolution: formData.get('output_resolution'),
+      fps: parseInt(formData.get('fps'), 10),
+      audio_norm_profile: formData.get('audio_norm_profile'),
+      audio_norm_db: parseFloat(formData.get('audio_norm_db')),
+      tags: formData.get('tags'),
+      description: formData.get('description')
+    };
+
+    try {
+      const res = await wizard.api(`/api/projects/${wizard.projectId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to update project details');
+      }
+
+      wizard.showToast('Project details updated successfully!', 'success');
+      wizard.showSaveIndicator();
+    } catch (err) {
+      console.error('[step-arrange] Error saving project details:', err);
+      wizard.showToast('Failed to save project details', 'danger');
+    }
+  });
 }

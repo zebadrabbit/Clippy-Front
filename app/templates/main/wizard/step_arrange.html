@@ -48,6 +48,9 @@
           <i class="bi bi-film"></i> Clips
           <span class="badge bg-secondary ms-auto" id="clips-count-badge">0</span>
         </a>
+        <a href="#" class="list-group-item list-group-item-action" data-arrange-tab="details">
+          <i class="bi bi-gear"></i> Details
+        </a>
         <a href="#" class="list-group-item list-group-item-action" data-arrange-tab="intros">
           <i class="bi bi-play-circle"></i> Intros
         </a>
@@ -79,6 +82,102 @@
         <div id="clips-grid" style="min-height: 220px;">
           <div class="text-muted">No clips yet. Download first.</div>
         </div>
+      </div>
+
+      <!-- Details tab -->
+      <div class="arrange-tab-content" data-tab="details">
+        <h5 class="mb-3">Project Details</h5>
+        <form id="project-details-form">
+          <div class="row g-3">
+            <!-- Platform Preset -->
+            <div class="col-md-6">
+              <label class="form-label">Platform Preset</label>
+              <select class="form-select" id="details-platform-preset" name="platform_preset">
+                <option value="youtube">YouTube (1080p 16:9)</option>
+                <option value="youtube_shorts">YouTube Shorts (1080p 9:16 vertical)</option>
+                <option value="tiktok">TikTok (1080p 9:16 vertical)</option>
+                <option value="instagram_feed">Instagram Feed (1080p 1:1 square)</option>
+                <option value="instagram_reel">Instagram Reels (1080p 9:16 vertical)</option>
+                <option value="instagram_story">Instagram Stories (1080p 9:16 vertical)</option>
+                <option value="twitter">Twitter/X (1080p 16:9)</option>
+                <option value="facebook">Facebook (1080p 16:9)</option>
+                <option value="twitch">Twitch Clips (1080p 16:9)</option>
+              </select>
+              <small class="text-muted">Changes resolution and format automatically</small>
+            </div>
+
+            <!-- Output Format -->
+            <div class="col-md-6">
+              <label class="form-label">Output Format</label>
+              <select class="form-select" id="details-output-format" name="output_format">
+                <option value="mp4">MP4 (H.264)</option>
+                <option value="webm">WebM (VP9)</option>
+                <option value="mov">MOV (H.264)</option>
+              </select>
+            </div>
+
+            <!-- Resolution -->
+            <div class="col-md-6">
+              <label class="form-label">Resolution</label>
+              <select class="form-select" id="details-output-resolution" name="output_resolution">
+                <option value="1920x1080">1080p (1920x1080)</option>
+                <option value="1080x1920">1080p Vertical (1080x1920)</option>
+                <option value="1280x720">720p (1280x720)</option>
+                <option value="720x1280">720p Vertical (720x1280)</option>
+                <option value="1080x1080">1080p Square (1080x1080)</option>
+                <option value="3840x2160">4K (3840x2160)</option>
+              </select>
+            </div>
+
+            <!-- Frame Rate -->
+            <div class="col-md-6">
+              <label class="form-label">Frame Rate (FPS)</label>
+              <select class="form-select" id="details-fps" name="fps">
+                <option value="24">24 FPS (Cinematic)</option>
+                <option value="30" selected>30 FPS (Standard)</option>
+                <option value="60">60 FPS (Smooth)</option>
+              </select>
+            </div>
+
+            <!-- Audio Normalization -->
+            <div class="col-12">
+              <label class="form-label">Audio Normalization</label>
+              <div class="audio-norm-toggle">
+                <input type="radio" name="audio_norm_profile" id="details-an-off" value="off">
+                <label for="details-an-off" data-label="Off"></label>
+                <input type="radio" name="audio_norm_profile" id="details-an-podcast" value="podcast" data-db="-16">
+                <label for="details-an-podcast" data-label="Podcast (-16 dB)"></label>
+                <input type="radio" name="audio_norm_profile" id="details-an-broadcast" value="broadcast" data-db="-2">
+                <label for="details-an-broadcast" data-label="Broadcast (-2 dB)"></label>
+                <input type="radio" name="audio_norm_profile" id="details-an-gaming" value="gaming" data-db="-4" checked>
+                <label for="details-an-gaming" data-label="Gaming (-4 dB)"></label>
+                <div class="pos" aria-hidden="true"></div>
+              </div>
+              <input type="hidden" name="audio_norm_db" id="details-audio-norm-db" value="-4">
+              <small class="text-muted">Normalize audio levels across all clips</small>
+            </div>
+
+            <!-- Tags -->
+            <div class="col-12">
+              <label class="form-label">Tags</label>
+              <input type="text" class="form-control" id="details-tags" name="tags" placeholder="gaming, highlights, twitch">
+              <small class="text-muted">Comma-separated tags for organization</small>
+            </div>
+
+            <!-- Description -->
+            <div class="col-12">
+              <label class="form-label">Description</label>
+              <textarea class="form-control" id="details-description" name="description" rows="3" placeholder="Project description..."></textarea>
+            </div>
+
+            <!-- Save Button -->
+            <div class="col-12">
+              <button type="submit" class="btn btn-primary">
+                <i class="bi bi-save"></i> Save Changes
+              </button>
+            </div>
+          </div>
+        </form>
       </div>
 
       <!-- Intros tab -->
