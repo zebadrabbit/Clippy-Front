@@ -89,7 +89,7 @@
         <h5 class="mb-3">Project Details</h5>
         <form id="project-details-form">
           <div class="row g-3">
-            <!-- Platform Preset -->
+            <!-- Platform Preset, Format, and FPS on same line -->
             <div class="col-md-6">
               <label class="form-label">Platform Preset</label>
               <select class="form-select" id="details-platform-preset" name="platform_preset">
@@ -103,39 +103,24 @@
                 <option value="facebook">Facebook (1080p 16:9)</option>
                 <option value="twitch">Twitch Clips (1080p 16:9)</option>
               </select>
-              <small class="text-muted">Changes resolution and format automatically</small>
+              <small class="text-muted">Automatically configure export settings</small>
             </div>
 
-            <!-- Output Format -->
-            <div class="col-md-6">
-              <label class="form-label">Output Format</label>
+            <div class="col-md-3">
+              <label class="form-label">Format</label>
               <select class="form-select" id="details-output-format" name="output_format">
-                <option value="mp4">MP4 (H.264)</option>
-                <option value="webm">WebM (VP9)</option>
-                <option value="mov">MOV (H.264)</option>
+                <option value="mp4">MP4</option>
+                <option value="webm">WebM</option>
+                <option value="mov">MOV</option>
               </select>
             </div>
 
-            <!-- Resolution -->
-            <div class="col-md-6">
-              <label class="form-label">Resolution</label>
-              <select class="form-select" id="details-output-resolution" name="output_resolution">
-                <option value="1920x1080">1080p (1920x1080)</option>
-                <option value="1080x1920">1080p Vertical (1080x1920)</option>
-                <option value="1280x720">720p (1280x720)</option>
-                <option value="720x1280">720p Vertical (720x1280)</option>
-                <option value="1080x1080">1080p Square (1080x1080)</option>
-                <option value="3840x2160">4K (3840x2160)</option>
-              </select>
-            </div>
-
-            <!-- Frame Rate -->
-            <div class="col-md-6">
-              <label class="form-label">Frame Rate (FPS)</label>
+            <div class="col-md-3">
+              <label class="form-label">FPS</label>
               <select class="form-select" id="details-fps" name="fps">
-                <option value="24">24 FPS (Cinematic)</option>
-                <option value="30" selected>30 FPS (Standard)</option>
-                <option value="60">60 FPS (Smooth)</option>
+                <option value="24">24</option>
+                <option value="30" selected>30</option>
+                <option value="60">60</option>
               </select>
             </div>
 
@@ -144,13 +129,13 @@
               <label class="form-label">Audio Normalization</label>
               <div class="audio-norm-toggle">
                 <input type="radio" name="audio_norm_profile" id="details-an-off" value="off">
-                <label for="details-an-off" data-label="Off"></label>
+                <label for="details-an-off">Off</label>
                 <input type="radio" name="audio_norm_profile" id="details-an-podcast" value="podcast" data-db="-16">
-                <label for="details-an-podcast" data-label="Podcast (-16 dB)"></label>
+                <label for="details-an-podcast">Podcast (-16 dB)</label>
                 <input type="radio" name="audio_norm_profile" id="details-an-broadcast" value="broadcast" data-db="-2">
-                <label for="details-an-broadcast" data-label="Broadcast (-2 dB)"></label>
+                <label for="details-an-broadcast">Broadcast (-2 dB)</label>
                 <input type="radio" name="audio_norm_profile" id="details-an-gaming" value="gaming" data-db="-4" checked>
-                <label for="details-an-gaming" data-label="Gaming (-4 dB)"></label>
+                <label for="details-an-gaming">Gaming (-4 dB)</label>
                 <div class="pos" aria-hidden="true"></div>
               </div>
               <input type="hidden" name="audio_norm_db" id="details-audio-norm-db" value="-4">

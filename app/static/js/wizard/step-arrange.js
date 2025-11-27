@@ -1208,9 +1208,6 @@ async function loadProjectDetails(wizard) {
     if (project.output_format) {
       document.getElementById('details-output-format').value = project.output_format;
     }
-    if (project.output_resolution) {
-      document.getElementById('details-output-resolution').value = project.output_resolution;
-    }
     if (project.fps) {
       document.getElementById('details-fps').value = project.fps;
     }
@@ -1259,7 +1256,6 @@ function setupProjectDetailsForm(wizard) {
     const payload = {
       platform_preset: formData.get('platform_preset'),
       output_format: formData.get('output_format'),
-      output_resolution: formData.get('output_resolution'),
       fps: parseInt(formData.get('fps'), 10),
       audio_norm_profile: formData.get('audio_norm_profile'),
       audio_norm_db: parseFloat(formData.get('audio_norm_db')),
