@@ -641,14 +641,20 @@
         </div>
 
         <!-- Preview Section (hidden by default) -->
-        <div class="mt-3 d-none" id="compilation-preview">
+        <div class="position-relative mt-3 d-none" id="compilation-preview">
+          <div class="text-center">
+            <div class="spinner-border spinner-border-sm mb-2" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <div class="small">Loading preview...</div>
+          </div>
           <img class="compilation-preview-img img-fluid rounded border"
                alt="Compilation Preview"
                style="max-width: 100%; max-height: 300px; display: none; width: 100%;">
           <video class="compilation-preview-video img-fluid rounded border"
                  style="max-width: 100%; max-height: 300px; display: none; width: 100%;"
                  controls muted loop playsinline></video>
-          <div class="preview-placeholder bg-dark border rounded d-flex align-items-center justify-content-center text-muted" style="height: 160px;">
+          <div class="preview-placeholder bg-dark border rounded d-flex align-items-center justify-content-center text-muted" style="position: absolute; top: 0; left: 0; right: 0; height: 160px; display: flex;">
             <div class="text-center">
               <div class="spinner-border spinner-border-sm mb-2" role="status">
                 <span class="visually-hidden">Loading...</span>
