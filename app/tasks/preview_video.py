@@ -47,11 +47,15 @@ def _build_preview_filter(project, target_width, target_height):
 
 
 @shared_task(bind=True)
-def generate_preview_video_task(self, project_id):
+def generate_preview_video_task(self, project_id, clip_ids=None):
     """Generate low-resolution preview for compilation.
 
     Renders first 3 clips (or all if fewer) with actual project transformations.
     Updates progress for UI feedback.
+
+    Args:
+        project_id: ID of the project to generate preview for
+        clip_ids: Optional list of clip IDs to use (from timeline). If None, uses first 3 downloaded clips.
     """
     app = create_app()
     with app.app_context():
@@ -99,22 +103,39 @@ def generate_preview_video_task(self, project_id):
                 state="PROGRESS", meta={"progress": 10, "status": "Loading clips"}
             )
 
-            # Get first 3 clips (or all if fewer) for preview
-            clips = (
-                Clip.query.filter_by(project_id=project.id)
-                .filter(Clip.is_downloaded.is_(True))
-                .filter(Clip.media_file_id.isnot(None))
-                .order_by(Clip.order_index.asc(), Clip.created_at.asc())
-                .limit(3)
-                .all()
-            )
+            # Get clips for preview
+            if clip_ids:
+                # Use specified clip IDs from timeline (in order)
+                clips = []
+                for clip_id in clip_ids[:3]:  # Limit to first 3 for preview
+                    clip = (
+                        Clip.query.filter_by(id=clip_id, project_id=project.id)
+                        .filter(Clip.is_downloaded.is_(True))
+                        .filter(Clip.media_file_id.isnot(None))
+                        .first()
+                    )
+                    if clip:
+                        clips.append(clip)
+            else:
+                # Fallback to first 3 clips in order
+                clips = (
+                    Clip.query.filter_by(project_id=project.id)
+                    .filter(Clip.is_downloaded.is_(True))
+                    .filter(Clip.media_file_id.isnot(None))
+                    .order_by(Clip.order_index.asc(), Clip.created_at.asc())
+                    .limit(3)
+                    .all()
+                )
 
             if not clips:
                 logger.error("preview_no_clips", project_id=project_id)
                 return {"error": "No clips available"}
 
             logger.info(
-                "preview_clips_loaded", project_id=project_id, clip_count=len(clips)
+                "preview_clips_loaded",
+                project_id=project_id,
+                clip_count=len(clips),
+                clip_ids=[c.id for c in clips],
             )
 
             # Determine target resolution (use 480p for preview)
@@ -141,7 +162,11 @@ def generate_preview_video_task(self, project_id):
             )
 
             # Get ffmpeg binary
-            from app.tasks.video_processing import resolve_binary
+            from app.tasks.compile_video_v2 import _download_media_file
+            from app.tasks.video_processing import (
+                _resolve_media_input_path,
+                resolve_binary,
+            )
 
             ffmpeg_bin = resolve_binary(app, "ffmpeg")
 
@@ -155,12 +180,39 @@ def generate_preview_video_task(self, project_id):
                         logger.warning("preview_clip_no_media", clip_id=clip.id)
                         continue
 
-                    input_path = clip.media_file.file_path
+                    # Resolve canonical path to actual filesystem path
+                    input_path = _resolve_media_input_path(clip.media_file.file_path)
+
+                    # If file doesn't exist locally, download it from main server
                     if not os.path.exists(input_path):
                         logger.warning(
-                            "preview_clip_missing", clip_id=clip.id, path=input_path
+                            "preview_clip_missing_downloading",
+                            clip_id=clip.id,
+                            canonical_path=clip.media_file.file_path,
+                            resolved_path=input_path,
                         )
-                        continue
+                        try:
+                            # Create cache directory
+                            cache_dir = os.path.join(
+                                tempfile.gettempdir(), "clippy-worker-cache"
+                            )
+                            input_path = _download_media_file(
+                                clip.media_file.id, project.user_id, cache_dir
+                            )
+                            logger.info(
+                                "preview_clip_downloaded",
+                                clip_id=clip.id,
+                                media_id=clip.media_file.id,
+                                path=input_path,
+                            )
+                        except Exception as e:
+                            logger.error(
+                                "preview_clip_download_failed",
+                                clip_id=clip.id,
+                                media_id=clip.media_file.id,
+                                error=str(e),
+                            )
+                            continue
 
                     temp_output = os.path.join(temp_dir, f"clip_{i}.mp4")
 

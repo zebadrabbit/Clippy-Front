@@ -24,6 +24,7 @@ def make_celery(app_name=__name__):
     celery_includes = [
         "app.tasks.download_clip_v2",  # Phase 3: API-based download
         "app.tasks.compile_video_v2",  # Phase 4: API-based compilation
+        "app.tasks.preview_video",  # Preview video generation
         "app.tasks.enrich_clip_metadata",  # Server-side Twitch metadata enrichment
         "app.tasks.media_maintenance",
         "app.tasks.automation",

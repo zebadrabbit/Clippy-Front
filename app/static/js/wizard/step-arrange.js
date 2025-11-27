@@ -92,12 +92,29 @@ function setupTabNavigation() {
  */
 function setupNavigation(wizard) {
   const prevBtn = document.querySelector('[data-prev="2"]');
-  const nextBtn = document.getElementById('next-3');
+  const markReadyBtn = document.getElementById('mark-ready-btn');
 
   prevBtn?.addEventListener('click', () => wizard.gotoStep(2));
-  nextBtn?.addEventListener('click', async () => {
+  markReadyBtn?.addEventListener('click', async () => {
     await saveTimelineOrder(wizard);
-    wizard.gotoStep(4);
+
+    // Mark project as READY
+    try {
+      await wizard.api(`/api/projects/${wizard.projectId}/wizard`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'ready' })
+      });
+      wizard.showToast('Project marked as ready for compilation!', 'success');
+
+      // Navigate to compile step after short delay
+      setTimeout(() => {
+        wizard.gotoStep(4);
+      }, 1000);
+    } catch (err) {
+      console.error('[step-arrange] Failed to mark project as ready:', err);
+      wizard.showToast('Failed to mark project as ready', 'danger');
+    }
   });
 
   // Add All Clips to Timeline button
@@ -146,10 +163,10 @@ function setupNavigation(wizard) {
  */
 function setupTimelineConfirmation(wizard) {
   const arrangedConfirm = document.getElementById('arranged-confirm');
-  const nextBtn = document.getElementById('next-3');
+  const markReadyBtn = document.getElementById('mark-ready-btn');
 
   arrangedConfirm?.addEventListener('change', () => {
-    if (nextBtn) nextBtn.disabled = !arrangedConfirm.checked;
+    if (markReadyBtn) markReadyBtn.disabled = !arrangedConfirm.checked;
   });
 }
 
@@ -224,13 +241,13 @@ function updateArrangedConfirmState() {
   const timelineList = document.getElementById('timeline-list');
   const hasClips = timelineList && timelineList.querySelectorAll('.timeline-card[data-clip-id]').length > 0;
   const arrangedConfirm = document.getElementById('arranged-confirm');
-  const nextBtn = document.getElementById('next-3');
+  const markReadyBtn = document.getElementById('mark-ready-btn');
 
   if (arrangedConfirm) {
     arrangedConfirm.disabled = !hasClips;
     if (!hasClips) {
       arrangedConfirm.checked = false;
-      if (nextBtn) nextBtn.disabled = true;
+      if (markReadyBtn) markReadyBtn.disabled = true;
     }
   }
 }
@@ -530,6 +547,8 @@ async function saveTimelineOrder(wizard) {
 
     if (!res.ok) {
       console.error('[step-arrange] Failed to save timeline order');
+    } else {
+      wizard.showSaveIndicator();
     }
   } catch (err) {
     console.error('[step-arrange] Error saving timeline order:', err);

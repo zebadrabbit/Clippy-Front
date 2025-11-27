@@ -996,7 +996,7 @@ def generate_preview_api(project_id: int):
     except Exception as e:
         current_app.logger.warning(f"Preview queue inspection failed: {e}")
 
-    current_app.logger.info(
+    logger.info(
         "preview_queue_select",
         project_id=project.id,
         queue=queue_name,
@@ -1005,11 +1005,48 @@ def generate_preview_api(project_id: int):
         has_preview=bool(project.preview_filename),
     )
 
-    task = generate_preview_video_task.apply_async(args=(project.id,), queue=queue_name)
-    current_app.logger.info(
+    task = generate_preview_video_task.apply_async(
+        args=(project.id, clip_ids), queue=queue_name
+    )
+    logger.info(
         "preview_task_queued", task_id=task.id, project_id=project.id, queue=queue_name
     )
     return jsonify({"task_id": task.id, "status": "queued", "queue": queue_name}), 202
+
+
+@api_bp.route("/projects/<int:project_id>/preview/video", methods=["GET"])
+@login_required
+def serve_preview_video(project_id: int):
+    """Serve the preview video file for a project."""
+    import os
+
+    from flask import send_file
+
+    from app.models import Project
+
+    project = Project.query.filter_by(id=project_id, user_id=current_user.id).first()
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+
+    if not project.preview_filename:
+        return jsonify({"error": "Preview not yet generated"}), 404
+
+    preview_dir = os.path.join(
+        current_app.instance_path, "previews", str(project.user_id)
+    )
+    preview_path = os.path.join(preview_dir, project.preview_filename)
+
+    if not os.path.exists(preview_path):
+        logger.warning(
+            "preview_file_missing",
+            project_id=project.id,
+            expected_path=preview_path,
+            preview_filename=project.preview_filename,
+        )
+        return jsonify({"error": "Preview file not found"}), 404
+
+    logger.info("preview_video_served", project_id=project.id, path=preview_path)
+    return send_file(preview_path, mimetype="video/mp4", as_attachment=False)
 
     # Original preview code commented out for reference - all code below is unreachable
     # intro_id = data.get("intro_id")

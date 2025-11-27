@@ -163,6 +163,9 @@
             {% endif %}
         {% endwith %}
 
+        <!-- Dynamic Toast Container -->
+        <div id="toast-container" class="position-fixed bottom-0 end-0 p-3" style="z-index: 1080;"></div>
+
     <!-- Main Content -->
     <main class="flex-grow-1">
         {% block content %}{% endblock %}

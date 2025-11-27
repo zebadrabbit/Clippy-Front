@@ -20,6 +20,9 @@ export async function onEnter(wizard) {
   // Render compilation summary
   await renderCompileSummary(wizard);
 
+  // Generate preview
+  await generatePreview(wizard);
+
   // Setup keyboard shortcuts
   setupKeyboardShortcuts(wizard);
 }
@@ -173,15 +176,21 @@ async function renderCompileSummary(wizard) {
 
   // Derive orientation from resolution
   let orientationLabel = 'Landscape';
+  let aspectRatio = 16 / 9; // default landscape
   const res = s.output_resolution || s.resolution || '';
   if (res && res.includes('x')) {
     const [w, h] = res.split('x').map(Number);
     if (w && h) {
+      aspectRatio = w / h;
       if (w < h) orientationLabel = 'Portrait';
       else if (w === h) orientationLabel = 'Square';
       else orientationLabel = 'Landscape';
     }
   }
+
+  // Calculate preview dimensions (max 400px width for landscape, 225px for portrait)
+  let previewWidth = orientationLabel === 'Portrait' ? 225 : 400;
+  let previewHeight = Math.round(previewWidth / aspectRatio);
 
   // Build combined meta line
   const norm = (typeof s.audio_norm_db === 'number' && !isNaN(s.audio_norm_db)) ? `, (${s.audio_norm_db.toString()}db)` : '';
@@ -262,17 +271,17 @@ async function renderCompileSummary(wizard) {
       <div class="compile-middle small">
         <h6 class="mb-2">Preview</h6>
         ${clipCount > 0 ? `
-          <div class="preview-container" style="position: relative; min-height: 160px;">
+          <div class="preview-container" style="position: relative; width: ${previewWidth}px; height: ${previewHeight}px; margin: 0 auto;">
             <img class="compilation-preview-img img-fluid rounded border"
                  alt="Compilation Preview"
-                 style="max-width: 100%; max-height: 300px; display: none; width: 100%;">
+                 style="max-width: 100%; max-height: 100%; display: none; width: 100%; height: 100%; object-fit: contain;">
             <video class="compilation-preview-video img-fluid rounded border"
                    alt="Compilation Preview"
-                   style="max-width: 100%; max-height: 300px; display: none; width: 100%;"
-                   muted playsinline>
+                   style="max-width: 100%; max-height: 100%; display: none; width: 100%; height: 100%; object-fit: contain;"
+                   muted playsinline loop autoplay>
               Your browser does not support the video tag.
             </video>
-            <div class="preview-placeholder bg-dark border rounded d-flex align-items-center justify-content-center text-muted" style="position: absolute; top: 0; left: 0; right: 0; height: 160px; display: flex;">
+            <div class="preview-placeholder bg-dark border rounded d-flex align-items-center justify-content-center text-muted" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex;">
               <div class="text-center">
                 <div class="spinner-border spinner-border-sm mb-2" role="status">
                   <span class="visually-hidden">Loading...</span>
@@ -335,6 +344,140 @@ function attachHoverPreviews(root) {
     wrap.addEventListener('focus', show, true);
     wrap.addEventListener('blur', hide, true);
   });
+}
+
+/**
+ * Generate preview video
+ */
+let previewGenerating = false;
+
+async function generatePreview(wizard) {
+  if (!wizard.projectId) {
+    console.warn('[step-compile] No project ID for preview generation');
+    return;
+  }
+
+  // Prevent duplicate requests
+  if (previewGenerating) {
+    console.log('[step-compile] Preview already generating, skipping duplicate request');
+    return;
+  }
+
+  const placeholder = document.querySelector('.preview-placeholder');
+  const previewImg = document.querySelector('.compilation-preview-img');
+  const previewVideo = document.querySelector('.compilation-preview-video');
+
+  if (!placeholder || !previewVideo) {
+    console.warn('[step-compile] Preview elements not found');
+    return;
+  }
+
+  try {
+    previewGenerating = true;
+    // Get timeline clips
+    const list = document.getElementById('timeline-list');
+    const clipIds = Array.from(list.querySelectorAll('.timeline-card[data-clip-id]'))
+      .map(el => parseInt(el.dataset.clipId, 10))
+      .filter(v => Number.isFinite(v));
+
+    if (!clipIds.length) {
+      placeholder.innerHTML = '<div class="text-center small text-muted">No clips to preview</div>';
+      return;
+    }
+
+    // Request preview generation
+    const response = await wizard.api(`/api/projects/${wizard.projectId}/preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clip_ids: clipIds })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(errorData.error || `HTTP ${response.status}`);
+    }
+
+    const res = await response.json();
+    console.log('[step-compile] Preview API response:', res);
+
+    if (!res || !res.task_id) {
+      throw new Error(res?.error || 'No task ID returned from preview API');
+    }
+
+    console.log('[step-compile] Preview task started:', res.task_id);
+
+    // Poll for preview completion
+    const pollPreview = async () => {
+      try {
+        const taskResponse = await wizard.api(`/api/tasks/${res.task_id}`);
+        if (!taskResponse.ok) {
+          throw new Error(`Task API returned ${taskResponse.status}`);
+        }
+        const taskRes = await taskResponse.json();
+        const state = taskRes.state || taskRes.status;
+        const meta = taskRes.info || {};
+
+        // Log status without exposing internal filesystem paths
+        const sanitizedMeta = meta ? { ...meta } : {};
+        if (sanitizedMeta.preview) {
+          delete sanitizedMeta.preview; // Remove internal path
+        }
+        console.log('[step-compile] Preview task status:', state, sanitizedMeta);
+
+        if (state === 'SUCCESS') {
+          // Preview is ready - just load it via the API endpoint
+          const previewUrl = `/api/projects/${wizard.projectId}/preview/video`;
+          console.log('[step-compile] Loading preview from:', previewUrl);
+          previewVideo.src = previewUrl;
+          previewVideo.style.display = 'block';
+          placeholder.style.display = 'none';
+          placeholder.classList.remove('d-flex');
+          placeholder.classList.add('d-none');
+
+          // Handle video load errors
+          previewVideo.onerror = (e) => {
+            console.error('[step-compile] Preview video failed to load:', e);
+            placeholder.style.display = 'block';
+            placeholder.innerHTML = '<div class="text-center small text-warning">Preview video could not be loaded. Try regenerating.</div>';
+            previewVideo.style.display = 'none';
+            previewGenerating = false;
+          };
+
+          previewVideo.onloadeddata = () => {
+            console.log('[step-compile] Preview video loaded successfully');
+            previewGenerating = false;
+          };
+
+          return;
+        }
+
+        if (state === 'FAILURE') {
+          const error = taskRes.error || meta.error || 'Unknown error';
+          placeholder.innerHTML = `<div class="text-center small text-danger">Preview failed: ${escapeHtml(error)}</div>`;
+          console.error('[step-compile] Preview task failed:', taskRes);
+          previewGenerating = false;
+          return;
+        }
+
+        // Still processing, poll again
+        if (state === 'PENDING' || state === 'STARTED' || state === 'PROGRESS') {
+          setTimeout(pollPreview, 2000);
+        }
+      } catch (err) {
+        console.error('[step-compile] Preview poll error:', err);
+        placeholder.innerHTML = '<div class="text-center small text-danger">Preview poll failed</div>';
+        previewGenerating = false;
+      }
+    };
+
+    // Start polling
+    setTimeout(pollPreview, 2000);
+
+  } catch (err) {
+    console.error('[step-compile] Preview generation error:', err);
+    placeholder.innerHTML = `<div class="text-center small text-danger">Preview error: ${escapeHtml(err.message)}</div>`;
+    previewGenerating = false;
+  }
 }
 
 /**

@@ -340,8 +340,11 @@ async function handleNext(wizard) {
     // Save to localStorage and URL
     wizard.saveState();
 
-    // Navigate to step 2
-    wizard.gotoStep(2);
+    // Show success toast and auto-advance
+    wizard.showToast('Project created successfully! Proceeding to fetch clips...', 'success');
+    setTimeout(() => {
+      wizard.gotoStep(2);
+    }, 1500);
   } catch (err) {
     console.error('[step-setup] Error creating project:', err);
     alert(`Error creating project: ${err.message}`);

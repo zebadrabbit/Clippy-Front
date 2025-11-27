@@ -199,8 +199,11 @@ export class WizardCore {
    * Show toast notification
    */
   showToast(message, type = 'info') {
-    // TODO: Implement proper toast notifications
-    console.log(`[${type.toUpperCase()}] ${message}`);
+    if (typeof window.showToast === 'function') {
+      window.showToast(message, type);
+    } else {
+      console.log(`[${type.toUpperCase()}] ${message}`);
+    }
   }
 
   /**
@@ -222,9 +225,22 @@ export class WizardCore {
   }
 
   /**
+   * Show save indicator
+   */
+  showSaveIndicator() {
+    const indicator = document.getElementById('wizard-save-indicator');
+    if (indicator) {
+      indicator.classList.remove('d-none');
+      setTimeout(() => {
+        indicator.classList.add('d-none');
+      }, 2000);
+    }
+  }
+
+  /**
    * Save wizard state to database
    */
-  async saveWizardState(state) {
+  async saveWizardState(state, showToast = false) {
     if (!this.projectId) return;
 
     try {
@@ -237,8 +253,15 @@ export class WizardCore {
         body: JSON.stringify({ wizard_state: this.wizardState })
       });
       console.log('[Wizard] Saved wizard_state:', this.wizardState);
+      this.showSaveIndicator();
+      if (showToast) {
+        this.showToast('Progress saved', 'success');
+      }
     } catch (e) {
       console.warn('[Wizard] Failed to save wizard_state:', e);
+      if (showToast) {
+        this.showToast('Failed to save progress', 'danger');
+      }
     }
   }
 
@@ -317,7 +340,14 @@ export function initWizard() {
     }
 
     const initialStep = window.wizardExistingProject.initialStep || 1;
+    const stepNames = ['', 'Setup', 'Get Clips', 'Arrange', 'Compile'];
     console.log('[Wizard] Loading existing project:', wizardInstance.projectId, 'at step:', initialStep);
+
+    // Show restoration toast
+    if (initialStep > 1) {
+      wizardInstance.showToast(`Resuming from step ${initialStep}: ${stepNames[initialStep]}`, 'info');
+    }
+
     wizardInstance.gotoStep(initialStep);
   } else {
     wizardInstance.gotoStep(1);
