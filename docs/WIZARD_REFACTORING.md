@@ -224,16 +224,20 @@ GET /api/projects/<id>
 
 ## Known Issues / Future Work
 
-**All core features complete.** Future enhancements could include:
+**All core features and UX enhancements complete!**
 
-### Optional Polish (Low Priority)
-- [ ] Visual toast notifications (currently uses console logs)
+### Completed Polish Features ✅
+- ✅ Visual toast notifications (Bootstrap toasts for all user feedback)
+- ✅ Wizard progress save indicator (visual "Saved" indicator with 2s fade)
+- ✅ "Mark Ready & Continue" confirmation button (Step 3 → Step 4)
+- ✅ Auto-advance on step completion (Step 1 after project creation)
+- ✅ Project wizard state restoration toast message on load
+- ✅ Preview video generation in Step 4 (480p 10fps for quick validation)
+
+### Optional Future Enhancements (Low Priority)
 - [ ] Step validation before navigation (optional UX enhancement)
-- [ ] Inline help tooltips (contextual help within wizard)
-- [ ] Wizard progress save indicator (visual feedback during autosave)
-- [ ] "Ready to Compile" explicit confirmation button (Step 3 → Step 4)
-- [ ] Auto-advance on step completion (automatic navigation)
-- [ ] Project wizard state restoration toast message on load
+- [ ] Expanded inline help tooltips (more contextual help within wizard)
+- [ ] Real-time collaboration features (multi-user editing)
 
 ### Testing Coverage
 All critical paths tested and validated:

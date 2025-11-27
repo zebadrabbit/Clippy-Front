@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Preview video generation in Step 4 (480p 10fps quick validation before full compile)
+- Visual toast notification system replacing console logs
+- Save indicator in wizard header (shows "Saved" with 2s fade after autosave)
+- "Mark Ready & Continue" confirmation button in Step 3 before advancing to compile
+- Auto-advance to next step after project creation (1.5s delay with toast)
+- State restoration toast message when resuming wizard from saved step
+
+### Fixed
+- Preview video serving route (GET /api/projects/<id>/preview/video)
+- Preview filename path resolution for remote workers
+- Duplicate preview generation prevention with guard flag
+- Placeholder hiding when preview video loads successfully
+
 ---
 
 ## [1.1.0] - 2025-11-27
