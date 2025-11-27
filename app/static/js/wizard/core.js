@@ -2,8 +2,6 @@
  * Wizard Core - State management, navigation, and API helpers
  */
 
-import { initShortcuts } from './shortcuts.js';
-
 export class WizardCore {
   constructor() {
     this.projectId = null;
@@ -348,17 +346,13 @@ export function initWizard() {
       wizardInstance.showToast(`Resuming from step ${initialStep}: ${stepNames[initialStep]}`, 'info');
     }
 
-    wizardInstance.gotoStep(initialStep);
+
+  wizardInstance.gotoStep(initialStep);
   } else {
     wizardInstance.gotoStep(1);
   }
 
-  // Initialize keyboard shortcuts
-  initShortcuts(wizardInstance);
-
   return wizardInstance;
-}
-
-export function getWizard() {
+}export function getWizard() {
   return wizardInstance;
 }

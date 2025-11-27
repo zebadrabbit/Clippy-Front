@@ -1194,6 +1194,8 @@ function initDetailsAudioNormSlider() {
   const radios = Array.from(slider.querySelectorAll('input[type="radio"][name="audio_norm_profile"]'));
   const pos = slider.querySelector('.pos');
   const hiddenDb = document.getElementById('details-audio-norm-db');
+  const enableCb = document.getElementById('details-audio-norm-enabled');
+  const card = slider.closest('.audio-norm-card');
 
   function update() {
     const idx = radios.findIndex(r => r.checked);
@@ -1207,8 +1209,19 @@ function initDetailsAudioNormSlider() {
     if (hiddenDb) hiddenDb.value = db;
   }
 
+  function setEnabled(on) {
+    if (card) card.classList.toggle('off', !on);
+    radios.forEach(r => { r.disabled = !on; });
+    if (pos) pos.style.opacity = on ? '1' : '0.2';
+    if (!on && hiddenDb) hiddenDb.value = '';
+    if (on) update();
+  }
+
   radios.forEach(r => r.addEventListener('change', update));
+  if (enableCb) enableCb.addEventListener('change', () => setEnabled(enableCb.checked));
+
   update();
+  if (enableCb) setEnabled(enableCb.checked);
 }
 
 /**
@@ -1249,12 +1262,21 @@ async function loadProjectDetails(wizard) {
     }
 
     // Audio normalization
-    if (project.audio_norm_profile) {
+    const audioNormEnabled = document.getElementById('details-audio-norm-enabled');
+    if (project.audio_norm_profile && project.audio_norm_profile !== 'off') {
+      if (audioNormEnabled) audioNormEnabled.checked = true;
       const radio = document.getElementById(`details-an-${project.audio_norm_profile}`);
       if (radio) {
         radio.checked = true;
         // Trigger the slider update
         radio.dispatchEvent(new Event('change'));
+      }
+      // Trigger enable/disable handler
+      if (audioNormEnabled) audioNormEnabled.dispatchEvent(new Event('change'));
+    } else {
+      if (audioNormEnabled) {
+        audioNormEnabled.checked = false;
+        audioNormEnabled.dispatchEvent(new Event('change'));
       }
     }
 
@@ -1290,12 +1312,13 @@ function setupProjectDetailsForm(wizard) {
     }
 
     const formData = new FormData(form);
+    const audioNormEnabled = document.getElementById('details-audio-norm-enabled');
     const payload = {
       platform_preset: formData.get('platform_preset'),
       output_format: formData.get('output_format'),
       fps: parseInt(formData.get('fps'), 10),
-      audio_norm_profile: formData.get('audio_norm_profile'),
-      audio_norm_db: parseFloat(formData.get('audio_norm_db')),
+      audio_norm_profile: audioNormEnabled?.checked ? formData.get('audio_norm_profile') : 'off',
+      audio_norm_db: audioNormEnabled?.checked ? parseFloat(formData.get('audio_norm_db')) : 0,
       tags: formData.get('tags'),
       description: formData.get('description')
     };

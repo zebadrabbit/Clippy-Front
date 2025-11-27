@@ -22,9 +22,6 @@ export async function onEnter(wizard) {
 
   // Generate preview
   await generatePreview(wizard);
-
-  // Setup keyboard shortcuts
-  setupKeyboardShortcuts(wizard);
 }
 
 export function onExit(wizard) {
@@ -85,26 +82,6 @@ function setupNavigation(wizard) {
 }
 
 /**
- * Setup keyboard shortcuts
- */
-function setupKeyboardShortcuts(wizard) {
-  const handler = (e) => {
-    // Ctrl+Enter: Start compilation
-    if (e.ctrlKey && e.key === 'Enter') {
-      e.preventDefault();
-      const startBtn = document.getElementById('start-compile');
-      if (startBtn && !startBtn.disabled) {
-        startBtn.click();
-      }
-    }
-  };
-
-  document.addEventListener('keydown', handler);
-
-  // Store handler for cleanup if needed
-  wizard._compileKeyHandler = handler;
-}
-
 /**
  * Setup compilation controls
  */
