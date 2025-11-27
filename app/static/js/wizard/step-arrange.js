@@ -1225,6 +1225,19 @@ function initDetailsAudioNormSlider() {
 }
 
 /**
+ * Update vertical controls visibility based on preset
+ */
+function updateVerticalControls(preset) {
+  const verticalControls = document.getElementById('details-vertical-controls');
+  if (!verticalControls) return;
+
+  const verticalPresets = ['youtube_shorts', 'tiktok', 'instagram_reel', 'instagram_story'];
+  const isVertical = verticalPresets.includes(preset);
+
+  verticalControls.classList.toggle('d-none', !isVertical);
+}
+
+/**
  * Load project details into the form
  */
 async function loadProjectDetails(wizard) {
@@ -1247,6 +1260,8 @@ async function loadProjectDetails(wizard) {
     const presetSelect = document.getElementById('details-platform-preset');
     if (presetSelect && project.platform_preset) {
       presetSelect.value = project.platform_preset;
+      // Trigger preset change to show/hide vertical controls
+      updateVerticalControls(project.platform_preset);
     }
 
     // Output format
@@ -1259,6 +1274,19 @@ async function loadProjectDetails(wizard) {
     const fpsSelect = document.getElementById('details-fps');
     if (fpsSelect && project.fps) {
       fpsSelect.value = String(project.fps);
+    }
+
+    // Vertical video controls
+    const verticalZoom = document.getElementById('details-vertical-zoom');
+    const verticalZoomDisplay = document.getElementById('details-vertical-zoom-display');
+    const verticalAlign = document.getElementById('details-vertical-align');
+
+    if (verticalZoom && project.vertical_zoom) {
+      verticalZoom.value = project.vertical_zoom;
+      if (verticalZoomDisplay) verticalZoomDisplay.textContent = `${project.vertical_zoom}%`;
+    }
+    if (verticalAlign && project.vertical_align) {
+      verticalAlign.value = project.vertical_align;
     }
 
     // Audio normalization
@@ -1303,6 +1331,23 @@ function setupProjectDetailsForm(wizard) {
   const form = document.getElementById('project-details-form');
   if (!form) return;
 
+  // Handle preset changes to show/hide vertical controls
+  const presetSelect = document.getElementById('details-platform-preset');
+  if (presetSelect) {
+    presetSelect.addEventListener('change', () => {
+      updateVerticalControls(presetSelect.value);
+    });
+  }
+
+  // Handle vertical zoom slider display update
+  const verticalZoom = document.getElementById('details-vertical-zoom');
+  const verticalZoomDisplay = document.getElementById('details-vertical-zoom-display');
+  if (verticalZoom && verticalZoomDisplay) {
+    verticalZoom.addEventListener('input', () => {
+      verticalZoomDisplay.textContent = `${verticalZoom.value}%`;
+    });
+  }
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
 
@@ -1317,6 +1362,8 @@ function setupProjectDetailsForm(wizard) {
       platform_preset: formData.get('platform_preset'),
       output_format: formData.get('output_format'),
       fps: parseInt(formData.get('fps'), 10),
+      vertical_zoom: parseInt(formData.get('vertical_zoom'), 10) || 100,
+      vertical_align: formData.get('vertical_align') || 'center',
       audio_norm_profile: audioNormEnabled?.checked ? formData.get('audio_norm_profile') : 'off',
       audio_norm_db: audioNormEnabled?.checked ? parseFloat(formData.get('audio_norm_db')) : 0,
       tags: formData.get('tags'),

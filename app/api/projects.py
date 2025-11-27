@@ -1607,6 +1607,8 @@ def get_project_details_api(project_id: int):
             "output_resolution": project.output_resolution,
             "output_format": project.output_format,
             "fps": project.fps,
+            "vertical_zoom": getattr(project, "vertical_zoom", 100),
+            "vertical_align": getattr(project, "vertical_align", "center"),
             "tags": project.tags,
             "description": getattr(project, "description", None),
         }
@@ -1646,6 +1648,15 @@ def update_project_details_api(project_id: int):
             project.fps = int(data["fps"])
         except (ValueError, TypeError):
             return jsonify({"error": "Invalid FPS value"}), 400
+
+    # Update vertical video settings if provided
+    if "vertical_zoom" in data:
+        try:
+            project.vertical_zoom = int(data["vertical_zoom"])
+        except (ValueError, TypeError):
+            project.vertical_zoom = 100
+    if "vertical_align" in data:
+        project.vertical_align = data["vertical_align"]
 
     # Update audio normalization if provided
     if "audio_norm_profile" in data:

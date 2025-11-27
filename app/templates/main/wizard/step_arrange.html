@@ -106,6 +106,32 @@
               </select>
             </div>
 
+            <!-- Vertical Video Controls (9:16 presets only) -->
+            <div class="col-12 d-none" id="details-vertical-controls">
+              <div class="alert alert-info mb-3">
+                <i class="bi bi-info-circle"></i> <strong>Vertical Video Mode:</strong> Converting 16:9 clips to 9:16 format
+              </div>
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <label class="form-label">Zoom Level</label>
+                  <div class="d-flex align-items-center gap-2">
+                    <input type="range" class="form-range" id="details-vertical-zoom" name="vertical_zoom" min="100" max="120" value="100" step="1">
+                    <span id="details-vertical-zoom-display" class="text-muted small" style="min-width: 3.5rem;">100%</span>
+                  </div>
+                  <small class="text-muted">Zoom into 16:9 clips to fill vertical frame</small>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">Horizontal Alignment</label>
+                  <select class="form-select" id="details-vertical-align" name="vertical_align">
+                    <option value="center" selected>Center</option>
+                    <option value="left">Left</option>
+                    <option value="right">Right</option>
+                  </select>
+                  <small class="text-muted">Horizontal position when zoomed in</small>
+                </div>
+              </div>
+            </div>
+
             <!-- Audio Normalization -->
             <div class="col-12">
               <div class="card audio-norm-card">
