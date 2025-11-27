@@ -302,7 +302,7 @@ def generate_preview_video_task(self, project_id, clip_ids=None):
                     concat_file = os.path.join(temp_dir, "concat.txt")
                     with open(concat_file, "w") as f:
                         for tf in temp_files:
-                            f.write(f"file '{tf}'\\n")
+                            f.write(f"file '{tf}'\n")
 
                     concat_cmd = [
                         ffmpeg_bin,
