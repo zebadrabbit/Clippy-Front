@@ -11,7 +11,7 @@ from datetime import datetime
 import structlog
 from celery import shared_task
 
-from app import create_app, db
+from app import create_app
 from app.ffmpeg_config import parse_resolution
 from app.models import Clip, Project
 
@@ -65,40 +65,33 @@ def generate_preview_video_task(self, project_id):
                 logger.error("preview_project_not_found", project_id=project_id)
                 return {"error": "Project not found"}
 
-            # Output path
-            preview_dir = os.path.join(
-                app.config["INSTANCE_PATH"], "previews", str(project.user_id)
-            )
-            os.makedirs(preview_dir, exist_ok=True)
-            preview_filename = f"preview_{project.id}.mp4"
-            preview_path = os.path.join(preview_dir, preview_filename)
-
-            # Cache invalidation: check if project updated since preview generated
-            if os.path.exists(preview_path):
+            # Cache invalidation: check if preview already exists and is fresh
+            if project.preview_filename:
                 try:
-                    preview_mtime = datetime.fromtimestamp(
-                        os.path.getmtime(preview_path)
+                    # For local workers, check file mtime
+                    preview_dir = os.path.join(
+                        app.instance_path, "previews", str(project.user_id)
                     )
-                    project_mtime = project.updated_at or project.created_at
-                    if preview_mtime > project_mtime:
+                    preview_path = os.path.join(preview_dir, project.preview_filename)
+                    if os.path.exists(preview_path):
+                        preview_mtime = datetime.fromtimestamp(
+                            os.path.getmtime(preview_path)
+                        )
+                        project_mtime = project.updated_at or project.created_at
+                        if preview_mtime > project_mtime:
+                            logger.info(
+                                "preview_cache_hit",
+                                project_id=project_id,
+                                preview_mtime=preview_mtime.isoformat(),
+                                project_mtime=project_mtime.isoformat(),
+                            )
+                            return {"preview": preview_path, "cached": True}
                         logger.info(
-                            "preview_cache_hit",
+                            "preview_cache_stale",
                             project_id=project_id,
                             preview_mtime=preview_mtime.isoformat(),
                             project_mtime=project_mtime.isoformat(),
                         )
-                        # Update metadata in case it's missing
-                        if not project.preview_filename:
-                            project.preview_filename = preview_filename
-                            project.preview_file_size = os.path.getsize(preview_path)
-                            db.session.commit()
-                        return {"preview": preview_path, "cached": True}
-                    logger.info(
-                        "preview_cache_stale",
-                        project_id=project_id,
-                        preview_mtime=preview_mtime.isoformat(),
-                        project_mtime=project_mtime.isoformat(),
-                    )
                 except Exception as cache_err:
                     logger.warning("preview_cache_check_failed", error=str(cache_err))
 
@@ -222,18 +215,20 @@ def generate_preview_video_task(self, project_id):
                     meta={"progress": 75, "status": "Concatenating clips"},
                 )
 
-                # Concatenate clips
+                # Concatenate clips to temp output
+                preview_output = os.path.join(temp_dir, "preview_final.mp4")
+
                 if len(temp_files) == 1:
                     # Single clip, just copy
                     import shutil
 
-                    shutil.move(temp_files[0], preview_path)
+                    shutil.move(temp_files[0], preview_output)
                 else:
                     # Multiple clips, concat
                     concat_file = os.path.join(temp_dir, "concat.txt")
                     with open(concat_file, "w") as f:
                         for tf in temp_files:
-                            f.write(f"file '{tf}'\n")
+                            f.write(f"file '{tf}'\\n")
 
                     concat_cmd = [
                         ffmpeg_bin,
@@ -246,7 +241,7 @@ def generate_preview_video_task(self, project_id):
                         concat_file,
                         "-c",
                         "copy",
-                        preview_path,
+                        preview_output,
                     ]
 
                     subprocess.run(
@@ -255,26 +250,30 @@ def generate_preview_video_task(self, project_id):
 
                 self.update_state(
                     state="PROGRESS",
-                    meta={"progress": 90, "status": "Finalizing preview"},
+                    meta={"progress": 85, "status": "Uploading preview"},
                 )
 
                 # Validate output
-                if not os.path.exists(preview_path):
+                if not os.path.exists(preview_output):
                     raise RuntimeError("Preview file was not created")
 
-                file_size = os.path.getsize(preview_path)
+                file_size = os.path.getsize(preview_output)
                 if file_size < 1024:
                     raise RuntimeError(f"Preview file too small: {file_size} bytes")
 
-                # Persist metadata
-                project.preview_filename = preview_filename
-                project.preview_file_size = file_size
-                db.session.commit()
+                # Upload to main server (works for both local and remote workers)
+                from app.tasks import worker_api
+
+                upload_result = worker_api.upload_preview(
+                    project_id=project_id,
+                    video_path=preview_output,
+                    metadata={"file_size": file_size, "clips_used": len(temp_files)},
+                )
 
                 logger.info(
-                    "preview_generated",
+                    "preview_uploaded",
                     project_id=project_id,
-                    path=preview_path,
+                    filename=upload_result.get("preview_filename"),
                     size=file_size,
                     clips=len(temp_files),
                 )
@@ -284,7 +283,7 @@ def generate_preview_video_task(self, project_id):
                 )
 
                 return {
-                    "preview": preview_path,
+                    "preview": upload_result.get("preview_path"),
                     "cached": False,
                     "file_size": file_size,
                     "clips_used": len(temp_files),

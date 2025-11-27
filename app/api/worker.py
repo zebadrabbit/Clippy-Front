@@ -1125,6 +1125,87 @@ def worker_upload_clip(project_id: int, clip_id: int):
         return jsonify({"error": str(e)}), 500
 
 
+@api_bp.route("/worker/projects/<int:project_id>/preview/upload", methods=["POST"])
+@require_worker_key
+def worker_upload_preview(project_id: int):
+    """Upload preview video from worker after rendering.
+
+    Multipart form data:
+        - preview: preview video file
+        - metadata: JSON string with {file_size, clips_used}
+
+    Returns:
+        {
+            "status": "uploaded",
+            "project_id": int,
+            "preview_filename": str,
+            "preview_path": str
+        }
+    """
+    try:
+        # Verify project exists
+        project = db.session.get(Project, project_id)
+        if not project:
+            return jsonify({"error": "Project not found"}), 404
+
+        # Get preview file from request
+        if "preview" not in request.files:
+            return jsonify({"error": "No preview file provided"}), 400
+
+        preview_file = request.files["preview"]
+
+        # Get metadata
+        metadata_str = request.form.get("metadata", "{}")
+        try:
+            import json
+
+            metadata = json.loads(metadata_str)
+        except Exception:
+            metadata = {}
+
+        # Build storage path in instance/previews/<user_id>/
+        preview_dir = os.path.join(
+            current_app.instance_path, "previews", str(project.user_id)
+        )
+        os.makedirs(preview_dir, exist_ok=True)
+
+        # Consistent naming
+        preview_filename = f"preview_{project_id}.mp4"
+        preview_path = os.path.join(preview_dir, preview_filename)
+
+        # Save preview file
+        preview_file.save(preview_path)
+        current_app.logger.info(f"Saved preview video to {preview_path}")
+
+        # Update project with preview info
+        project.preview_filename = preview_filename
+        project.preview_file_size = metadata.get(
+            "file_size", os.path.getsize(preview_path)
+        )
+
+        db.session.commit()
+
+        current_app.logger.info(
+            f"Worker uploaded preview for project {project_id}: {preview_filename}"
+        )
+
+        return jsonify(
+            {
+                "status": "uploaded",
+                "project_id": project_id,
+                "preview_filename": preview_filename,
+                "preview_path": preview_path,
+            }
+        )
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(
+            f"Preview upload failed for project {project_id}: {e}", exc_info=True
+        )
+        return jsonify({"error": str(e)}), 500
+
+
 @api_bp.route("/worker/projects/<int:project_id>/compilation/upload", methods=["POST"])
 @require_worker_key
 def worker_upload_compilation(project_id: int):

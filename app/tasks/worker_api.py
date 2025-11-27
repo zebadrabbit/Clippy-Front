@@ -559,3 +559,41 @@ def upload_compilation(
     finally:
         for f in files.values():
             f.close()
+
+
+def upload_preview(
+    project_id: int, video_path: str, metadata: dict | None = None
+) -> dict[str, Any]:
+    """Upload preview video file to server.
+
+    Args:
+        project_id: Project ID
+        video_path: Path to preview video file
+        metadata: Optional metadata dict with {file_size, clips_used}
+
+    Returns:
+        {
+            "status": "uploaded",
+            "project_id": int,
+            "preview_filename": str,
+            "preview_path": str
+        }
+    """
+    import json
+
+    base_url, api_key = _get_api_config()
+    url = f"{base_url}/api/worker/projects/{project_id}/preview/upload"
+    headers = {"Authorization": f"Bearer {api_key}"}
+
+    files = {"preview": open(video_path, "rb")}
+    data = {"metadata": json.dumps(metadata or {})}
+
+    try:
+        response = requests.post(
+            url, headers=headers, files=files, data=data, timeout=120
+        )
+        response.raise_for_status()
+        return response.json()
+    finally:
+        for f in files.values():
+            f.close()
