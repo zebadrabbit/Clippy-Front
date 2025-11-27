@@ -329,10 +329,13 @@ async function handleNext(wizard) {
     }
 
     const data = await res.json();
-    wizard.projectId = data.id;
-    wizard.projectData = data;
+    console.log('[step-setup] API response:', data);
+
+    wizard.projectId = data.project_id || data.id; // API returns project_id
+    wizard.projectData = { ...data, id: wizard.projectId, max_clips: maxClips }; // Include max_clips in projectData
 
     console.log('[step-setup] Project created:', wizard.projectId);
+    console.log('[step-setup] Project data:', wizard.projectData);
 
     // Save to localStorage and URL
     wizard.saveState();

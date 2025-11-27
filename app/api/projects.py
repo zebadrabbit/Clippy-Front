@@ -1081,6 +1081,10 @@ def generate_preview_api(project_id: int):
 @api_bp.route("/projects/<int:project_id>/clips", methods=["GET"])
 @login_required
 def list_project_clips_api(project_id: int):
+    import json
+    import os
+    import subprocess
+
     from app.models import Clip, Project
 
     project = Project.query.filter_by(id=project_id, user_id=current_user.id).first()
@@ -1091,13 +1095,61 @@ def list_project_clips_api(project_id: int):
     items = []
     for c in clips:
         media = c.media_file
+        # Prefer clip.duration, then media.duration, then probe file with ffprobe
+        duration = (
+            c.duration
+            if c.duration is not None
+            else (media.duration if media else None)
+        )
+
+        # Final fallback: probe the file with ffprobe if we still don't have duration
+        if duration is None and media and media.file_path:
+            try:
+                file_path = os.path.join(current_app.instance_path, media.file_path)
+                if os.path.exists(file_path):
+                    from app.ffmpeg_config import _resolve_binary
+
+                    ffprobe_bin = _resolve_binary(current_app, "ffprobe")
+
+                    result = subprocess.run(
+                        [
+                            ffprobe_bin,
+                            "-v",
+                            "quiet",
+                            "-print_format",
+                            "json",
+                            "-show_format",
+                            file_path,
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+
+                    if result.returncode == 0:
+                        probe_data = json.loads(result.stdout)
+                        if (
+                            "format" in probe_data
+                            and "duration" in probe_data["format"]
+                        ):
+                            duration = float(probe_data["format"]["duration"])
+                            # Update the media file duration for future use
+                            media.duration = duration
+                            from app.models import db
+
+                            db.session.commit()
+            except Exception as e:
+                current_app.logger.warning(
+                    f"Failed to probe duration for clip {c.id}: {e}"
+                )
+
         items.append(
             {
                 "id": c.id,
                 "title": c.title,
                 "source_url": c.source_url,
                 "is_downloaded": c.is_downloaded,
-                "duration": c.duration,
+                "duration": duration,
                 "view_count": c.view_count,
                 "creator_name": c.creator_name,
                 "game_name": c.game_name,

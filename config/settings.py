@@ -287,13 +287,7 @@ class Config:
     SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD")  # Only from environment/.env
 
     # Feature Flags
-    # Enable new modular wizard (fully refactored with resumability)
-    USE_NEW_WIZARD = os.environ.get("USE_NEW_WIZARD", "true").lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    # (Legacy USE_NEW_WIZARD flag removed - new wizard is now the only wizard)
 
 
 class DevelopmentConfig(Config):

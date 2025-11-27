@@ -268,6 +268,35 @@ def project_details_by_public(public_id):
 
     # Get project media files and group by role
     media_files = project.media_files.order_by(MediaFile.uploaded_at.desc()).all()
+
+    # Load selected media from wizard_state (used for compilation)
+    import json
+
+    wizard_state = {}
+    transitions = []
+    try:
+        if project.wizard_state:
+            wizard_state = json.loads(project.wizard_state)
+
+            # Load transitions from wizard_state
+            transition_ids = wizard_state.get("selectedTransitionIds", [])
+            if transition_ids:
+                transitions = MediaFile.query.filter(
+                    MediaFile.id.in_(transition_ids),
+                    MediaFile.user_id == current_user.id,
+                ).all()
+    except Exception as e:
+        current_app.logger.warning(f"Failed to parse wizard_state: {e}")
+        wizard_state = {}
+
+    # Fallback: if no transitions in wizard_state, query project media files
+    if not transitions:
+        transitions = (
+            project.media_files.filter_by(media_type=MediaType.TRANSITION)
+            .order_by(MediaFile.uploaded_at.desc())
+            .all()
+        )
+
     intros = (
         project.media_files.filter_by(media_type=MediaType.INTRO)
         .order_by(MediaFile.uploaded_at.desc())
@@ -275,11 +304,6 @@ def project_details_by_public(public_id):
     )
     outros = (
         project.media_files.filter_by(media_type=MediaType.OUTRO)
-        .order_by(MediaFile.uploaded_at.desc())
-        .all()
-    )
-    transitions = (
-        project.media_files.filter_by(media_type=MediaType.TRANSITION)
         .order_by(MediaFile.uploaded_at.desc())
         .all()
     )
@@ -372,6 +396,35 @@ def project_details(project_id):
     total_clip_count = clips_query.count()
     used_only = False
     media_files = project.media_files.order_by(MediaFile.uploaded_at.desc()).all()
+
+    # Load selected media from wizard_state (used for compilation)
+    import json
+
+    wizard_state = {}
+    transitions = []
+    try:
+        if project.wizard_state:
+            wizard_state = json.loads(project.wizard_state)
+
+            # Load transitions from wizard_state
+            transition_ids = wizard_state.get("selectedTransitionIds", [])
+            if transition_ids:
+                transitions = MediaFile.query.filter(
+                    MediaFile.id.in_(transition_ids),
+                    MediaFile.user_id == current_user.id,
+                ).all()
+    except Exception as e:
+        current_app.logger.warning(f"Failed to parse wizard_state: {e}")
+        wizard_state = {}
+
+    # Fallback: if no transitions in wizard_state, query project media files
+    if not transitions:
+        transitions = (
+            project.media_files.filter_by(media_type=MediaType.TRANSITION)
+            .order_by(MediaFile.uploaded_at.desc())
+            .all()
+        )
+
     intros = (
         project.media_files.filter_by(media_type=MediaType.INTRO)
         .order_by(MediaFile.uploaded_at.desc())
@@ -379,11 +432,6 @@ def project_details(project_id):
     )
     outros = (
         project.media_files.filter_by(media_type=MediaType.OUTRO)
-        .order_by(MediaFile.uploaded_at.desc())
-        .all()
-    )
-    transitions = (
-        project.media_files.filter_by(media_type=MediaType.TRANSITION)
         .order_by(MediaFile.uploaded_at.desc())
         .all()
     )

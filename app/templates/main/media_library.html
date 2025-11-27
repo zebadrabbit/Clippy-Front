@@ -128,9 +128,14 @@
     {% for m in media_files %}
     <div class="col">
       <div class="card h-100 position-relative media-card" data-id="{{ m.id }}" data-mime="{{ m.mime_type }}" data-type="{{ m.media_type.value if m.media_type else '' }}" data-name="{{ m.original_filename }}" data-tags="{{ m.tags or '' }}">
-        <div class="position-absolute top-0 start-0 p-2">
+        <div class="position-absolute top-0 start-0 p-2" style="z-index: 10;">
           <input class="form-check-input media-select" type="checkbox" value="{{ m.id }}">
         </div>
+        {% if m.is_public %}
+        <div class="position-absolute top-0 end-0 p-1" style="z-index: 10;">
+          <span class="badge bg-info" style="font-size: 0.65rem;">Public</span>
+        </div>
+        {% endif %}
         {% if m.mime_type.startswith('image') %}
           <img src="{{ url_for('main.media_preview', media_id=m.id) }}" class="card-img-top media-thumb" alt="{{ m.original_filename }}">
         {% elif m.mime_type.startswith('video') %}

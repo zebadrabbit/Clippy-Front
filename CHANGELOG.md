@@ -9,6 +9,132 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.0] - 2025-11-27
+
+### 🎉 Major Feature: Wizard Refactoring Complete
+
+**Architecture Overhaul**
+- Refactored 2,646-line monolithic `wizard.js` into 7 focused ES6 modules with lazy-loading
+  - `core.js` (309 lines) - State management, navigation, API helpers
+  - `step-setup.js` (350 lines) - Project setup form
+  - `step-clips.js` (450 lines) - Fetch and download clips
+  - `step-arrange.js` (613 lines) - Timeline DnD and media selection
+  - `step-compile.js` (545 lines) - Compilation and progress
+  - `shortcuts.js` (180 lines) - Keyboard shortcuts
+  - `commands.js` (230 lines) - Undo/redo command pattern
+- Template-first design: HTML lives in Jinja2 templates, not JavaScript
+- Total: ~2,497 lines (vs 2,646 monolithic) with better organization
+
+**Database Persistence & Resumability**
+- Added `wizard_step` (INTEGER) and `wizard_state` (TEXT/JSON) columns to projects table
+- Added `READY` status to ProjectStatus enum (DRAFT → READY → PROCESSING → COMPLETED)
+- Projects now fully resumable from any wizard step
+- Auto-save on all state changes (navigation, timeline edits, media selection)
+- State restoration preserves clips, intro, outro, transitions, music across sessions
+
+**Projects List UI Enhancements**
+- Smart status badges:
+  - Draft projects: "Draft: Step 2/4" (shows current wizard step)
+  - Ready projects: "Ready to Compile" (green badge)
+  - Processing: "Compiling..." (with animated spinner)
+  - Completed: "Completed" badge
+- Contextual action buttons:
+  - Draft: "Resume Step X" → Jump back into wizard at saved step
+  - Ready: "Compile Now" → Go straight to compilation
+  - Completed: "Download" → Get final video
+
+**Keyboard Shortcuts (Power Users)**
+- `Ctrl + ←/→` - Navigate between wizard steps
+- `Ctrl + Enter` - Create project (Step 1) / Start compile (Step 4)
+- `Ctrl + Z/Y` - Undo/Redo timeline operations (Step 3)
+- `Ctrl + S` - Save timeline (Step 3)
+- `↑/↓` - Navigate clips in timeline (Step 3)
+- `Delete` - Remove selected clip (Step 3)
+- `?` - Show keyboard shortcuts help modal
+
+**Timeline & Media Features**
+- Command pattern for undo/redo support (50 command history limit)
+  - AddClipCommand, RemoveClipCommand, MoveClipCommand
+  - Full HTML preservation for perfect undo
+- Timeline auto-saves on every change via `saveTimelineOrder()`
+- Status bar shows total duration in MM:SS format
+- Three-tier clip duration fallback:
+  1. `clip.duration` (database, preferred)
+  2. `media.duration` (database, fallback)
+  3. `ffprobe` filesystem probe (ultimate fallback with auto-DB update)
+- Duration badges always display if video file exists
+- Music track names shown in status bar (not just count)
+
+**Static Bumper Integration**
+- Fixed static.mp4 download URL to include `/api` prefix
+- Bumpers now render correctly in compilation chain
+
+**Transitions & State Management**
+- Transitions loaded from `wizard_state` JSON instead of `project.media_files`
+- Project details page shows transition thumbnails with hover previews
+- Popover images sized properly (max 320x180px)
+
+**Developer Experience**
+- Lazy-loading with ES6 dynamic imports (faster initial page load)
+- Modular architecture: each step is self-contained and testable
+- Clear separation of concerns (core, steps, commands, shortcuts)
+- Debuggability: ~300-600 lines per module vs 2,646 monolith
+- Feature parity with legacy wizard (validated with multiple hours of testing)
+
+### Added
+- Database migration: `wizard_state_001_add_wizard_fields.py`
+- API endpoint: `PATCH /api/projects/<id>/wizard` (update wizard_step, wizard_state, status)
+- Autosave indicator in wizard UI
+- "Add All Clips" button functionality in arrange step
+- Status bar spacing improvements (mx-2 margins)
+
+### Changed
+- Wizard now uses modular architecture exclusively
+- Projects table includes `wizard_step` and `wizard_state` columns
+- ProjectStatus enum includes new `READY` state
+- Ctrl+S removed from keyboard shortcuts display (autosave only)
+- Timeline restoration uses `makeTimelineCard()` for consistent rendering
+- Clip API returns nested `items` array with `media` objects
+
+### Fixed
+- Static bumper URL missing `/api` prefix
+- Transitions showing "None" on project details
+- Empty timeline when clicking "Edit Timeline"
+- Timeline cards not rendering (wrong container ID)
+- Clips not showing in restored timeline (wrong data structure)
+- Music status showing count instead of filename
+- Missing duration badges on clips (added ffprobe fallback)
+- Hover modals for intro/outro wrong size (max 320x180px)
+
+### Removed
+- Legacy `wizard.js` (2,646 lines) deleted
+- `USE_NEW_WIZARD` feature flag removed from config and templates
+- Unused inline HTML from old wizard template
+- Planning documents: `REFACTOR_WIZARD.md`, `WIZARD_REFACTOR_TODO.md`
+
+### Performance
+- Initial load: Only core.js loads (~309 lines)
+- Lazy-loading: Steps load on-demand (350-613 lines each)
+- Faster navigation between steps
+- Reduced JavaScript parsing time
+
+### Documentation
+- Updated `docs/WIZARD_REFACTORING.md` with complete architecture
+- Removed rollback instructions (legacy wizard deleted)
+- Updated `.env.example` (removed USE_NEW_WIZARD flag)
+- Added keyboard shortcuts documentation
+
+### Testing
+- All 70 tests passing
+- Multiple hours of user validation completed
+- Timeline drag & drop verified
+- Intro/outro/transition selection verified
+- Navigation between all steps verified
+- Compilation flow verified
+- State restoration verified
+
+---
+
 ## [1.0.4] - 2025-11-26
 
 ### Added

@@ -677,6 +677,7 @@ def _build_timeline_with_transitions_v2(
     configured_static = app.config.get("STATIC_BUMPER_PATH")
     if configured_static and os.path.exists(configured_static):
         static_bumper_path = configured_static
+        logger.info(f"Using configured static bumper: {static_bumper_path}")
     else:
         # Try instance/assets/static.mp4
         with app.app_context():
@@ -684,12 +685,50 @@ def _build_timeline_with_transitions_v2(
 
             instance_static = os.path.join(data_root(), "..", "assets", "static.mp4")
             instance_static = os.path.normpath(instance_static)
+            logger.info(f"Checking for static bumper at: {instance_static}")
             if os.path.exists(instance_static):
                 static_bumper_path = instance_static
+                logger.info(f"Found static bumper: {static_bumper_path}")
+            else:
+                logger.warning(f"Static bumper not found locally at: {instance_static}")
+                # Try downloading from main server via worker API
+                try:
+                    api_base = app.config.get("MEDIA_BASE_URL", "").rstrip("/")
+                    if api_base:
+                        static_url = f"{api_base}/api/assets/static.mp4"
+                        logger.info(
+                            f"Attempting to download static bumper from: {static_url}"
+                        )
+
+                        downloaded_static = os.path.join(
+                            temp_dir, "static_download.mp4"
+                        )
+                        import requests
+
+                        resp = requests.get(static_url, timeout=30, stream=True)
+                        if resp.status_code == 200:
+                            with open(downloaded_static, "wb") as f:
+                                for chunk in resp.iter_content(chunk_size=8192):
+                                    f.write(chunk)
+                            static_bumper_path = downloaded_static
+                            logger.info(
+                                f"Successfully downloaded static bumper to: {static_bumper_path}"
+                            )
+                        else:
+                            logger.warning(
+                                f"Failed to download static bumper: HTTP {resp.status_code}"
+                            )
+                    else:
+                        logger.warning(
+                            "MEDIA_BASE_URL not configured, cannot download static bumper"
+                        )
+                except Exception as e:
+                    logger.error(f"Error downloading static bumper: {e}")
 
     # Process static bumper if present
     processed_static_path = None
     if static_bumper_path and os.path.exists(static_bumper_path):
+        logger.info(f"Processing static bumper: {static_bumper_path}")
         processed_static_path = os.path.join(temp_dir, "static_processed.mp4")
 
         # Process static bumper with special handling for audio sync
@@ -747,43 +786,50 @@ def _build_timeline_with_transitions_v2(
 
     segments = []
 
-    # Intro
+    # 1. Intro (if present)
     if intro_path:
         segments.append(intro_path)
+        logger.info("Added intro to segments")
+        # Static after intro
+        if processed_static_path:
+            segments.append(processed_static_path)
+            logger.info("Added static after intro")
 
-    # Static after intro
-    if intro_path and processed_static_path:
-        segments.append(processed_static_path)
-
-    # Add clips with transitions and static bumpers
+    # 2. Clips with pattern: clip -> static -> (transition -> static)
     transition_idx = 0
     for i, clip_path in enumerate(processed_clips):
-        # Add transition before this clip (not before first clip)
-        if i > 0 and transition_paths:
+        # If this is the first clip and no intro, add static before it
+        if i == 0 and not intro_path and processed_static_path:
+            segments.append(processed_static_path)
+            logger.info("Added static before first clip (no intro)")
+
+        # Add the clip itself
+        segments.append(clip_path)
+        logger.info(f"Added clip {i+1} to segments")
+
+        # Add static after clip
+        if processed_static_path:
+            segments.append(processed_static_path)
+            logger.info(f"Added static after clip {i+1}")
+
+        # Add transition after static (not after the last clip)
+        if i < len(processed_clips) - 1 and transition_paths:
             trans = _next_transition(transition_idx)
             if trans:
                 segments.append(trans)
+                logger.info(f"Added transition {transition_idx+1} to segments")
                 transition_idx += 1
-                # Static after transition (always add after transition)
+                # Static after transition
                 if processed_static_path:
                     segments.append(processed_static_path)
-        elif i == 0 and not intro_path and processed_static_path:
-            # First clip with no intro: add static before it
-            segments.append(processed_static_path)
+                    logger.info("Added static after transition")
 
-        # The clip itself
-        segments.append(clip_path)
-
-        # Static after clip (always, unless it's the last clip and outro is coming)
-        if processed_static_path:
-            if i < len(processed_clips) - 1:  # Not the last clip
-                segments.append(processed_static_path)
-            elif not outro_path:  # Last clip and no outro
-                segments.append(processed_static_path)
-
-    # Outro
+    # 3. Outro (if present)
     if outro_path:
         segments.append(outro_path)
+        logger.info("Added outro to segments")
+
+    logger.info(f"Total segments in timeline: {len(segments)}")
 
     # Save segment labels for logging
     labels = []

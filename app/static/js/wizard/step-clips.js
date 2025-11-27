@@ -4,6 +4,7 @@
  */
 
 let downloadPollTimer = null;
+let autoRunInProgress = false; // Prevent multiple simultaneous auto-runs
 
 export async function onEnter(wizard) {
   console.log('[step-clips] Entering clips step');
@@ -11,9 +12,40 @@ export async function onEnter(wizard) {
   // Setup navigation handlers
   setupNavigation(wizard);
 
-  // Auto-run fetch and download if we just came from Step 1
-  if (wizard.projectId && !wizard.clipsProcessed) {
-    await autoRunGetClips(wizard);
+  // CRITICAL: Prevent multiple auto-runs
+  if (autoRunInProgress) {
+    console.warn('[step-clips] Auto-run already in progress, skipping');
+    return;
+  }
+
+  // Check wizard state to see if clips step was already completed
+  const wizardState = wizard.loadWizardState();
+  const clipsCompleted = wizardState?.clipsCompleted || false;
+
+  console.log('[step-clips] Wizard state:', wizardState);
+  console.log('[step-clips] Clips completed:', clipsCompleted);
+
+  // Only auto-run if we haven't completed this step before
+  if (wizard.projectId && !clipsCompleted) {
+    console.log('[step-clips] First time on clips step, starting auto-run');
+    autoRunInProgress = true;
+    try {
+      await autoRunGetClips(wizard);
+    } finally {
+      autoRunInProgress = false;
+    }
+  } else if (clipsCompleted) {
+    console.log('[step-clips] Clips step already completed, skipping auto-run');
+    setGcActive('done');
+    setGcDone('fetch');
+    setGcDone('extract');
+    setGcDone('queue');
+    setGcDone('download');
+    setGcDone('import');
+    setGcDone('done');
+    setGcStatus('Ready.');
+    setGcFill(100);
+    document.getElementById('next-2').disabled = false;
   }
 }
 
@@ -45,7 +77,7 @@ async function autoRunGetClips(wizard) {
   console.log('[step-clips] Auto-running Get Clips workflow');
 
   setGcActive('fetch');
-  setGcStatus('Casting a net for clips…');
+  setGcStatus('Casting a net for clips...');
   setGcFill(5);
 
   try {
@@ -72,7 +104,7 @@ async function autoRunGetClips(wizard) {
     await queueDownloads(wizard, urls);
     setGcDone('extract');
     setGcActive('queue');
-    setGcStatus(`Stacking ${wizard.downloadTasks.length} download(s)…`);
+    setGcStatus(`Stacking ${wizard.downloadTasks.length} download(s)...`);
     setGcFill(35);
 
     const hasDownloadTasks = (wizard.downloadTasks || []).some(t => t && t.task_id);
@@ -87,7 +119,7 @@ async function autoRunGetClips(wizard) {
       // All clips were reused - skip to import
       setGcDone('download');
       setGcActive('import');
-      setGcStatus('Importing artifacts from workers…');
+      setGcStatus('Importing artifacts from workers...');
       setGcFill(80);
 
       await runIngest(wizard);
@@ -137,7 +169,7 @@ async function fetchTwitchClips(wizard) {
   } catch (e) {
     console.error('[step-clips] Twitch fetch failed:', e);
     setGcError('fetch');
-    setGcStatus('Couldn't fetch clips. Check your Twitch settings.');
+    setGcStatus('Couldn\'t fetch clips. Check your Twitch settings.');
     throw e;
   }
 }
@@ -185,8 +217,30 @@ async function queueDownloads(wizard, urls) {
     throw new Error('No clip URLs to download.');
   }
 
+  // CRITICAL: Check if project already has clips to prevent duplicate downloads
+  try {
+    const checkRes = await wizard.api(`/api/projects/${wizard.projectId}/clips`);
+    if (checkRes.ok) {
+      const checkData = await checkRes.json();
+      const existingClips = (checkData && checkData.items) || [];
+      if (existingClips.length > 0) {
+        console.warn(`[step-clips] Project already has ${existingClips.length} clips, aborting new downloads`);
+        setGcStatus(`Using ${existingClips.length} existing clips.`);
+        wizard.downloadTasks = []; // No new tasks
+        return;
+      }
+    }
+  } catch (e) {
+    console.warn('[step-clips] Could not check existing clips:', e);
+    // Continue anyway
+  }
+
   // Calculate effective limit based on compilation_length
   let effectiveLimit = wizard.projectData?.max_clips || urls.length;
+
+  console.log(`[step-clips] max_clips from projectData: ${wizard.projectData?.max_clips}`);
+  console.log(`[step-clips] Total URLs available: ${urls.length}`);
+  console.log(`[step-clips] Initial effective limit: ${effectiveLimit}`);
 
   const compilationLength = wizard.projectData?.compilation_length || 'auto';
   if (compilationLength !== 'auto') {
@@ -200,6 +254,8 @@ async function queueDownloads(wizard, urls) {
   }
 
   const limit = Math.max(1, Math.min(100, effectiveLimit));
+  console.log(`[step-clips] Final limit (capped 1-100): ${limit}`);
+
   let payload = { urls: urls.slice(0, limit), limit };
 
   // Include clip metadata if available
@@ -241,7 +297,7 @@ async function queueDownloads(wizard, urls) {
  * Start polling download task progress
  */
 async function startDownloadPolling(wizard) {
-  setGcStatus('Pulling clips down…');
+  setGcStatus('Pulling clips down...');
 
   const realTasks = (wizard.downloadTasks || []).filter(t => t && t.task_id);
   const total = realTasks.length || 1;
@@ -275,7 +331,7 @@ async function startDownloadPolling(wizard) {
     }
 
     const pct = Math.floor((done / total) * 100);
-    setGcStatus(`Pulling clips down… ${pct}% (${done - failed}/${total} ok${failed ? `, ${failed} hiccuped` : ''})`);
+    setGcStatus(`Pulling clips down... ${pct}% (${done - failed}/${total} ok${failed ? `, ${failed} hiccuped` : ''})`);
 
     // Map download progress: 40% → 95%
     const overall = 40 + Math.round((pct / 100) * 55);
@@ -287,7 +343,7 @@ async function startDownloadPolling(wizard) {
 
       setGcDone('download');
       setGcActive('import');
-      setGcStatus('Importing artifacts from workers…');
+      setGcStatus('Importing artifacts from workers...');
       setGcFill(80);
 
       // Run ingest
@@ -295,7 +351,7 @@ async function startDownloadPolling(wizard) {
       setGcDone('import');
 
       // Verify clips ready with retries
-      setGcStatus('Verifying all clips are ready…');
+      setGcStatus('Verifying all clips are ready...');
       let retries = 0;
       const maxRetries = 3;
       let finalVerify = null;
@@ -323,7 +379,9 @@ async function startDownloadPolling(wizard) {
         setGcStatus('Ready.');
         setGcFill(100);
         document.getElementById('next-2').disabled = false;
-        wizard.clipsProcessed = true;
+
+        // Mark clips step as completed in wizard state
+        await wizard.saveWizardState({ clipsCompleted: true });
       } else if (finalVerify && finalVerify.missing > 0) {
         setGcError('import');
         setGcStatus(`⚠ ${finalVerify.missing} clip(s) failed to import. Check worker logs.`);
@@ -349,12 +407,49 @@ async function runIngest(wizard) {
   if (!wizard.projectId) return;
 
   setGcActive('import');
-  setGcStatus('Verifying clips are ready…');
+  setGcStatus('Importing artifacts from workers...');
 
   try {
+    // Get worker IDs from config (passed from server)
+    const workerIds = (window.INGEST_WORKER_IDS || 'gpu-worker-01').split(',').map(id => id.trim()).filter(Boolean);
+
+    // Call ingest for each worker
+    const ingestPromises = workerIds.map(async workerId => {
+      try {
+        const res = await wizard.api(`/api/projects/${wizard.projectId}/ingest-downloads`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            worker_id: workerId,
+            action: 'copy'
+          })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          console.log(`[step-clips] Ingest started for worker ${workerId}:`, data.task_id);
+          return { workerId, success: true, taskId: data.task_id };
+        } else {
+          console.warn(`[step-clips] Ingest failed for worker ${workerId}:`, res.status);
+          return { workerId, success: false };
+        }
+      } catch (e) {
+        console.error(`[step-clips] Ingest error for worker ${workerId}:`, e);
+        return { workerId, success: false, error: e.message };
+      }
+    });
+
+    const results = await Promise.all(ingestPromises);
+    const successCount = results.filter(r => r.success).length;
+    console.log(`[step-clips] Ingest tasks started: ${successCount}/${workerIds.length}`);
+
+    // Wait a moment for ingest to process
+    await new Promise(r => setTimeout(r, 2000));
+
+    // Verify clips are ready
     const verifyResult = await verifyAllClipsReady(wizard);
     if (!verifyResult.ready) {
-      console.warn('[step-clips] Some clips not ready:', verifyResult);
+      console.warn('[step-clips] Some clips not ready after ingest:', verifyResult);
       setGcStatus(`Waiting for ${verifyResult.missing} more clip(s)...`);
       await new Promise(r => setTimeout(r, 2000));
 
@@ -370,9 +465,9 @@ async function runIngest(wizard) {
     setGcStatus('All clips ready.');
     return 'ok';
   } catch (e) {
-    console.error('[step-clips] Verification error:', e);
+    console.error('[step-clips] Ingest error:', e);
     setGcError('import');
-    setGcStatus('Verification failed.');
+    setGcStatus('Ingest failed.');
     return 'error';
   }
 }

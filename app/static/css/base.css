@@ -100,6 +100,55 @@ body {
     filter: brightness(0.9);
 }
 
+/* Button glow effect with animated rainbow border */
+.btn-glow {
+    position: relative;
+    z-index: 0;
+    border-radius: 12px;
+    overflow: visible;
+}
+.btn-glow::before {
+    content: "";
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    width: calc(100% + 4px);
+    height: calc(100% + 4px);
+    border-radius: 12px;
+    background: linear-gradient(
+        45deg,
+        var(--color-accent, #6610f2),
+        #0d6efd,
+        #22c55e,
+        #9b59b6,
+        var(--color-accent, #6610f2)
+    );
+    background-size: 400%;
+    filter: blur(10px);
+    animation: wizardGlow 20s linear infinite;
+    transition: opacity 0.25s ease-in-out;
+    opacity: 0;
+    z-index: -1;
+}
+.btn-glow:hover::before,
+.btn-glow:focus-visible::before {
+    opacity: 1;
+}
+.btn-glow:disabled::before {
+    opacity: 0;
+}
+@keyframes wizardGlow {
+    0% {
+        background-position: 0 0;
+    }
+    50% {
+        background-position: 400% 0;
+    }
+    100% {
+        background-position: 0 0;
+    }
+}
+
 /* Reusable dark drop shadow for buttons on dark themes */
 .btn-shadow-dark {
     box-shadow: 0 5px 18px rgba(0, 0, 0, 0.55), 0 4px 10px rgba(0, 0, 0, 0.45);
@@ -288,6 +337,48 @@ fieldset:disabled .btn-primary {
     color: var(--bs-muted, var(--color-muted, #adb5bd));
 }
 .dropzone .dz-preview { display: none; }
+
+/* Media Library: type-colored accents */
+.media-card {
+    border-width: 2px;
+}
+.media-card .media-thumb {
+    max-height: 140px;
+    width: 100%;
+    object-fit: cover;
+}
+.media-card[data-type="intro"] { border-color: var(--media-color-intro, #0ea5e9); }
+.media-card[data-type="clip"] { border-color: var(--media-color-clip, var(--color-accent)); }
+.media-card[data-type="outro"] { border-color: var(--media-color-outro, #f59e0b); }
+.media-card[data-type="transition"] { border-color: var(--media-color-transition, #22c55e); }
+.media-card[data-type="music"] { border-color: var(--media-color-music, #3b82f6); }
+.media-card[data-type="compilation"] { border-color: var(--media-color-compilation, var(--color-accent)); }
+
+/* Media type badges using theme colors */
+.badge.text-bg-intro {
+    background-color: color-mix(in srgb, var(--media-color-intro, #0ea5e9), #000 10%) !important;
+    color: #fff !important;
+}
+.badge.text-bg-clip {
+    background-color: color-mix(in srgb, var(--media-color-clip, var(--color-accent)), #000 10%) !important;
+    color: #fff !important;
+}
+.badge.text-bg-outro {
+    background-color: color-mix(in srgb, var(--media-color-outro, #f59e0b), #000 10%) !important;
+    color: #111 !important;
+}
+.badge.text-bg-transition {
+    background-color: color-mix(in srgb, var(--media-color-transition, #22c55e), #000 10%) !important;
+    color: #111 !important;
+}
+.badge.text-bg-music {
+    background-color: color-mix(in srgb, var(--media-color-music, #3b82f6), #000 10%) !important;
+    color: #fff !important;
+}
+.badge.text-bg-compilation {
+    background-color: color-mix(in srgb, var(--media-color-compilation, var(--color-accent)), #000 10%) !important;
+    color: #fff !important;
+}
 
 /* Accent variant: purple dashed border with diagonal stripes overlay */
 .dropzone-accent {

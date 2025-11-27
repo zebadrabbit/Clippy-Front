@@ -2,8 +2,8 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "1.0.4"
-__version_info__ = (1, 0, 4)
+__version__ = "1.1.0"
+__version_info__ = (1, 1, 0)
 
 # Version history tracking
 VERSION_HISTORY = {
@@ -179,6 +179,17 @@ VERSION_HISTORY = {
         "Timeline confirmation redesigned as large pill-shaped button with secondary background, auto-disables when timeline empty. "
         "Fixed orphaned static separators when clips removed (rebuildSeparators now called in RemoveClipCommand execute/undo). "
         "Progress label shows dynamic text: 'Ready.' → 'Compiling...' → '100%' with theme-aware colors."
+    ),
+    "1.1.0": (
+        "🎉 WIZARD REFACTORING COMPLETE - Major architectural overhaul of project wizard from 2,646-line monolith to modular ES6 architecture. "
+        "7 focused modules with lazy-loading (core.js 309 lines, step-setup.js 350, step-clips.js 450, step-arrange.js 613, step-compile.js 545, shortcuts.js 180, commands.js 230). "
+        "Template-first design (HTML in Jinja2, not JS). Database persistence with wizard_step and wizard_state columns for full resumability. "
+        "Projects list shows smart status badges (Draft: Step X/4, Ready to Compile, Compiling...) with contextual action buttons (Resume Step X, Compile Now). "
+        "Keyboard shortcuts for power users (Ctrl+←/→ navigation, Ctrl+S save, Ctrl+Z/Y undo/redo, ? for help). "
+        "Command pattern for undo/redo timeline operations (50 command history). Auto-save on all state changes. "
+        "Three-tier duration fallback (clip.duration → media.duration → ffprobe filesystem probe with auto-DB update). "
+        "Timeline state fully restored across sessions (clips, intro, outro, transitions, music with total duration display). "
+        "Removed legacy wizard.js and USE_NEW_WIZARD feature flag. All 70 tests passing."
     ),
 }
 

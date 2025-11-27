@@ -53,15 +53,30 @@ function setupNavigation(wizard) {
       return;
     }
     try {
-      const details = await wizard.api(`/api/projects/${wizard.projectId}`);
+      const res = await fetch(`/api/projects/${wizard.projectId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const details = await res.json();
+
+      // Navigate to public page if available, otherwise to project detail
       if (details.public_id) {
         window.location.href = `/p/${details.public_id}`;
       } else {
-        alert('Project does not have a public ID yet.');
+        // Fallback to project detail page
+        window.location.href = `/projects/${wizard.projectId}`;
       }
     } catch (e) {
       console.error('Failed to get project details:', e);
-      alert('Failed to navigate to project.');
+      // Fallback to direct project navigation
+      window.location.href = `/projects/${wizard.projectId}`;
     }
   });
 }
@@ -241,7 +256,7 @@ async function renderCompileSummary(wizard) {
         <div class="mb-1"><strong>Estimated length:</strong> ${fmtSec(estimatedSeconds)}</div>
         <div class="mb-1"><strong>Intro/Outro:</strong> ${intro ? yes : no}, ${outro ? yes : no}</div>
         <div class="mb-1"><strong>Transitions:</strong> ${transCount ? `${transCount} (${transMode})` : 'None'}</div>
-        <div class="mb-1"><strong>Background Music:</strong> ${wizard.selectedMusicId ? `Yes (${document.getElementById('music-volume')?.value || 30}% volume)` : 'None'}</div>
+        <div class="mb-1"><strong>Background Music:</strong> ${(Array.isArray(wizard.selectedMusicIds) && wizard.selectedMusicIds.length) ? `Yes (${document.getElementById('music-volume')?.value || 30}% volume)` : 'None'}</div>
         <div class="text-muted">Clip limits: max ${s.max_len || 0}s • max clips ${s.max_clips || 0}${s.compilation_length && s.compilation_length !== 'auto' ? ` • Target length: ${Math.floor(parseInt(s.compilation_length) / 60)}m` : ''}${s.start_date || s.end_date ? ` • Dates: ${escapeHtml(s.start_date || '—')} → ${escapeHtml(s.end_date || '—')}` : ''}</div>
       </div>
       <div class="compile-middle small">
@@ -379,24 +394,28 @@ async function startCompilation(wizard) {
   }
 
   if (cancelBtn) cancelBtn.disabled = false;
-  log.textContent = 'Splicing your highlights together…';
+  log.textContent = 'Splicing your highlights together...';
 
   try {
     const body = {};
 
-    // Add intro/outro
-    if (wizard.selectedIntroId) body.intro_id = wizard.selectedIntroId;
-    if (wizard.selectedOutroId) body.outro_id = wizard.selectedOutroId;
-
-    // Add transitions
-    if (Array.isArray(wizard.selectedTransitionIds) && wizard.selectedTransitionIds.length) {
-      body.transition_ids = wizard.selectedTransitionIds;
-      body.randomize_transitions = !!document.getElementById('transitions-randomize')?.checked;
+    // Add intro/outro (get first selected ID from arrays)
+    if (Array.isArray(wizard.selectedIntroIds) && wizard.selectedIntroIds.length) {
+      body.intro_id = wizard.selectedIntroIds[0];
+    }
+    if (Array.isArray(wizard.selectedOutroIds) && wizard.selectedOutroIds.length) {
+      body.outro_id = wizard.selectedOutroIds[0];
     }
 
-    // Add music settings
-    if (wizard.selectedMusicId) {
-      body.background_music_id = wizard.selectedMusicId;
+    // Add transitions (always send, even if empty array to indicate intent)
+    body.transition_ids = Array.isArray(wizard.selectedTransitionIds) && wizard.selectedTransitionIds.length
+      ? wizard.selectedTransitionIds
+      : [];
+    body.randomize_transitions = !!document.getElementById('transitions-randomize')?.checked;
+
+    // Add music settings (get first selected ID from array)
+    if (Array.isArray(wizard.selectedMusicIds) && wizard.selectedMusicIds.length) {
+      body.background_music_id = wizard.selectedMusicIds[0];
       body.music_volume = parseFloat((parseInt(document.getElementById('music-volume')?.value || '30', 10) / 100).toFixed(2));
       body.music_start_mode = document.getElementById('music-start-mode')?.value || 'after_intro';
       body.music_end_mode = document.getElementById('music-end-mode')?.value || 'before_outro';
@@ -409,6 +428,8 @@ async function startCompilation(wizard) {
       body.duck_attack = parseFloat((attackSlider / 10).toFixed(1));
       body.duck_release = parseFloat(document.getElementById('duck-release')?.value || '250');
     }
+
+    console.log('[step-compile] Compilation body:', body);
 
     // Extract timeline clips
     const list = document.getElementById('timeline-list');
@@ -426,16 +447,28 @@ async function startCompilation(wizard) {
     body.clip_ids = ids;
 
     // Start compilation
-    const r = await wizard.api(`/api/projects/${wizard.projectId}/compile`, {
+    const res = await fetch(`/api/projects/${wizard.projectId}/compile`, {
       method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': wizard.getCsrfToken ? wizard.getCsrfToken() : ''
+      },
       body: JSON.stringify(body)
     });
 
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(errData.error || `HTTP ${res.status}`);
+    }
+
+    const r = await res.json();
     wizard.compileTaskId = r.task_id;
 
     if (!wizard.compileTaskId) {
       if (cancelBtn) cancelBtn.disabled = true;
+      if (startBtn) startBtn.disabled = false;
       log.textContent = 'Failed to start compilation: missing task id.';
+      console.error('[step-compile] API response missing task_id:', r);
       return;
     }
 
@@ -444,10 +477,24 @@ async function startCompilation(wizard) {
       try {
         if (!wizard.compileTaskId) return;
 
-        const s = await wizard.api(`/api/tasks/${wizard.compileTaskId}`);
+        const taskRes = await fetch(`/api/tasks/${wizard.compileTaskId}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!taskRes.ok) {
+          console.error('[step-compile] Task status fetch failed:', taskRes.status);
+          return;
+        }
+
+        const s = await taskRes.json();
         const st = s.state || s.status;
         const meta = s.info || {};
         const pct = Math.max(0, Math.min(100, Math.floor(meta.progress || 0)));
+
+        console.log('[step-compile] Task status:', st, 'Progress:', pct, 'Meta:', meta);
 
         targetProgress = pct;
         if (progressAnimationFrame) clearTimeout(progressAnimationFrame);
@@ -459,7 +506,7 @@ async function startCompilation(wizard) {
         const parts = [];
         if (stage) parts.push(`[${stage}]`);
         if (msg) parts.push(msg);
-        if (parts.length) log.textContent = parts.join(' ') + `\n${pct}%`;
+        if (parts.length) log.textContent = parts.join(' ') + ` ${pct}%`;
 
         if (st === 'SUCCESS') {
           clearInterval(compileTimer);
@@ -489,16 +536,20 @@ async function startCompilation(wizard) {
           clearInterval(compileTimer);
           if (cancelBtn) cancelBtn.disabled = true;
           if (startBtn) startBtn.disabled = false;
-          log.textContent = 'The cut failed. Let's tweak and retry.';
+          const errorMsg = s.error || meta.error || 'Unknown error';
+          log.textContent = `The cut failed: ${errorMsg}`;
+          console.error('[step-compile] Task failed:', s);
           return;
         }
-      } catch (_) {}
+      } catch (err) {
+        console.error('[step-compile] Poll error:', err);
+      }
     }
 
     compileTimer = setInterval(poll, 1200);
     poll();
   } catch (e) {
-    alert('Couldn't start the cut: ' + e.message);
+    alert('Couldn\'t start the cut: ' + e.message);
   }
 }
 

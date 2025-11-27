@@ -66,15 +66,6 @@ export function initShortcuts(wizard) {
         return;
       }
 
-      // Ctrl+S: Save timeline
-      if (e.ctrlKey && e.key === 's') {
-        e.preventDefault();
-        // Trigger save via step-arrange.js
-        const event = new CustomEvent('wizard:save-timeline');
-        document.dispatchEvent(event);
-        return;
-      }
-
       // Delete: Remove selected clip (if any)
       if (e.key === 'Delete' || e.key === 'Backspace') {
         const focused = document.activeElement;

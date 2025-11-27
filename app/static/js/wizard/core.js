@@ -8,6 +8,7 @@ export class WizardCore {
   constructor() {
     this.projectId = null;
     this.projectData = null;
+    this.wizardState = {}; // Persisted wizard state from database
     this.steps = ['setup', 'clips', 'arrange', 'compile'];
     this.currentStep = 1;
     this.stepModules = {}; // Lazy-loaded step modules
@@ -144,7 +145,10 @@ export class WizardCore {
     }
 
     try {
-      const module = await import(`./step-${stepName}.js`);
+      // Use absolute path from static root for better reliability
+      const modulePath = '/static/js/wizard/step-' + stepName + '.js?v=' + (window.APP_VERSION || '1.0.0');
+      console.log('[Wizard] Loading module:', modulePath);
+      const module = await import(modulePath);
       this.stepModules[stepName] = module;
 
       // Initialize module if it has an init function
@@ -154,7 +158,7 @@ export class WizardCore {
 
       return module;
     } catch (error) {
-      console.error(`[Wizard] Failed to load step module: ${stepName}`, error);
+      console.error('[Wizard] Failed to load step module:', stepName, error);
       return null;
     }
   }
@@ -224,15 +228,25 @@ export class WizardCore {
     if (!this.projectId) return;
 
     try {
+      // Merge with existing state
+      this.wizardState = { ...this.wizardState, ...state };
+
       await this.api(`/api/projects/${this.projectId}/wizard`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ wizard_state: state })
+        body: JSON.stringify({ wizard_state: this.wizardState })
       });
-      console.log('[Wizard] Saved wizard_state');
+      console.log('[Wizard] Saved wizard_state:', this.wizardState);
     } catch (e) {
       console.warn('[Wizard] Failed to save wizard_state:', e);
     }
+  }
+
+  /**
+   * Load wizard state from memory (loaded on init)
+   */
+  loadWizardState() {
+    return this.wizardState || {};
   }
 
   /**
@@ -288,6 +302,20 @@ export function initWizard() {
   if (window.wizardExistingProject) {
     wizardInstance.projectId = window.wizardExistingProject.id;
     wizardInstance.projectData = window.wizardExistingProject;
+
+    // Load wizard state from database
+    if (window.wizardExistingProject.wizardState) {
+      try {
+        wizardInstance.wizardState = typeof window.wizardExistingProject.wizardState === 'string'
+          ? JSON.parse(window.wizardExistingProject.wizardState)
+          : window.wizardExistingProject.wizardState;
+        console.log('[Wizard] Loaded wizard state:', wizardInstance.wizardState);
+      } catch (e) {
+        console.warn('[Wizard] Failed to parse wizard state:', e);
+        wizardInstance.wizardState = {};
+      }
+    }
+
     const initialStep = window.wizardExistingProject.initialStep || 1;
     console.log('[Wizard] Loading existing project:', wizardInstance.projectId, 'at step:', initialStep);
     wizardInstance.gotoStep(initialStep);

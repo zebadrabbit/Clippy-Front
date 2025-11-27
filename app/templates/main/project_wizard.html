@@ -120,24 +120,33 @@
 {% block scripts %}
 {{ super() }}
 <script>
+  // App version for cache busting
+  window.APP_VERSION = "{{ config.get('VERSION', '1.0.0') }}";
+
+  // Worker IDs for ingest operations
+  window.INGEST_WORKER_IDS = "{{ config.get('AUTO_INGEST_WORKER_IDS', 'gpu-worker-01') }}";
+
   // Initialize wizard with existing project if provided
   {% if existing_project %}
   window.wizardExistingProject = {
     id: {{ existing_project.id }},
     name: {{ existing_project.name|tojson }},
     description: {{ existing_project.description|tojson if existing_project.description else 'null' }},
-    initialStep: {{ initial_step }}
+    initialStep: {{ initial_step }},
+    wizardState: {{ existing_project.wizard_state|tojson if existing_project.wizard_state else '{}' }}
   };
   {% endif %}
 </script>
-{# Feature flag: use new modular wizard if enabled #}
-{% if config.get('USE_NEW_WIZARD', False) %}
+{# Modular wizard with lazy-loading #}
 <script type="module">
-  import { initWizard } from "{{ url_for('static', filename='js/wizard/core.js') }}";
-  document.addEventListener('DOMContentLoaded', initWizard);
+  import { initWizard } from "{{ url_for('static', filename='js/wizard/core.js') }}?v={{ config.get('VERSION', '1.0.0') }}";
+
+  // Module scripts are deferred, so DOM is already ready
+  // Check if DOM is loaded, otherwise wait for it
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initWizard);
+  } else {
+    initWizard();
+  }
 </script>
-{% else %}
-{# Legacy monolithic wizard #}
-<script src="{{ url_for('static', filename='js/wizard.js') }}"></script>
-{% endif %}
 {% endblock %}
