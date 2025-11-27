@@ -974,8 +974,42 @@ def generate_preview_api(project_id: int):
     # Queue preview generation task
     from app.tasks.preview_video import generate_preview_video_task
 
-    task = generate_preview_video_task.apply_async(args=(project.id,), queue="cpu")
-    return jsonify({"task_id": task.id, "status": "queued"}), 202
+    # Dynamically select queue similar to compilation logic; prefer gpu, else cpu
+    queue_name = "cpu"  # safe default (never use 'celery' for render work)
+    active_queues = set()
+    try:
+        from app.tasks.celery_app import celery_app as _celery
+
+        i = _celery.control.inspect(timeout=1.0)
+        if i:
+            aq = i.active_queues() or {}
+            for _worker, queues in aq.items():
+                for q in queues or []:
+                    qname = q.get("name") if isinstance(q, dict) else None
+                    if qname:
+                        active_queues.add(qname)
+        # Prefer gpu if available
+        if "gpu" in active_queues:
+            queue_name = "gpu"
+        elif "cpu" in active_queues:
+            queue_name = "cpu"
+    except Exception as e:
+        current_app.logger.warning(f"Preview queue inspection failed: {e}")
+
+    current_app.logger.info(
+        "preview_queue_select",
+        project_id=project.id,
+        queue=queue_name,
+        active=list(active_queues),
+        clip_ids=clip_ids if clip_ids is not None else "ALL",
+        has_preview=bool(project.preview_filename),
+    )
+
+    task = generate_preview_video_task.apply_async(args=(project.id,), queue=queue_name)
+    current_app.logger.info(
+        "preview_task_queued", task_id=task.id, project_id=project.id, queue=queue_name
+    )
+    return jsonify({"task_id": task.id, "status": "queued", "queue": queue_name}), 202
 
     # Original preview code commented out for reference - all code below is unreachable
     # intro_id = data.get("intro_id")
