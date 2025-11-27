@@ -102,28 +102,8 @@
       <!-- Step 1: Setup -->
       {% include 'main/wizard/step_setup.html' %}
 
-  <!-- Step 2: Get Clips (consolidates Fetch + Parse + Download) -->
-      <div class="wizard-step d-none" data-step="2">
-        <div class="chevron-progress">
-          <div class="chevron-label" id="gc-status">Warming up the clippers…</div>
-          <div class="chevron-steps">
-            <ul class="progress" id="gc-steps">
-              <li data-key="fetch" class="active"><a href="#">Fetch</a></li>
-              <li data-key="extract"><a href="#">Parse</a></li>
-              <li data-key="download"><a href="#">Download</a></li>
-              <li data-key="import"><a href="#">Import</a></li>
-              <li data-key="done"><a href="#">Done</a></li>
-            </ul>
-          </div>
-        </div>
-        <div class="mt-4 d-flex justify-content-between wizard-nav">
-          <button class="btn btn-outline-secondary" data-prev="1">Back: Setup</button>
-          <div class="d-flex gap-2">
-            <button class="btn btn-outline-danger d-none" id="gc-cancel">Cancel</button>
-            <button class="btn btn-primary btn-glow btn-shadow-dark" id="next-2" disabled>Next: Arrange Timeline</button>
-          </div>
-        </div>
-      </div>
+      <!-- Step 2: Get Clips -->
+      {% include 'main/wizard/step_clips.html' %}
 
       <!-- Step 3: Arrange -->
       <div class="wizard-step d-none" data-step="3">

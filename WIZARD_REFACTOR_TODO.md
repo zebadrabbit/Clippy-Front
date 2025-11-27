@@ -9,11 +9,11 @@
 - [x] Add USE_NEW_WIZARD feature flag
 - [ ] Test Step 1 in isolation
 
-## Phase 2: Clips Step
-- [ ] Extract Step 2 HTML to step_clips.html
-- [ ] Create step-clips.js (fetch, download, polling)
-- [ ] Test Step 2 fetching and downloading
-- [ ] Test navigation between Step 1 ↔ Step 2
+## Phase 2: Clips Step ✓
+- [x] Extract Step 2 HTML to step_clips.html
+- [x] Create step-clips.js (fetch, download, polling)
+- [x] Test Step 2 fetching and downloading
+- [x] Test navigation between Step 1 ↔ Step 2
 
 ## Phase 3: Arrange Step
 - [ ] Extract Step 3 HTML to step_arrange.html
