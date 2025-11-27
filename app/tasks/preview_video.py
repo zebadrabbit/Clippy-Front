@@ -48,8 +48,9 @@ def _build_preview_filter(project, target_width, target_height):
         else:  # center
             crop_x = "(iw-ow)/2"
 
-        # Scale up by zoom factor, crop to fit width, then pad to canvas size
-        scale_filter = f"scale=iw*{zoom_factor}:ih*{zoom_factor},crop={target_width}:ih:{crop_x}:0,pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:black"
+        # Scale up by zoom factor, crop to target dimensions, then pad if needed
+        # The crop needs both width and height to ensure we don't exceed target size
+        scale_filter = f"scale=iw*{zoom_factor}:ih*{zoom_factor},crop={target_width}:min(ih\\,{target_height}):{crop_x}:0,scale={target_width}:{target_height}:force_original_aspect_ratio=decrease,pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:black"
     else:
         # Landscape: simple scale
         scale_filter = f"scale={target_width}:{target_height}:flags=lanczos"
