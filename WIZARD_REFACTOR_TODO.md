@@ -1,11 +1,12 @@
 # Wizard Refactor TODO
 
-## Phase 1: Core & Setup Step ⏳
+## Phase 1: Core & Setup Step ✓
 - [x] Create refactoring plan (REFACTOR_WIZARD.md)
 - [x] Create directory structure (app/static/js/wizard/, app/templates/main/wizard/)
 - [x] Create core.js (state management, navigation, API helpers)
-- [ ] Extract Step 1 HTML to step_setup.html
-- [ ] Create step-setup.js (form submission, validation)
+- [x] Extract Step 1 HTML to step_setup.html
+- [x] Create step-setup.js (form submission, validation)
+- [x] Add USE_NEW_WIZARD feature flag
 - [ ] Test Step 1 in isolation
 
 ## Phase 2: Clips Step

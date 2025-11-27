@@ -4,10 +4,12 @@
 
 export class WizardCore {
   constructor() {
-    this.state = this.loadState();
+    this.projectId = null;
+    this.projectData = null;
     this.steps = ['setup', 'clips', 'arrange', 'compile'];
     this.currentStep = 1;
     this.stepModules = {}; // Lazy-loaded step modules
+    this.loadState();
   }
 
   /**
@@ -19,22 +21,23 @@ export class WizardCore {
       const urlProjectId = params.get('project_id') || params.get('projectId');
 
       if (urlProjectId) {
-        const projectId = parseInt(urlProjectId, 10);
-        localStorage.setItem('wizard_project_id', projectId);
-        return { projectId };
+        this.projectId = parseInt(urlProjectId, 10);
+        localStorage.setItem('wizard_project_id', this.projectId);
+        return;
       }
 
       const savedProjectId = localStorage.getItem('wizard_project_id');
       if (savedProjectId) {
-        return { projectId: parseInt(savedProjectId, 10) };
+        this.projectId = parseInt(savedProjectId, 10);
+        return;
       }
 
       // New project - clear old state
       localStorage.removeItem('wizard_project_id');
-      return { projectId: null };
+      this.projectId = null;
     } catch (e) {
       console.warn('[Wizard] Failed to load state:', e);
-      return { projectId: null };
+      this.projectId = null;
     }
   }
 
@@ -43,8 +46,12 @@ export class WizardCore {
    */
   saveState() {
     try {
-      if (this.state.projectId) {
-        localStorage.setItem('wizard_project_id', this.state.projectId);
+      if (this.projectId) {
+        localStorage.setItem('wizard_project_id', this.projectId);
+        // Update URL
+        const url = new URL(window.location);
+        url.searchParams.set('project_id', this.projectId);
+        window.history.replaceState({}, '', url);
       } else {
         localStorage.removeItem('wizard_project_id');
       }
@@ -143,24 +150,24 @@ export class WizardCore {
    */
   async api(path, options = {}) {
     const defaultOptions = {
-      headers: { 'Content-Type': 'application/json' },
       credentials: 'include'
     };
 
-    const response = await fetch(path, { ...defaultOptions, ...options });
+    const mergedOptions = { ...defaultOptions, ...options };
 
-    if (!response.ok) {
-      let errorMessage = 'An error occurred';
-      try {
-        const data = await response.json();
-        errorMessage = data.error || data.message || errorMessage;
-      } catch (parseError) {
-        errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+    // Add CSRF token to headers if POST/PUT/PATCH/DELETE
+    const method = (options.method || 'GET').toUpperCase();
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+      if (!mergedOptions.headers) {
+        mergedOptions.headers = {};
       }
-      throw new Error(errorMessage);
+      const csrfToken = this.getCSRFToken();
+      if (csrfToken) {
+        mergedOptions.headers['X-CSRFToken'] = csrfToken;
+      }
     }
 
-    return response.json();
+    return fetch(path, mergedOptions);
   }
 
   /**
@@ -192,34 +199,36 @@ export class WizardCore {
 }
 
 // Initialize wizard when DOM is ready
-let wizard = null;
+let wizardInstance = null;
 
-function initWizard() {
-  wizard = new WizardCore();
+export function initWizard() {
+  console.log('[Wizard] Initializing...');
+
+  wizardInstance = new WizardCore();
 
   // Setup chevron click handlers
   document.querySelectorAll('#wizard-chevrons li').forEach(li => {
     li.addEventListener('click', (e) => {
       e.preventDefault();
       const targetStep = parseInt(li.dataset.step, 10);
-      wizard.gotoStep(targetStep);
+      wizardInstance.gotoStep(targetStep);
     });
   });
 
   // Check for existing project from server
   if (window.wizardExistingProject) {
-    wizard.state.projectId = window.wizardExistingProject.id;
+    wizardInstance.projectId = window.wizardExistingProject.id;
+    wizardInstance.projectData = window.wizardExistingProject;
     const initialStep = window.wizardExistingProject.initialStep || 1;
-    wizard.gotoStep(initialStep);
+    console.log('[Wizard] Loading existing project:', wizardInstance.projectId, 'at step:', initialStep);
+    wizardInstance.gotoStep(initialStep);
   } else {
-    wizard.gotoStep(1);
+    wizardInstance.gotoStep(1);
   }
+
+  return wizardInstance;
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initWizard);
-} else {
-  initWizard();
+export function getWizard() {
+  return wizardInstance;
 }
-
-export { wizard };

@@ -286,6 +286,15 @@ class Config:
     SMTP_USERNAME = os.environ.get("SMTP_USERNAME")
     SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD")  # Only from environment/.env
 
+    # Feature Flags
+    # Enable new modular wizard (Phase 1 refactoring)
+    USE_NEW_WIZARD = os.environ.get("USE_NEW_WIZARD", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
 
 class DevelopmentConfig(Config):
     """
