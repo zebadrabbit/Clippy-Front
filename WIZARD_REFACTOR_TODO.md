@@ -31,9 +31,11 @@
 - [ ] Test celebration effect
 - [ ] Test navigation Step 3 ↔ Step 4
 
-## Phase 5: Polish
-- [ ] Create shortcuts.js (keyboard shortcuts)
-- [ ] Add lazy-loading endpoints in routes.py
+## Phase 5: Polish ✓
+- [x] Create shortcuts.js (keyboard shortcuts)
+- [x] Integrate shortcuts into core.js
+- [x] Add save-timeline event listener
+- [ ] Add lazy-loading endpoints in routes.py (optional - already using dynamic imports)
 - [ ] Integration testing across all steps
 - [ ] Performance testing (lazy-load timing)
 

@@ -23,6 +23,9 @@ export async function onEnter(wizard) {
   setupTimelineConfirmation(wizard);
   initTimelineDragDrop(wizard);
 
+  // Setup save event listener
+  setupSaveListener(wizard);
+
   // Load data
   await populateClipsGrid(wizard);
   await loadMediaLists(wizard);
@@ -34,7 +37,19 @@ export async function onEnter(wizard) {
 
 export function onExit(wizard) {
   console.log('[step-arrange] Exiting arrange step');
-  // Cleanup if needed
+  // Remove save listener
+  document.removeEventListener('wizard:save-timeline', wizard._arrangeTimlineSaveHandler);
+}
+
+/**
+ * Setup save event listener
+ */
+function setupSaveListener(wizard) {
+  wizard._arrangeTimlineSaveHandler = () => {
+    saveTimelineOrder(wizard);
+    wizard.showToast?.('Timeline saved', 'success') || console.log('[step-arrange] Timeline saved');
+  };
+  document.addEventListener('wizard:save-timeline', wizard._arrangeTimlineSaveHandler);
 }
 
 /**
