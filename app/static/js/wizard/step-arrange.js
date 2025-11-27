@@ -1331,7 +1331,9 @@ function setupProjectDetailsForm(wizard) {
       });
 
       if (!res.ok) {
-        throw new Error('Failed to update project details');
+        const errorData = await res.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('[step-arrange] API error response:', res.status, errorData);
+        throw new Error(errorData.error || `Failed to update project details (${res.status})`);
       }
 
       wizard.showToast('Project details updated successfully!', 'success');

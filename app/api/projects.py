@@ -1608,8 +1608,91 @@ def get_project_details_api(project_id: int):
             "output_format": project.output_format,
             "fps": project.fps,
             "tags": project.tags,
+            "description": getattr(project, "description", None),
         }
     )
+
+
+@api_bp.route("/projects/<int:project_id>", methods=["PATCH"])
+@login_required
+def update_project_details_api(project_id: int):
+    """Update project details (platform preset, format, fps, audio normalization, tags, description)."""
+    from app.models import PlatformPreset, Project, db
+
+    project = Project.query.filter_by(id=project_id, user_id=current_user.id).first()
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+
+    # Update platform preset if provided
+    if "platform_preset" in data:
+        try:
+            preset = PlatformPreset(data["platform_preset"])
+            project.platform_preset = preset
+            # Also update resolution based on preset
+            settings = preset.get_settings()
+            project.output_resolution = settings["resolution"]
+        except ValueError:
+            return jsonify({"error": "Invalid platform preset"}), 400
+
+    # Update output format if provided
+    if "output_format" in data:
+        project.output_format = data["output_format"]
+
+    # Update FPS if provided
+    if "fps" in data:
+        try:
+            project.fps = int(data["fps"])
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid FPS value"}), 400
+
+    # Update audio normalization if provided
+    if "audio_norm_profile" in data:
+        project.audio_norm_profile = data["audio_norm_profile"]
+    if "audio_norm_db" in data:
+        try:
+            project.audio_norm_db = (
+                float(data["audio_norm_db"]) if data["audio_norm_db"] else None
+            )
+        except (ValueError, TypeError):
+            project.audio_norm_db = None
+
+    # Update tags if provided
+    if "tags" in data:
+        project.tags = data["tags"]
+
+    # Update description if provided
+    if "description" in data:
+        project.description = data["description"]
+
+    try:
+        db.session.commit()
+        logger.info(
+            "project_details_updated",
+            project_id=project.id,
+            user_id=current_user.id,
+            updated_fields=list(data.keys()),
+        )
+
+        return jsonify(
+            {
+                "message": "Project details updated successfully",
+                "platform_preset": project.platform_preset.value
+                if hasattr(project.platform_preset, "value")
+                else str(project.platform_preset),
+                "output_format": project.output_format,
+                "fps": project.fps,
+                "audio_norm_profile": project.audio_norm_profile,
+                "audio_norm_db": project.audio_norm_db,
+                "tags": project.tags,
+                "description": getattr(project, "description", None),
+            }
+        )
+    except Exception as e:
+        db.session.rollback()
+        logger.error("project_update_failed", project_id=project.id, error=str(e))
+        return jsonify({"error": "Failed to update project details"}), 500
 
 
 @api_bp.route("/projects/<int:project_id>/wizard", methods=["PATCH"])
