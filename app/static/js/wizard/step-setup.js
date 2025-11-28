@@ -360,7 +360,12 @@ async function handleNext(wizard) {
     console.log('[step-setup] API response:', data);
 
     wizard.projectId = data.project_id || data.id; // API returns project_id
-    wizard.projectData = { ...data, id: wizard.projectId, max_clips: maxClips }; // Include max_clips in projectData
+    // Merge API response with payload to preserve all form values
+    wizard.projectData = {
+      ...payload,  // Include all form data
+      ...data,     // Overlay API response
+      id: wizard.projectId
+    };
 
     console.log('[step-setup] Project created:', wizard.projectId);
     console.log('[step-setup] Project data:', wizard.projectData);
