@@ -718,6 +718,14 @@ class MediaFile(db.Model):
     # Comma-separated tags (lightweight tagging)
     tags = db.Column(db.Text)
 
+    # Attribution and metadata fields (especially for music/audio)
+    artist = db.Column(db.String(255))  # Artist/performer name
+    album = db.Column(db.String(255))  # Album name
+    title = db.Column(db.String(255))  # Track/media title
+    license = db.Column(db.String(255))  # License type (CC-BY, CC0, etc.)
+    attribution_url = db.Column(db.String(500))  # URL to original/source
+    attribution_text = db.Column(db.Text)  # Required attribution text
+
     @property
     def file_size_mb(self) -> float:
         """

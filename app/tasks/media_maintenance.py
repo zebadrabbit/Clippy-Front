@@ -219,6 +219,59 @@ def process_uploaded_media_task(
                 app.logger.warning(f"Metadata extraction failed for {media_id}: {e}")
                 results["metadata_error"] = str(e)
 
+        # Extract ID3 tags and other audio metadata for music/audio files
+        if media.mime_type and media.mime_type.startswith("audio"):
+            try:
+                from app.audio_metadata import extract_audio_metadata
+
+                audio_meta = extract_audio_metadata(str(file_path))
+                if audio_meta:
+                    # Update media file with extracted metadata
+                    if "artist" in audio_meta and audio_meta["artist"]:
+                        media.artist = audio_meta["artist"]
+                        results["artist"] = audio_meta["artist"]
+
+                    if "album" in audio_meta and audio_meta["album"]:
+                        media.album = audio_meta["album"]
+                        results["album"] = audio_meta["album"]
+
+                    if "title" in audio_meta and audio_meta["title"]:
+                        media.title = audio_meta["title"]
+                        results["title"] = audio_meta["title"]
+
+                    if "license" in audio_meta and audio_meta["license"]:
+                        media.license = audio_meta["license"]
+                        results["license"] = audio_meta["license"]
+
+                    if (
+                        "attribution_url" in audio_meta
+                        and audio_meta["attribution_url"]
+                    ):
+                        media.attribution_url = audio_meta["attribution_url"]
+                        results["attribution_url"] = audio_meta["attribution_url"]
+
+                    if (
+                        "attribution_text" in audio_meta
+                        and audio_meta["attribution_text"]
+                    ):
+                        media.attribution_text = audio_meta["attribution_text"]
+                        results["attribution_text"] = audio_meta["attribution_text"]
+
+                    # If duration wasn't extracted from ffprobe, use mutagen's value
+                    if not media.duration and "duration" in audio_meta:
+                        media.duration = audio_meta["duration"]
+                        results["duration"] = audio_meta["duration"]
+
+                    app.logger.info(
+                        f"Extracted audio metadata for {media_id}: {audio_meta}"
+                    )
+
+            except Exception as e:
+                app.logger.warning(
+                    f"Audio metadata extraction failed for {media_id}: {e}"
+                )
+                results["audio_metadata_error"] = str(e)
+
         # Save changes
         try:
             db.session.commit()
