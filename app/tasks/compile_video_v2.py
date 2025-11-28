@@ -651,78 +651,54 @@ def _build_timeline_with_transitions_v2(
     if transition_ids:
         media_ids.extend(transition_ids)
 
-    logger.info(
-        f"[_build_timeline_with_transitions_v2] Fetching {len(media_ids)} media files: {media_ids}"
-    )
+    log("info", f"Fetching {len(media_ids)} media files: {media_ids}")
 
     # Batch fetch intro/outro/transitions
     media_files = {}
     if media_ids:
         response = worker_api.get_media_batch(media_ids, user_id)
-        logger.info(
-            f"[_build_timeline_with_transitions_v2] API returned {len(response.get('media_files', []))} files"
-        )
+        log("info", f"API returned {len(response.get('media_files', []))} files")
         for mf in response.get("media_files", []):
             media_files[mf["id"]] = mf
-            logger.info(
-                f"[_build_timeline_with_transitions_v2] Got media file {mf['id']}: {mf.get('filename', 'unknown')}"
-            )
+            log("info", f"Got media file {mf['id']}: {mf.get('filename', 'unknown')}")
 
     # Process intro
     intro_path = None
     if intro_id and intro_id in media_files:
-        logger.info(
-            f"[_build_timeline_with_transitions_v2] Processing intro {intro_id}"
-        )
+        log("info", f"Processing intro {intro_id}")
         intro = media_files[intro_id]
         intro_processed = os.path.join(temp_dir, "intro_processed.mp4")
         _process_media_file_v2(intro, intro_processed, project_data, tier_limits)
         intro_path = intro_processed
-        logger.info(
-            f"[_build_timeline_with_transitions_v2] Intro processed: {intro_path}"
-        )
+        log("info", f"Intro processed: {intro_path}")
     elif intro_id:
-        logger.warning(
-            f"[_build_timeline_with_transitions_v2] Intro {intro_id} not found in media_files!"
-        )
+        log("warn", f"Intro {intro_id} not found in media_files!")
 
     # Process outro
     outro_path = None
     if outro_id and outro_id in media_files:
-        logger.info(
-            f"[_build_timeline_with_transitions_v2] Processing outro {outro_id}"
-        )
+        log("info", f"Processing outro {outro_id}")
         outro = media_files[outro_id]
         outro_processed = os.path.join(temp_dir, "outro_processed.mp4")
         _process_media_file_v2(outro, outro_processed, project_data, tier_limits)
         outro_path = outro_processed
-        logger.info(
-            f"[_build_timeline_with_transitions_v2] Outro processed: {outro_path}"
-        )
+        log("info", f"Outro processed: {outro_path}")
     elif outro_id:
-        logger.warning(
-            f"[_build_timeline_with_transitions_v2] Outro {outro_id} not found in media_files!"
-        )
+        log("warn", f"Outro {outro_id} not found in media_files!")
 
     # Process transitions
     transition_paths = []
     for tid in transition_ids:
         if tid in media_files:
-            logger.info(
-                f"[_build_timeline_with_transitions_v2] Processing transition {tid}"
-            )
+            log("info", f"Processing transition {tid}")
             trans = media_files[tid]
             trans_processed = os.path.join(temp_dir, f"transition_{tid}_processed.mp4")
             _process_media_file_v2(trans, trans_processed, project_data, tier_limits)
             transition_paths.append(trans_processed)
         else:
-            logger.warning(
-                f"[_build_timeline_with_transitions_v2] Transition {tid} not found in media_files!"
-            )
+            log("warn", f"Transition {tid} not found in media_files!")
 
-    logger.info(
-        f"[_build_timeline_with_transitions_v2] Processed {len(transition_paths)} transitions"
-    )
+    log("info", f"Processed {len(transition_paths)} transitions")
 
     # Get static bumper path
     app = _get_app()
@@ -775,8 +751,9 @@ def _build_timeline_with_transitions_v2(
                                 f"Failed to download static bumper: HTTP {resp.status_code}"
                             )
                     else:
-                        logger.warning(
-                            "MEDIA_BASE_URL not configured, cannot download static bumper"
+                        log(
+                            "warn",
+                            "MEDIA_BASE_URL not configured, cannot download static bumper",
                         )
                 except Exception as e:
                     logger.error(f"Error downloading static bumper: {e}")
@@ -845,11 +822,11 @@ def _build_timeline_with_transitions_v2(
     # 1. Intro (if present)
     if intro_path:
         segments.append(intro_path)
-        logger.info("Added intro to segments")
+        log("info", "Added intro to segments")
         # Static after intro
         if processed_static_path:
             segments.append(processed_static_path)
-            logger.info("Added static after intro")
+            log("info", "Added static after intro")
 
     # 2. Clips with pattern: clip -> static -> (transition -> static)
     transition_idx = 0
@@ -857,7 +834,7 @@ def _build_timeline_with_transitions_v2(
         # If this is the first clip and no intro, add static before it
         if i == 0 and not intro_path and processed_static_path:
             segments.append(processed_static_path)
-            logger.info("Added static before first clip (no intro)")
+            log("info", "Added static before first clip (no intro)")
 
         # Add the clip itself
         segments.append(clip_path)
@@ -878,12 +855,12 @@ def _build_timeline_with_transitions_v2(
                 # Static after transition
                 if processed_static_path:
                     segments.append(processed_static_path)
-                    logger.info("Added static after transition")
+                    log("info", "Added static after transition")
 
     # 3. Outro (if present)
     if outro_path:
         segments.append(outro_path)
-        logger.info("Added outro to segments")
+        log("info", "Added outro to segments")
 
     logger.info(f"Total segments in timeline: {len(segments)}")
 
