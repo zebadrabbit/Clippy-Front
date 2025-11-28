@@ -281,9 +281,30 @@ async function queueDownloads(wizard, urls) {
     effectiveLimit = wizard.projectData?.max_clips || urls.length;
     console.log(`[step-clips] Auto mode - limiting to max_clips: ${effectiveLimit}`);
   } else {
-    // Duration-based mode - use all fetched clips (backend already filtered by duration)
-    effectiveLimit = urls.length;
-    console.log(`[step-clips] Duration mode - using all ${effectiveLimit} fetched clips`);
+    // Duration-based mode - calculate how many clips we actually need
+    const targetDuration = parseInt(compilationLength, 10);
+    if (!isNaN(targetDuration) && targetDuration > 0 && Array.isArray(wizard.fetchedClips)) {
+      let accumulatedDuration = 0;
+      let clipsNeeded = 0;
+
+      for (let i = 0; i < wizard.fetchedClips.length; i++) {
+        const clip = wizard.fetchedClips[i];
+        const clipDuration = clip?.duration || 0;
+        accumulatedDuration += clipDuration;
+        clipsNeeded++;
+
+        if (accumulatedDuration >= targetDuration) {
+          break;
+        }
+      }
+
+      effectiveLimit = clipsNeeded;
+      console.log(`[step-clips] Duration mode - need ${clipsNeeded} clips to reach ${targetDuration}s (accumulated: ${accumulatedDuration.toFixed(1)}s)`);
+    } else {
+      // Fallback to all clips if we can't calculate
+      effectiveLimit = urls.length;
+      console.log(`[step-clips] Duration mode - using all ${effectiveLimit} fetched clips (no duration metadata)`);
+    }
   }
 
   const limit = Math.max(1, Math.min(100, effectiveLimit));
