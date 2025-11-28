@@ -130,30 +130,51 @@ function setupNavigation(wizard) {
       const data = await res.json();
       const items = data.items || [];
 
+      if (!wizard.selectedClipIds) wizard.selectedClipIds = [];
+
       // Add all clips that aren't already in the timeline
+      let addedCount = 0;
+      const list = document.getElementById('timeline-list');
+
       for (const item of items) {
         if (!wizard.selectedClipIds.includes(item.id)) {
           wizard.selectedClipIds.push(item.id);
+          addedCount++;
 
-          // Transform to match media item format and add to timeline
-          const clipItem = {
-            id: item.id,
-            original_filename: item.title || 'Clip',
-            filename: item.title || 'Clip',
-            thumbnail_url: (item.media && item.media.thumbnail_url) || '',
-            duration: (typeof item.duration === 'number' ? item.duration : (item.media && typeof item.media.duration === 'number' ? item.media.duration : undefined)),
-            preview_url: (item.media && item.media.preview_url) || '',
-            creator_name: item.creator_name,
-            game_name: item.game_name,
-            view_count: item.view_count,
-            avatar_url: item.avatar_url
+          // Build timeline card data
+          const clipData = {
+            title: item.title || 'Clip',
+            subtitle: [item.creator_name ? `By ${item.creator_name}` : '', item.game_name ? `• ${item.game_name}` : ''].filter(Boolean).join(' '),
+            thumbUrl: (item.media && item.media.thumbnail_url) || '',
+            clipId: item.id,
+            durationSec: (typeof item.duration === 'number' ? item.duration : (item.media && typeof item.media.duration === 'number' ? item.media.duration : undefined)),
+            previewUrl: (item.media && item.media.preview_url) || '',
+            viewCount: item.view_count,
+            avatarUrl: item.avatar_url,
+            kind: 'clip'
           };
 
-          addClipToTimeline(wizard, clipItem);
+          const card = makeTimelineCard(clipData);
+
+          // Insert before outro or at end
+          const outro = list.querySelector('.timeline-card.timeline-outro');
+          if (outro) {
+            list.insertBefore(card, outro);
+          } else {
+            list.appendChild(card);
+          }
         }
       }
 
-      wizard.showToast?.(`Added ${items.length} clips to timeline`, 'success');
+      if (addedCount > 0) {
+        rebuildSeparators(wizard);
+        updateArrangedConfirmState();
+        populateClipsGrid(wizard);
+        wizard.saveWizardState({ selectedClipIds: wizard.selectedClipIds });
+        wizard.showToast?.(`Added ${addedCount} ${addedCount === 1 ? 'clip' : 'clips'} to timeline`, 'success');
+      } else {
+        wizard.showToast?.('All clips already in timeline', 'info');
+      }
     } catch (err) {
       console.error('[step-arrange] Failed to add all clips:', err);
       wizard.showToast?.('Failed to add clips', 'error');
