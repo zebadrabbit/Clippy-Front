@@ -950,7 +950,6 @@ def register_blueprints(flask_app):
         import app.api.notifications  # noqa: F401 - registers routes on api_bp
         import app.api.tags  # noqa: F401 - registers routes on api_bp (optional)
         import app.api.teams  # noqa: F401 - registers routes on api_bp
-        import app.api.templates  # noqa: F401 - registers routes on api_bp (optional)
     except ImportError as e:
         flask_app.logger.warning(f"Some API modules not available: {e}")
 

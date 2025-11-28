@@ -997,13 +997,6 @@ def automation():
     )
 
 
-@main_bp.route("/templates")
-@login_required
-def templates():
-    """Render the Templates page for managing reusable project configurations."""
-    return render_template("main/templates.html")
-
-
 @main_bp.route("/automation/tasks/<int:task_id>")
 @login_required
 def automation_task_details(task_id: int):

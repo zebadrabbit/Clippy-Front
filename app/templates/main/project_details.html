@@ -65,11 +65,6 @@
         </div>
       </div>
     </div>
-    <div>
-      <button class="btn btn-outline-primary btn-sm" id="saveAsTemplateBtn">
-        <i class="bi bi-file-earmark-code"></i> Save as Template
-      </button>
-    </div>
   </div>
 
   <div class="row g-4">
@@ -381,39 +376,6 @@
     card.addEventListener('mouseleave', hidePreview);
   });
 })();
-
-document.getElementById('saveAsTemplateBtn')?.addEventListener('click', async function() {
-    const templateName = prompt('Enter a name for this template:', '{{ project.name }} Template');
-    if (!templateName) return;
-
-    const description = prompt('Enter a description (optional):');
-
-    try {
-        const response = await fetch('/api/templates', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
-            },
-            body: JSON.stringify({
-                name: templateName,
-                description: description || '',
-                project_id: {{ project.id }}
-            })
-        });
-
-        if (response.ok) {
-            alert('Template created successfully!');
-            window.location.href = '/templates';
-        } else {
-            const error = await response.json();
-            alert('Error: ' + (error.error || 'Failed to create template'));
-        }
-    } catch (error) {
-        console.error('Error creating template:', error);
-        alert('Failed to create template');
-    }
-});
 
 // Platform Preset Integration for Project Details
 (function initProjectPresets() {

@@ -1248,9 +1248,6 @@ class CompilationTask(db.Model):
     name = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text)
 
-    # Template flag: if True, this is a saved template not meant for direct execution
-    is_template = db.Column(db.Boolean, default=False, nullable=False)
-
     # Parameters blob; structure is validated in API layer
     params = db.Column(db.JSON, nullable=False, default={})
 
