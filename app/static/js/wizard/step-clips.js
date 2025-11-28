@@ -116,17 +116,16 @@ async function autoRunGetClips(wizard) {
       setGcFill(40);
       await startDownloadPolling(wizard);
     } else {
-      // All clips were reused - skip to import
+      // All clips were reused - skip directly to verification
       setGcDone('download');
       setGcActive('import');
-      setGcStatus('Importing artifacts from workers...');
+      setGcStatus('Verifying clips are ready...');
       setGcFill(80);
-
-      await runIngest(wizard);
-      setGcDone('import');
 
       // Verify clips ready
       const verify = await verifyAllClipsReady(wizard);
+      setGcDone('import');
+
       if (verify.ready && verify.total > 0) {
         setGcActive('done');
         setGcDone('done');
@@ -412,15 +411,11 @@ async function startDownloadPolling(wizard) {
 
       setGcDone('download');
       setGcActive('import');
-      setGcStatus('Importing artifacts from workers...');
+      setGcStatus('Verifying clips are ready...');
       setGcFill(80);
 
-      // Run ingest
-      await runIngest(wizard);
+      // Verify clips ready with retries (workers upload directly via HTTP now)
       setGcDone('import');
-
-      // Verify clips ready with retries
-      setGcStatus('Verifying all clips are ready...');
       let retries = 0;
       const maxRetries = 3;
       let finalVerify = null;
@@ -434,9 +429,6 @@ async function startDownloadPolling(wizard) {
           console.log(`[step-clips] Verification attempt ${retries + 1}/${maxRetries}: ${finalVerify.missing} clips missing`);
           setGcStatus(`Waiting for ${finalVerify.missing} clip(s)... (${retries + 1}/${maxRetries})`);
           await new Promise(r => setTimeout(r, 3000));
-          if (retries < maxRetries - 1) {
-            await runIngest(wizard);
-          }
         }
         retries++;
       }
@@ -467,78 +459,6 @@ async function startDownloadPolling(wizard) {
 
   downloadPollTimer = setInterval(poll, 1000);
   await poll();
-}
-
-/**
- * Run ingest to import artifacts
- */
-async function runIngest(wizard) {
-  if (!wizard.projectId) return;
-
-  setGcActive('import');
-  setGcStatus('Importing artifacts from workers...');
-
-  try {
-    // Get worker IDs from config (passed from server)
-    const workerIds = (window.INGEST_WORKER_IDS || 'gpu-worker-01').split(',').map(id => id.trim()).filter(Boolean);
-
-    // Call ingest for each worker
-    const ingestPromises = workerIds.map(async workerId => {
-      try {
-        const res = await wizard.api(`/api/projects/${wizard.projectId}/ingest-downloads`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            worker_id: workerId,
-            action: 'copy'
-          })
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          console.log(`[step-clips] Ingest started for worker ${workerId}:`, data.task_id);
-          return { workerId, success: true, taskId: data.task_id };
-        } else {
-          console.warn(`[step-clips] Ingest failed for worker ${workerId}:`, res.status);
-          return { workerId, success: false };
-        }
-      } catch (e) {
-        console.error(`[step-clips] Ingest error for worker ${workerId}:`, e);
-        return { workerId, success: false, error: e.message };
-      }
-    });
-
-    const results = await Promise.all(ingestPromises);
-    const successCount = results.filter(r => r.success).length;
-    console.log(`[step-clips] Ingest tasks started: ${successCount}/${workerIds.length}`);
-
-    // Wait a moment for ingest to process
-    await new Promise(r => setTimeout(r, 2000));
-
-    // Verify clips are ready
-    const verifyResult = await verifyAllClipsReady(wizard);
-    if (!verifyResult.ready) {
-      console.warn('[step-clips] Some clips not ready after ingest:', verifyResult);
-      setGcStatus(`Waiting for ${verifyResult.missing} more clip(s)...`);
-      await new Promise(r => setTimeout(r, 2000));
-
-      const retryResult = await verifyAllClipsReady(wizard);
-      if (!retryResult.ready) {
-        setGcError('import');
-        setGcStatus(`${retryResult.missing} clip(s) still not ready.`);
-        return 'pending';
-      }
-    }
-
-    setGcDone('import');
-    setGcStatus('All clips ready.');
-    return 'ok';
-  } catch (e) {
-    console.error('[step-clips] Ingest error:', e);
-    setGcError('import');
-    setGcStatus('Ingest failed.');
-    return 'error';
-  }
 }
 
 /**
