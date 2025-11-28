@@ -197,7 +197,10 @@
     <div class="card">
       <div class="card-body text-center py-5">
         <i class="bi bi-folder2-open" style="font-size: 4rem; opacity: 0.3;"></i>
-        <p class="text-muted mt-3 mb-0">No projects yet. Create your first project to get started.</p>
+        <p class="text-muted mt-3 mb-3">No projects yet. Create your first project to get started.</p>
+        <a href="{{ url_for('main.project_wizard') }}" class="btn btn-primary btn-glow">
+          <i class="bi bi-magic"></i> Create Your First Project
+        </a>
       </div>
     </div>
   {% endif %}
