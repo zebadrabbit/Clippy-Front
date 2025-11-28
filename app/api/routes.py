@@ -115,20 +115,25 @@ def twitch_clips_api():
         username (str, optional): Twitch username to fetch clips for.
             Defaults to current_user.twitch_username if not provided.
         first (int, optional): Maximum number of clips to return (max 100).
-            Defaults to 20.
+            Defaults to 20. Ignored if target_duration is specified.
+        target_duration (int, optional): Target total duration in seconds.
+            If provided, fetches clips iteratively until total duration
+            meets or exceeds this value.
         started_at (str, optional): RFC3339 timestamp for clip start date.
             Example: "2025-01-01T00:00:00Z"
         ended_at (str, optional): RFC3339 timestamp for clip end date.
             Example: "2025-12-31T23:59:59Z"
         after (str, optional): Pagination cursor for fetching next page.
+            Only used when target_duration is not specified.
 
     Returns:
         tuple: JSON response and HTTP status code.
             On success (200): {
                 "username": str,
                 "broadcaster_id": str,
-                "data": list[dict],  # Clip objects from Twitch API
-                "pagination": dict   # Cursor for next page
+                "items": list[dict],  # Clip objects from Twitch API
+                "pagination": dict,   # Cursor for next page
+                "total_duration": float  # Total duration (only if target_duration used)
             }
             On error (400): {"error": "No Twitch username provided or connected."}
             On error (404): {"error": "Twitch user not found"}
@@ -143,8 +148,13 @@ def twitch_clips_api():
 
     Example:
         GET /api/twitch/clips?username=streamer&first=50
+        GET /api/twitch/clips?username=streamer&target_duration=900
         GET /api/twitch/clips?started_at=2025-01-01T00:00:00Z&ended_at=2025-01-31T23:59:59Z
     """
+    from app.integrations.twitch import (
+        get_clips_for_duration as twitch_get_clips_for_duration,
+    )
+
     username = (
         request.args.get("username") or (current_user.twitch_username or "")
     ).strip()
@@ -152,6 +162,7 @@ def twitch_clips_api():
         return jsonify({"error": "No Twitch username provided or connected."}), 400
 
     first = request.args.get("first", default=20, type=int)
+    target_duration = request.args.get("target_duration", type=int)
     started_at = request.args.get("started_at")
     ended_at = request.args.get("ended_at")
     after = request.args.get("after")
@@ -161,13 +172,24 @@ def twitch_clips_api():
         if not broadcaster_id:
             return jsonify({"error": "Twitch user not found"}), 404
 
-        result = twitch_get_clips(
-            broadcaster_id=broadcaster_id,
-            started_at=started_at,
-            ended_at=ended_at,
-            first=first,
-            after=after,
-        )
+        # Use duration-based fetching if target_duration is specified
+        if target_duration and target_duration > 0:
+            result = twitch_get_clips_for_duration(
+                broadcaster_id=broadcaster_id,
+                target_duration_seconds=target_duration,
+                started_at=started_at,
+                ended_at=ended_at,
+                max_clips=100,  # Safety limit
+            )
+        else:
+            result = twitch_get_clips(
+                broadcaster_id=broadcaster_id,
+                started_at=started_at,
+                ended_at=ended_at,
+                first=first,
+                after=after,
+            )
+
         return jsonify(
             {
                 "username": username,

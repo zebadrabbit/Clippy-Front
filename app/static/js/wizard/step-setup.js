@@ -13,6 +13,7 @@ export async function onEnter(wizard) {
 
   // Initialize all UI components
   initRouteToggle();
+  initCompilationLengthToggle();
   initAudioNormSlider();
   initPlatformPresets();
   initVerticalVideoControls();
@@ -84,6 +85,33 @@ function initRouteToggle() {
   // Initialize on load
   updateTwitchWarning();
   updateDiscordParams();
+}
+
+/**
+ * Initialize compilation length selector to toggle max_clips field
+ */
+function initCompilationLengthToggle() {
+  const compilationLengthSelect = document.getElementById('compilation-length');
+  const maxClipsInput = document.querySelector('input[name="max_clips"]');
+
+  if (!compilationLengthSelect || !maxClipsInput) return;
+
+  function updateMaxClipsState() {
+    const isAuto = compilationLengthSelect.value === 'auto';
+    maxClipsInput.disabled = !isAuto;
+
+    // Visual feedback
+    if (isAuto) {
+      maxClipsInput.parentElement?.classList.remove('opacity-50');
+    } else {
+      maxClipsInput.parentElement?.classList.add('opacity-50');
+    }
+
+    console.log('[step-setup] Compilation length:', compilationLengthSelect.value, '| max_clips', isAuto ? 'enabled' : 'disabled');
+  }
+
+  compilationLengthSelect.addEventListener('change', updateMaxClipsState);
+  updateMaxClipsState(); // Initialize on load
 }
 
 /**

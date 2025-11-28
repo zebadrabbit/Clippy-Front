@@ -239,3 +239,69 @@ def get_clips(
         "items": [clip.__dict__ for clip in items],
         "pagination": j.get("pagination", {}),
     }
+
+
+def get_clips_for_duration(
+    broadcaster_id: str,
+    target_duration_seconds: int,
+    started_at: str | None = None,
+    ended_at: str | None = None,
+    max_clips: int = 100,
+) -> dict[str, Any]:
+    """Fetch clips iteratively until total duration meets or exceeds target.
+
+    Args:
+        broadcaster_id: Twitch broadcaster/user ID
+        target_duration_seconds: Target total duration in seconds
+        started_at: Optional start date filter (RFC3339)
+        ended_at: Optional end date filter (RFC3339)
+        max_clips: Maximum number of clips to fetch (safety limit)
+
+    Returns:
+        dict with keys: items: List[Clip], pagination: {cursor}, total_duration: float
+    """
+    all_clips: list[dict[str, Any]] = []
+    total_duration = 0.0
+    cursor = None
+    batch_size = 20  # Fetch clips in batches
+
+    while total_duration < target_duration_seconds and len(all_clips) < max_clips:
+        # Fetch a batch of clips
+        result = get_clips(
+            broadcaster_id=broadcaster_id,
+            started_at=started_at,
+            ended_at=ended_at,
+            first=min(batch_size, max_clips - len(all_clips)),
+            after=cursor,
+        )
+
+        batch_clips = result.get("items", [])
+        if not batch_clips:
+            # No more clips available
+            break
+
+        # Add clips and accumulate duration
+        for clip in batch_clips:
+            all_clips.append(clip)
+            total_duration += clip.get("duration", 0.0)
+
+            # Stop if we've reached our target
+            if total_duration >= target_duration_seconds:
+                break
+
+        # Check if we've reached target or safety limit
+        if total_duration >= target_duration_seconds or len(all_clips) >= max_clips:
+            break
+
+        # Get pagination cursor for next batch
+        pagination = result.get("pagination", {})
+        cursor = pagination.get("cursor")
+        if not cursor:
+            # No more pages available
+            break
+
+    return {
+        "items": all_clips,
+        "pagination": {"cursor": cursor} if cursor else {},
+        "total_duration": total_duration,
+    }

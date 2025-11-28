@@ -152,18 +152,51 @@ async function autoRunGetClips(wizard) {
  */
 async function fetchTwitchClips(wizard) {
   try {
+    const compilationLength = wizard.projectData?.compilation_length || 'auto';
     const maxClips = wizard.projectData?.max_clips || 20;
-    const first = Math.max(1, Math.min(100, maxClips));
 
-    const res = await fetch(`/api/twitch/clips?first=${first}`);
+    let url = '/api/twitch/clips';
+    const params = new URLSearchParams();
+
+    // Use duration-based fetching if compilation_length is not 'auto'
+    if (compilationLength !== 'auto') {
+      const targetDuration = parseInt(compilationLength, 10);
+      if (!isNaN(targetDuration) && targetDuration > 0) {
+        params.set('target_duration', String(targetDuration));
+        console.log(`[step-clips] Fetching clips for target duration: ${targetDuration}s`);
+      }
+    } else {
+      // Use max_clips limit for 'auto' mode
+      const first = Math.max(1, Math.min(100, maxClips));
+      params.set('first', String(first));
+      console.log(`[step-clips] Fetching up to ${first} clips (auto mode)`);
+    }
+
+    // Add date filters if present
+    if (wizard.projectData?.start_date) {
+      params.set('started_at', wizard.projectData.start_date);
+    }
+    if (wizard.projectData?.end_date) {
+      params.set('ended_at', wizard.projectData.end_date);
+    }
+
+    const res = await fetch(`${url}?${params.toString()}`);
     if (!res.ok) throw new Error(await res.text());
 
     const data = await res.json();
     const items = data.items || [];
     const urls = items.map(it => it.url).filter(Boolean);
+    const totalDuration = data.total_duration;
 
     wizard.fetchedClips = items;
-    setGcStatus(`Reeled in ${items.length} clips for @${data.username}.`);
+
+    let statusMsg = `Reeled in ${items.length} clips for @${data.username}.`;
+    if (totalDuration !== undefined) {
+      const minutes = Math.floor(totalDuration / 60);
+      const seconds = Math.floor(totalDuration % 60);
+      statusMsg += ` Total duration: ${minutes}m ${seconds}s`;
+    }
+    setGcStatus(statusMsg);
 
     return urls;
   } catch (e) {
@@ -236,21 +269,21 @@ async function queueDownloads(wizard, urls) {
   }
 
   // Calculate effective limit based on compilation_length
-  let effectiveLimit = wizard.projectData?.max_clips || urls.length;
+  const compilationLength = wizard.projectData?.compilation_length || 'auto';
+  let effectiveLimit = urls.length; // Default to all fetched clips
 
   console.log(`[step-clips] max_clips from projectData: ${wizard.projectData?.max_clips}`);
   console.log(`[step-clips] Total URLs available: ${urls.length}`);
-  console.log(`[step-clips] Initial effective limit: ${effectiveLimit}`);
+  console.log(`[step-clips] Compilation length: ${compilationLength}`);
 
-  const compilationLength = wizard.projectData?.compilation_length || 'auto';
-  if (compilationLength !== 'auto') {
-    const targetSeconds = parseInt(compilationLength, 10);
-    if (!isNaN(targetSeconds) && targetSeconds > 0) {
-      const avgClipDuration = parseInt(document.body.dataset.avgClipDuration || '45', 10);
-      const estimatedClipsNeeded = Math.ceil(targetSeconds / avgClipDuration);
-      effectiveLimit = Math.min(estimatedClipsNeeded, wizard.projectData?.max_clips || estimatedClipsNeeded);
-      console.log(`[step-clips] Compilation length target: ${targetSeconds}s, estimated clips: ${estimatedClipsNeeded}, effective limit: ${effectiveLimit}`);
-    }
+  // Only apply max_clips limit when in 'auto' mode
+  if (compilationLength === 'auto') {
+    effectiveLimit = wizard.projectData?.max_clips || urls.length;
+    console.log(`[step-clips] Auto mode - limiting to max_clips: ${effectiveLimit}`);
+  } else {
+    // Duration-based mode - use all fetched clips (backend already filtered by duration)
+    effectiveLimit = urls.length;
+    console.log(`[step-clips] Duration mode - using all ${effectiveLimit} fetched clips`);
   }
 
   const limit = Math.max(1, Math.min(100, effectiveLimit));
