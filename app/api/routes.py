@@ -167,6 +167,11 @@ def twitch_clips_api():
     ended_at = request.args.get("ended_at")
     after = request.args.get("after")
 
+    current_app.logger.info(
+        f"[Twitch API] Request: username={username}, first={first}, "
+        f"target_duration={target_duration}, started_at={started_at}, ended_at={ended_at}"
+    )
+
     try:
         broadcaster_id = twitch_get_user_id(username)
         if not broadcaster_id:

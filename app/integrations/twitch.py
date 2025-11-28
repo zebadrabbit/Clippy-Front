@@ -265,6 +265,13 @@ def get_clips_for_duration(
     cursor = None
     batch_size = 20  # Fetch clips in batches
 
+    import logging
+
+    logger = logging.getLogger(__name__)
+    logger.info(
+        f"[Twitch] Starting duration-based fetch: target={target_duration_seconds}s, max_clips={max_clips}"
+    )
+
     while total_duration < target_duration_seconds and len(all_clips) < max_clips:
         # Fetch a batch of clips
         result = get_clips(
@@ -278,15 +285,24 @@ def get_clips_for_duration(
         batch_clips = result.get("items", [])
         if not batch_clips:
             # No more clips available
+            logger.info(
+                f"[Twitch] No more clips available. Total: {len(all_clips)} clips, {total_duration:.1f}s"
+            )
             break
+
+        logger.info(f"[Twitch] Fetched batch of {len(batch_clips)} clips")
 
         # Add clips and accumulate duration
         for clip in batch_clips:
             all_clips.append(clip)
-            total_duration += clip.get("duration", 0.0)
+            clip_duration = clip.get("duration", 0.0)
+            total_duration += clip_duration
 
             # Stop if we've reached our target
             if total_duration >= target_duration_seconds:
+                logger.info(
+                    f"[Twitch] Target reached: {len(all_clips)} clips, {total_duration:.1f}s >= {target_duration_seconds}s"
+                )
                 break
 
         # Check if we've reached target or safety limit
@@ -298,7 +314,12 @@ def get_clips_for_duration(
         cursor = pagination.get("cursor")
         if not cursor:
             # No more pages available
+            logger.info(
+                f"[Twitch] No more pages. Total: {len(all_clips)} clips, {total_duration:.1f}s"
+            )
             break
+
+    logger.info(f"[Twitch] Final result: {len(all_clips)} clips, {total_duration:.1f}s")
 
     return {
         "items": all_clips,
