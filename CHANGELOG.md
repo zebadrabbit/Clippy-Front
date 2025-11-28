@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Public library media files now accessible to all users in compilations
+  - Non-admin users can now use admin-owned intro/outro/transitions marked as public
+  - Fixed three validation layers: compile API, worker batch fetch, and worker download
+  - All endpoints now properly check `MediaFile.is_public` in addition to ownership
+- Wizard state persistence in step-compile
+  - Intro/outro/transition selections now properly restored when re-entering compile step
+  - Added wizard state loading on step entry matching step-arrange behavior
+
 ---
 
 ## [1.2.0] - 2025-11-27
