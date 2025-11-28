@@ -719,7 +719,13 @@ def compile_project_api(project_id: int):
 
                 try:
                     tid_list = list({int(t) for t in transition_ids})
-                except Exception:
+                    current_app.logger.info(
+                        f"[compile_project_api] Converting transition_ids {transition_ids} to {tid_list}"
+                    )
+                except Exception as e:
+                    current_app.logger.error(
+                        f"[compile_project_api] Error converting transition_ids: {e}"
+                    )
                     tid_list = []
                 if tid_list:
                     q = MediaFile.query.filter(
@@ -728,8 +734,18 @@ def compile_project_api(project_id: int):
                         MediaFile.media_type == MediaType.TRANSITION,
                     )
                     valid_transition_ids = [m.id for m in q.all()]
-            except Exception:
+                    current_app.logger.info(
+                        f"[compile_project_api] Validated {len(valid_transition_ids)} transitions: {valid_transition_ids}"
+                    )
+            except Exception as e:
+                current_app.logger.error(
+                    f"[compile_project_api] Error validating transitions: {e}"
+                )
                 valid_transition_ids = []
+        else:
+            current_app.logger.warning(
+                f"[compile_project_api] transition_ids not valid: type={type(transition_ids)}, value={transition_ids}"
+            )
 
         total_clip_seconds = 0.0
         try:
