@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.2.0] - 2025-11-27
+
 ### Added
+- Duration-based clip fetching for Twitch integration
+  - Smart clip fetching to meet compilation length targets
+  - Iterative API calls in batches of 20 clips until duration target met
+  - Safety limit of 100 clips to prevent excessive requests
+  - Frontend automatically uses duration-based fetching when `compilation_length` is not 'auto'
 - Preview video generation in Step 4 (480p 10fps quick validation before full compile)
 - Visual toast notification system replacing console logs
 - Save indicator in wizard header (shows "Saved" with 2s fade after autosave)
@@ -15,7 +24,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Auto-advance to next step after project creation (1.5s delay with toast)
 - State restoration toast message when resuming wizard from saved step
 
+### Changed
+- Removed deprecated `/srv/ingest` infrastructure (~1,400 lines)
+  - Workers now upload directly via HTTP instead of rsync
+  - Removed 6 Celery tasks: ingest_import_task, auto_ingest_compilations_scan, cleanup_imported_artifacts, ingest_compiled_for_project, ingest_raw_clips_for_project, ingest_downloads_for_project
+  - Removed ingest API endpoints and configuration settings
+  - Removed Celery beat schedule entries for ingest tasks
+- Removed template feature (out of scope for current use case)
+  - Removed `is_template` column from database
+  - Removed template UI and API endpoints
+
 ### Fixed
+- Worker status enum handling: normalize uppercase 'READY' to lowercase for PostgreSQL enum
+- Centralized `_resolve_binary` function in `app/ffmpeg_config.py` with GPU/NVENC detection
+- Improved 413 file size error message to show actual limit and suggest increasing `MAX_CONTENT_LENGTH`
 - Preview video serving route (GET /api/projects/<id>/preview/video)
 - Preview filename path resolution for remote workers
 - Duplicate preview generation prevention with guard flag
