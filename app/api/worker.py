@@ -1508,10 +1508,13 @@ def worker_get_media_batch():
         if not user_id:
             return jsonify({"error": "user_id required"}), 400
 
-        # Batch fetch with ownership validation
+        # Batch fetch with ownership validation (allow public or owned by user)
+        from sqlalchemy import or_
+
         media_files = (
             MediaFile.query.filter(
-                MediaFile.id.in_(media_ids), MediaFile.user_id == user_id
+                MediaFile.id.in_(media_ids),
+                or_(MediaFile.user_id == user_id, MediaFile.is_public.is_(True)),
             ).all()
             if media_ids
             else []
