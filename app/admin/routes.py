@@ -2508,6 +2508,64 @@ def public_library_toggle(media_id):
     return redirect(url_for("admin.public_library"))
 
 
+@admin_bp.route("/public-library/<int:media_id>/update", methods=["POST"])
+@login_required
+@admin_required
+def public_library_update(media_id):
+    """
+    Update metadata for a public library media file.
+
+    Args:
+        media_id: ID of the media file to update
+
+    Returns:
+        JSON response with success status
+    """
+    media = MediaFile.query.get_or_404(media_id)
+
+    try:
+        # Update basic fields
+        if "original_filename" in request.form:
+            media.original_filename = request.form["original_filename"]
+
+        if "media_type" in request.form:
+            try:
+                media.media_type = MediaType(request.form["media_type"])
+            except ValueError:
+                return jsonify({"success": False, "error": "Invalid media type"}), 400
+
+        if "tags" in request.form:
+            media.tags = request.form["tags"]
+
+        # Update attribution fields
+        if "artist" in request.form:
+            media.artist = request.form["artist"] or None
+
+        if "album" in request.form:
+            media.album = request.form["album"] or None
+
+        if "title" in request.form:
+            media.title = request.form["title"] or None
+
+        if "license" in request.form:
+            media.license = request.form["license"] or None
+
+        if "attribution_url" in request.form:
+            media.attribution_url = request.form["attribution_url"] or None
+
+        if "attribution_text" in request.form:
+            media.attribution_text = request.form["attribution_text"] or None
+
+        db.session.commit()
+
+        return jsonify({"success": True})
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error updating media: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @admin_bp.route("/public-library/<int:media_id>/delete", methods=["POST"])
 @login_required
 @admin_required
@@ -2519,7 +2577,7 @@ def public_library_delete(media_id):
         media_id: ID of the media file to delete
 
     Returns:
-        Response: Redirect to public library
+        JSON or redirect response
     """
     media = MediaFile.query.get_or_404(media_id)
 
@@ -2534,11 +2592,27 @@ def public_library_delete(media_id):
         db.session.delete(media)
         db.session.commit()
 
+        # Return JSON if requested via AJAX
+        if (
+            request.headers.get("Content-Type") == "application/json"
+            or request.is_json
+            or request.accept_mimetypes.accept_json
+        ):
+            return jsonify({"success": True})
+
         flash("Media file deleted successfully.", "success")
 
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error deleting media: {e}", exc_info=True)
+
+        if (
+            request.headers.get("Content-Type") == "application/json"
+            or request.is_json
+            or request.accept_mimetypes.accept_json
+        ):
+            return jsonify({"success": False, "error": str(e)}), 500
+
         flash("Failed to delete media file.", "danger")
 
     return redirect(url_for("admin.public_library"))

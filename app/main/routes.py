@@ -1469,25 +1469,48 @@ def media_thumbnail(media_id: int):
 @main_bp.route("/media/<int:media_id>/update", methods=["POST"])
 @login_required
 def media_update(media_id: int):
-    """Rename or change type of a media file."""
+    """Rename or change type of a media file, and update attribution metadata."""
     media = db.session.get(MediaFile, media_id)
     if not media:
         return jsonify({"error": "Not found"}), 404
     if media.user_id != current_user.id and not current_user.is_admin():
         return jsonify({"error": "Not authorized"}), 403
-    new_name = request.form.get("original_filename", "").strip()
-    new_type = request.form.get("media_type")
-    new_tags = request.form.get("tags")
+
     changed = False
+
+    # Update basic fields
+    new_name = request.form.get("original_filename", "").strip()
     if new_name and new_name != media.original_filename:
         media.original_filename = new_name
         changed = True
+
+    new_type = request.form.get("media_type")
     if new_type and new_type in [t.value for t in MediaType]:
         media.media_type = MediaType(new_type)
         changed = True
+
+    new_tags = request.form.get("tags")
     if new_tags is not None and new_tags != (media.tags or ""):
         media.tags = new_tags
         changed = True
+
+    # Update attribution fields
+    for field in [
+        "artist",
+        "album",
+        "title",
+        "license",
+        "attribution_url",
+        "attribution_text",
+    ]:
+        new_value = request.form.get(field)
+        if new_value is not None:
+            current_value = getattr(media, field, None)
+            new_value = new_value.strip() if new_value else None
+            if new_value != current_value:
+                setattr(media, field, new_value or None)
+                changed = True
+
     if changed:
         try:
             db.session.commit()

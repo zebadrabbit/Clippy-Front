@@ -49,7 +49,17 @@
       <div class="row g-3">
         {% for media in public_media %}
         <div class="col-md-6 col-lg-4">
-          <div class="card h-100 media-card" data-type="{{ media.media_type.value if media.media_type else '' }}">
+          <div class="card h-100 media-card"
+               data-id="{{ media.id }}"
+               data-type="{{ media.media_type.value if media.media_type else '' }}"
+               data-name="{{ media.original_filename }}"
+               data-tags="{{ media.tags or '' }}"
+               data-artist="{{ media.artist or '' }}"
+               data-album="{{ media.album or '' }}"
+               data-title="{{ media.title or '' }}"
+               data-license="{{ media.license or '' }}"
+               data-attribution-url="{{ media.attribution_url or '' }}"
+               data-attribution-text="{{ media.attribution_text or '' }}">
             <div class="position-relative">
               {% if media.thumbnail_path %}
               <img src="{{ url_for('main.media_thumbnail', media_id=media.id) }}" class="card-img-top media-thumb" alt="{{ media.filename }}" style="height: 180px; object-fit: cover;">
@@ -85,18 +95,17 @@
             </div>
             <div class="card-footer bg-transparent border-top-0">
               <div class="d-flex gap-2">
-                <form method="POST" action="{{ url_for('admin.public_library_toggle', media_id=media.id) }}" class="flex-grow-1">
-                  <button type="submit" class="btn btn-sm btn-outline-secondary w-100">
+                <button type="button" class="btn btn-sm btn-outline-primary flex-grow-1 media-edit" data-id="{{ media.id }}">
+                  <i class="bi bi-pencil"></i> Edit
+                </button>
+                <form method="POST" action="{{ url_for('admin.public_library_toggle', media_id=media.id) }}">
+                  <button type="submit" class="btn btn-sm btn-outline-secondary">
                     <i class="bi bi-eye{{ '' if media.is_public else '-slash' }}"></i>
-                    {{ 'Make Private' if media.is_public else 'Make Public' }}
                   </button>
                 </form>
-                <form method="POST" action="{{ url_for('admin.public_library_delete', media_id=media.id) }}"
-                      onsubmit="return confirm('Delete this media file? This action cannot be undone.');">
-                  <button type="submit" class="btn btn-sm btn-outline-danger">
-                    <i class="bi bi-trash"></i>
-                  </button>
-                </form>
+                <button type="button" class="btn btn-sm btn-outline-danger media-delete" data-id="{{ media.id }}">
+                  <i class="bi bi-trash"></i>
+                </button>
               </div>
             </div>
           </div>
@@ -153,4 +162,13 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<div id="media-config"
+     data-update-url-template="{{ url_for('admin.public_library_update', media_id=0) }}"
+     data-delete-url-template="{{ url_for('admin.public_library_delete', media_id=0) }}"
+     class="d-none"></div>
+<script src="{{ url_for('static', filename='js/admin/public_library.js') }}"></script>
 {% endblock %}
