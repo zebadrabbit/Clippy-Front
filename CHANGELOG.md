@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Audio metadata extraction and attribution fields for music/audio files
+  - New fields: artist, album, title, license, attribution_url, attribution_text on MediaFile model
+  - Automatic ID3/Vorbis/MP4 tag extraction using mutagen library
+  - Supports MP3, FLAC, OGG, M4A, WAV formats
+  - Background task extracts metadata on upload
+- Edit functionality for public library admin page
+  - Modal UI for editing media metadata (name, type, tags, attribution)
+  - JavaScript-based edit/delete with AJAX updates
+  - No page reload required for edits
+- Attribution fields in media library edit modal
+  - Extended edit modal with dedicated attribution section
+  - Helpful placeholders and form hints for license types
+
 ### Fixed
 - Public library media files now accessible to all users in compilations
   - Non-admin users can now use admin-owned intro/outro/transitions marked as public
@@ -15,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Wizard state persistence in step-compile
   - Intro/outro/transition selections now properly restored when re-entering compile step
   - Added wizard state loading on step entry matching step-arrange behavior
+- "Add All to Timeline" button in arrange step
+  - Now directly creates timeline cards instead of toggling
+  - Shows accurate count of added clips
+  - Properly updates state and UI after batch add
 
 ---
 
