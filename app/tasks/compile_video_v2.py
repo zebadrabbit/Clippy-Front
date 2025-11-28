@@ -609,6 +609,7 @@ def _build_timeline_with_transitions_v2(
     transition_ids: list[int],
     randomize: bool,
     tier_limits: dict,
+    log_func=None,
 ) -> list[str]:
     """Build timeline with intro/outro/transitions (API-based).
 
@@ -621,17 +622,24 @@ def _build_timeline_with_transitions_v2(
         transition_ids: List of transition media file IDs
         randomize: Whether to randomize transition selection
         tier_limits: Tier limits dict
+        log_func: Optional logging function for job result logs
 
     Returns:
         List of file paths in final timeline order
     """
     user_id = project_data["user_id"]
 
+    def log(level: str, message: str, status: str | None = None):
+        """Log to both logger and job result if log_func provided."""
+        logger.info(f"[timeline] {message}")
+        if log_func:
+            log_func(level, message, status)
+
     # Log what we received
-    logger.info(
-        f"[_build_timeline_with_transitions_v2] Received: "
-        f"intro_id={intro_id}, outro_id={outro_id}, "
-        f"transition_ids={transition_ids} ({len(transition_ids) if transition_ids else 0} items)"
+    log(
+        "info",
+        f"Received: intro_id={intro_id}, outro_id={outro_id}, "
+        f"transition_ids={transition_ids} ({len(transition_ids) if transition_ids else 0} items)",
     )
 
     # Collect all media IDs to fetch
@@ -1534,7 +1542,10 @@ def compile_video_task_v2(
             self.update_state(
                 state="PROGRESS", meta={"progress": 70, "status": "Adding intro/outro"}
             )
-            log("info", "Adding intro/outro")
+            log(
+                "info",
+                f"Building timeline: intro_id={intro_id}, outro_id={outro_id}, transitions={len(transition_ids or [])}",
+            )
             worker_api.update_processing_job(job_id, progress=70)
 
             # Build timeline with transitions
@@ -1547,6 +1558,7 @@ def compile_video_task_v2(
                 transition_ids=transition_ids or [],
                 randomize=randomize_transitions,
                 tier_limits=tier_limits,
+                log_func=log,
             )
 
             self.update_state(
