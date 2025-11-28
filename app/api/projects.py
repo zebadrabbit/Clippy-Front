@@ -700,6 +700,41 @@ def compile_project_api(project_id: int):
             f"transition_ids={transition_ids}, randomize={randomize_transitions}"
         )
 
+        # Validate intro/outro (allow public or owned by user)
+        from sqlalchemy import or_
+
+        from app.models import MediaFile, MediaType
+
+        if intro_id is not None:
+            intro_check = MediaFile.query.filter(
+                MediaFile.id == intro_id,
+                or_(
+                    MediaFile.user_id == current_user.id,
+                    MediaFile.is_public.is_(True),
+                ),
+                MediaFile.media_type == MediaType.INTRO,
+            ).first()
+            if not intro_check:
+                current_app.logger.warning(
+                    f"[compile_project_api] Intro {intro_id} not found or not accessible"
+                )
+                intro_id = None
+
+        if outro_id is not None:
+            outro_check = MediaFile.query.filter(
+                MediaFile.id == outro_id,
+                or_(
+                    MediaFile.user_id == current_user.id,
+                    MediaFile.is_public.is_(True),
+                ),
+                MediaFile.media_type == MediaType.OUTRO,
+            ).first()
+            if not outro_check:
+                current_app.logger.warning(
+                    f"[compile_project_api] Outro {outro_id} not found or not accessible"
+                )
+                outro_id = None
+
         # Background music settings
         background_music_id = data.get("background_music_id")
         music_volume = data.get("music_volume")
@@ -728,9 +763,14 @@ def compile_project_api(project_id: int):
                     )
                     tid_list = []
                 if tid_list:
+                    from sqlalchemy import or_
+
                     q = MediaFile.query.filter(
                         MediaFile.id.in_(tid_list),
-                        MediaFile.user_id == current_user.id,
+                        or_(
+                            MediaFile.user_id == current_user.id,
+                            MediaFile.is_public.is_(True),
+                        ),
                         MediaFile.media_type == MediaType.TRANSITION,
                     )
                     valid_transition_ids = [m.id for m in q.all()]
