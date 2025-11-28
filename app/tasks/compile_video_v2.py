@@ -627,6 +627,13 @@ def _build_timeline_with_transitions_v2(
     """
     user_id = project_data["user_id"]
 
+    # Log what we received
+    logger.info(
+        f"[_build_timeline_with_transitions_v2] Received: "
+        f"intro_id={intro_id}, outro_id={outro_id}, "
+        f"transition_ids={transition_ids} ({len(transition_ids) if transition_ids else 0} items)"
+    )
+
     # Collect all media IDs to fetch
     media_ids = []
     if intro_id:
@@ -636,37 +643,78 @@ def _build_timeline_with_transitions_v2(
     if transition_ids:
         media_ids.extend(transition_ids)
 
+    logger.info(
+        f"[_build_timeline_with_transitions_v2] Fetching {len(media_ids)} media files: {media_ids}"
+    )
+
     # Batch fetch intro/outro/transitions
     media_files = {}
     if media_ids:
         response = worker_api.get_media_batch(media_ids, user_id)
+        logger.info(
+            f"[_build_timeline_with_transitions_v2] API returned {len(response.get('media_files', []))} files"
+        )
         for mf in response.get("media_files", []):
             media_files[mf["id"]] = mf
+            logger.info(
+                f"[_build_timeline_with_transitions_v2] Got media file {mf['id']}: {mf.get('filename', 'unknown')}"
+            )
 
     # Process intro
     intro_path = None
     if intro_id and intro_id in media_files:
+        logger.info(
+            f"[_build_timeline_with_transitions_v2] Processing intro {intro_id}"
+        )
         intro = media_files[intro_id]
         intro_processed = os.path.join(temp_dir, "intro_processed.mp4")
         _process_media_file_v2(intro, intro_processed, project_data, tier_limits)
         intro_path = intro_processed
+        logger.info(
+            f"[_build_timeline_with_transitions_v2] Intro processed: {intro_path}"
+        )
+    elif intro_id:
+        logger.warning(
+            f"[_build_timeline_with_transitions_v2] Intro {intro_id} not found in media_files!"
+        )
 
     # Process outro
     outro_path = None
     if outro_id and outro_id in media_files:
+        logger.info(
+            f"[_build_timeline_with_transitions_v2] Processing outro {outro_id}"
+        )
         outro = media_files[outro_id]
         outro_processed = os.path.join(temp_dir, "outro_processed.mp4")
         _process_media_file_v2(outro, outro_processed, project_data, tier_limits)
         outro_path = outro_processed
+        logger.info(
+            f"[_build_timeline_with_transitions_v2] Outro processed: {outro_path}"
+        )
+    elif outro_id:
+        logger.warning(
+            f"[_build_timeline_with_transitions_v2] Outro {outro_id} not found in media_files!"
+        )
 
     # Process transitions
     transition_paths = []
     for tid in transition_ids:
         if tid in media_files:
+            logger.info(
+                f"[_build_timeline_with_transitions_v2] Processing transition {tid}"
+            )
             trans = media_files[tid]
             trans_processed = os.path.join(temp_dir, f"transition_{tid}_processed.mp4")
             _process_media_file_v2(trans, trans_processed, project_data, tier_limits)
             transition_paths.append(trans_processed)
+        else:
+            logger.warning(
+                f"[_build_timeline_with_transitions_v2] Transition {tid} not found in media_files!"
+            )
+
+    logger.info(
+        f"[_build_timeline_with_transitions_v2] Processed {len(transition_paths)} transitions"
+    )
 
     # Get static bumper path
     app = _get_app()
