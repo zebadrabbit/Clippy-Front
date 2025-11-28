@@ -75,9 +75,11 @@ def get_compilation_preview_thumb(project_id):
     # Generate thumbnail using ffmpeg
     try:
         # Get ffmpeg binary path
+        from flask import current_app
+
         from app.ffmpeg_config import _resolve_binary
 
-        ffmpeg_bin = _resolve_binary("FFMPEG_BINARY", "ffmpeg")
+        ffmpeg_bin = _resolve_binary(current_app, "ffmpeg")
 
         # Create temporary file for thumbnail
         with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_thumb:

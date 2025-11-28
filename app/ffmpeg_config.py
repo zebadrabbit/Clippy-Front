@@ -373,3 +373,112 @@ def audio_args() -> list[str]:
         "-ac",
         "2",
     ]
+
+
+def _resolve_binary(app, name: str) -> str:
+    """Resolve a binary path using app config or local ./bin vs system smart fallback.
+
+    Order of precedence:
+      1) Explicit app.config override (FFMPEG_BINARY, YT_DLP_BINARY, FFPROBE_BINARY)
+      2) For ffmpeg only: if PREFER_SYSTEM_FFMPEG=1, prefer system 'ffmpeg'
+      3) Project-local ./bin/<name> if present
+         - For ffmpeg: if local ffmpeg lacks NVENC but system ffmpeg has NVENC, prefer system
+      4) Fallback to executable name (resolved via PATH)
+    """
+    import subprocess
+
+    cfg_key = None
+    lname = name.lower()
+    if lname == "ffmpeg":
+        cfg_key = "FFMPEG_BINARY"
+    elif lname in ("yt-dlp", "ytdlp"):
+        cfg_key = "YT_DLP_BINARY"
+    elif lname == "ffprobe":
+        cfg_key = "FFPROBE_BINARY"
+
+    if cfg_key:
+        path = app.config.get(cfg_key)
+        if path:
+            return path
+
+    proj_root = os.path.dirname(app.root_path)
+    local_bin = os.path.join(proj_root, "bin", name)
+
+    # For ffmpeg specifically, allow preferring system binary (useful in GPU containers)
+    if lname == "ffmpeg":
+        prefer_system = str(
+            os.getenv(
+                "PREFER_SYSTEM_FFMPEG", app.config.get("PREFER_SYSTEM_FFMPEG", "")
+            )
+        ).lower() in {"1", "true", "yes", "on"}
+        if prefer_system:
+            if os.getenv("FFMPEG_DEBUG"):
+                try:
+                    print("[ffmpeg] prefer system ffmpeg via PREFER_SYSTEM_FFMPEG=1")
+                except Exception:
+                    pass
+            return "ffmpeg"
+
+        # If local exists, but we're in a GPU context, pick the one that supports NVENC
+        def _has_nvenc(bin_path: str) -> bool:
+            try:
+                res = subprocess.run(
+                    [bin_path, "-hide_banner", "-encoders"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    timeout=5,
+                )
+                return "h264_nvenc" in (res.stdout or "")
+            except Exception:
+                return False
+
+        gpu_context = (
+            str(os.getenv("USE_GPU_QUEUE", app.config.get("USE_GPU_QUEUE", ""))).lower()
+            in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+            or os.getenv("NVIDIA_VISIBLE_DEVICES")
+            or os.getenv("CUDA_VISIBLE_DEVICES")
+        )
+
+        if os.path.exists(local_bin):
+            if gpu_context:
+                # Prefer the binary that actually has NVENC
+                local_has = _has_nvenc(local_bin)
+                sys_has = _has_nvenc("ffmpeg")
+                if os.getenv("FFMPEG_DEBUG"):
+                    try:
+                        print(
+                            f"[ffmpeg] gpu_context=1 local_bin='{local_bin}' local_nvenc={local_has} system_nvenc={sys_has}"
+                        )
+                    except Exception:
+                        pass
+                if sys_has and not local_has:
+                    if os.getenv("FFMPEG_DEBUG"):
+                        try:
+                            print("[ffmpeg] selecting system ffmpeg (has NVENC)")
+                        except Exception:
+                            pass
+                    return "ffmpeg"
+            if os.getenv("FFMPEG_DEBUG"):
+                try:
+                    print(f"[ffmpeg] selecting local ffmpeg: {local_bin}")
+                except Exception:
+                    pass
+            return local_bin
+        # No local bin; system
+        if os.getenv("FFMPEG_DEBUG"):
+            try:
+                print("[ffmpeg] no local ffmpeg; using system 'ffmpeg'")
+            except Exception:
+                pass
+        return "ffmpeg"
+
+    # Non-ffmpeg tools: prefer project-local if present, else PATH
+    if os.path.exists(local_bin):
+        return local_bin
+    return name
