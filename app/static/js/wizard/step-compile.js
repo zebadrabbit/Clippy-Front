@@ -11,6 +11,20 @@ let progressAnimationFrame = null;
 export async function onEnter(wizard) {
   console.log('[step-compile] Entering compile step');
 
+  // Load saved wizard state from database
+  const savedState = wizard.wizardState || {};
+  console.log('[step-compile] Loading saved state:', savedState);
+
+  // Initialize wizard state with saved values or defaults
+  wizard.selectedIntroIds = savedState.selectedIntroIds || wizard.selectedIntroIds || [];
+  wizard.selectedOutroIds = savedState.selectedOutroIds || wizard.selectedOutroIds || [];
+  wizard.selectedTransitionIds = savedState.selectedTransitionIds || wizard.selectedTransitionIds || [];
+  wizard.transitionsRandomize = savedState.transitionsRandomize !== undefined
+    ? savedState.transitionsRandomize
+    : (wizard.transitionsRandomize !== undefined ? wizard.transitionsRandomize : false);
+  wizard.selectedMusicIds = savedState.selectedMusicIds || wizard.selectedMusicIds || [];
+  wizard.selectedMusicNames = savedState.selectedMusicNames || wizard.selectedMusicNames || [];
+
   // Setup navigation
   setupNavigation(wizard);
 
