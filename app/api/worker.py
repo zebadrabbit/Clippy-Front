@@ -1578,11 +1578,16 @@ def worker_download_media(media_id):
         if not user_id:
             return jsonify({"error": "user_id required"}), 400
 
-        # Fetch media file with ownership validation
-        media_file = MediaFile.query.filter_by(id=media_id, user_id=user_id).first()
+        # Fetch media file with ownership validation (allow public or owned by user)
+        from sqlalchemy import or_
+
+        media_file = MediaFile.query.filter(
+            MediaFile.id == media_id,
+            or_(MediaFile.user_id == user_id, MediaFile.is_public.is_(True)),
+        ).first()
         if not media_file:
             current_app.logger.warning(
-                f"Media file {media_id} not found or not owned by user {user_id}"
+                f"Media file {media_id} not found or not accessible by user {user_id}"
             )
             return jsonify({"error": "Media file not found"}), 404
 
