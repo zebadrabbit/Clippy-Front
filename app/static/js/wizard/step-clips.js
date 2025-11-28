@@ -190,6 +190,13 @@ async function fetchTwitchClips(wizard) {
 
     wizard.fetchedClips = items;
 
+    // Debug: Check if clips have duration data
+    console.log('[step-clips] Fetched clips sample:', items.slice(0, 3).map(c => ({
+      title: c.title?.substring(0, 30),
+      duration: c.duration,
+      url: c.url?.substring(0, 50)
+    })));
+
     let statusMsg = `Reeled in ${items.length} clips for @${data.username}.`;
     if (totalDuration !== undefined) {
       const minutes = Math.floor(totalDuration / 60);
@@ -298,8 +305,16 @@ async function queueDownloads(wizard, urls) {
         }
       }
 
-      effectiveLimit = clipsNeeded;
-      console.log(`[step-clips] Duration mode - need ${clipsNeeded} clips to reach ${targetDuration}s (accumulated: ${accumulatedDuration.toFixed(1)}s)`);
+      // Safety check: if no clips had duration data (accumulatedDuration = 0),
+      // estimate based on typical clip length (30s) or use max_clips
+      if (accumulatedDuration === 0 && clipsNeeded > 0) {
+        const estimatedClipsNeeded = Math.ceil(targetDuration / 30); // Assume 30s per clip
+        effectiveLimit = Math.min(estimatedClipsNeeded, urls.length);
+        console.log(`[step-clips] Duration mode - no duration metadata, estimating ${effectiveLimit} clips (30s avg)`);
+      } else {
+        effectiveLimit = clipsNeeded;
+        console.log(`[step-clips] Duration mode - need ${clipsNeeded} clips to reach ${targetDuration}s (accumulated: ${accumulatedDuration.toFixed(1)}s)`);
+      }
     } else {
       // Fallback to all clips if we can't calculate
       effectiveLimit = urls.length;
