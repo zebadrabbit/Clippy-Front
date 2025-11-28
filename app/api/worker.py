@@ -719,7 +719,9 @@ def worker_update_project_status(project_id: int):
         if "status" in data:
             from app.models import ProjectStatus
 
-            project.status = ProjectStatus(data["status"])
+            # Normalize status to lowercase to match enum values
+            status_value = str(data["status"]).lower()
+            project.status = ProjectStatus(status_value)
 
         if "output_filename" in data:
             project.output_filename = data["output_filename"]
@@ -1320,13 +1322,22 @@ def worker_upload_compilation(project_id: int):
 
     except Exception as e:
         db.session.rollback()
+
+        # Provide clearer error message for file size limit
+        error_msg = str(e)
+        if "413" in error_msg or "Request Entity Too Large" in error_msg:
+            max_size_gb = current_app.config.get("MAX_CONTENT_LENGTH", 0) / (
+                1024 * 1024 * 1024
+            )
+            error_msg = f"File size exceeds maximum allowed ({max_size_gb:.1f}GB). Consider increasing MAX_CONTENT_LENGTH."
+
         current_app.logger.error(
-            f"Error uploading compilation for project {project_id}: {e}"
+            f"Error uploading compilation for project {project_id}: {error_msg}"
         )
         import traceback
 
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": error_msg}), 500
 
 
 # ============================================================================
