@@ -1371,6 +1371,17 @@ def compile_video_task_v2(
         Dict with compilation results
     """
     try:
+        # Log received parameters for debugging
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.info(
+            f"[compile_video_task_v2] Starting compilation for project {project_id}: "
+            f"intro_id={intro_id}, outro_id={outro_id}, "
+            f"transition_ids={transition_ids}, randomize_transitions={randomize_transitions}, "
+            f"background_music_id={background_music_id}, clip_ids={clip_ids}"
+        )
+
         # Update task status
         self.update_state(
             state="PROGRESS", meta={"progress": 0, "status": "Starting compilation"}

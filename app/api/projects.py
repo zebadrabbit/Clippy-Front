@@ -693,6 +693,13 @@ def compile_project_api(project_id: int):
         transition_ids = data.get("transition_ids") or []
         randomize_transitions = bool(data.get("randomize_transitions") or False)
 
+        # Log what we received
+        current_app.logger.info(
+            f"[compile_project_api] Received request for project {project_id}: "
+            f"intro_id={intro_id}, outro_id={outro_id}, "
+            f"transition_ids={transition_ids}, randomize={randomize_transitions}"
+        )
+
         # Background music settings
         background_music_id = data.get("background_music_id")
         music_volume = data.get("music_volume")
@@ -891,6 +898,14 @@ def compile_project_api(project_id: int):
             project.duck_attack = duck_attack
         if duck_release is not None:
             project.duck_release = duck_release
+
+        # Log what we're sending to the task
+        current_app.logger.info(
+            f"[compile_project_api] Starting task for project {project_id}: "
+            f"intro_id={intro_id}, outro_id={outro_id}, "
+            f"transition_ids={valid_transition_ids} (from {transition_ids}), "
+            f"randomize={randomize_transitions}, clip_ids={clip_ids}"
+        )
 
         task = compile_video_task.apply_async(
             args=(project_id,),
