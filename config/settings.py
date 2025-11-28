@@ -179,48 +179,6 @@ class Config:
     # absolute raw media URLs. Example: https://clippy.example.com
     MEDIA_BASE_URL = os.environ.get("MEDIA_BASE_URL")
 
-    # Ingest importer (server-side) configuration
-    INGEST_IMPORT_ENABLED = os.environ.get(
-        "INGEST_IMPORT_ENABLED", "false"
-    ).lower() in {"1", "true", "yes", "on"}
-    INGEST_ROOT = os.environ.get("INGEST_ROOT", "/srv/ingest")
-    # Comma-separated list of worker IDs to scan (empty => all subdirs under INGEST_ROOT)
-    INGEST_IMPORT_WORKER_IDS = os.environ.get("INGEST_IMPORT_WORKER_IDS", "")
-    # Default owner/project for imported files if no smarter mapping is provided
-    INGEST_IMPORT_USERNAME = os.environ.get("INGEST_IMPORT_USERNAME")
-    INGEST_IMPORT_PROJECT = os.environ.get("INGEST_IMPORT_PROJECT")
-    INGEST_IMPORT_CREATE_PROJECT = os.environ.get(
-        "INGEST_IMPORT_CREATE_PROJECT", "true"
-    ).lower() in {"1", "true", "yes", "on"}
-    INGEST_IMPORT_PATTERN = os.environ.get("INGEST_IMPORT_PATTERN", "*.mp4")
-    INGEST_IMPORT_ACTION = os.environ.get("INGEST_IMPORT_ACTION", "copy")
-    INGEST_IMPORT_STABLE_SECONDS = int(
-        os.environ.get("INGEST_IMPORT_STABLE_SECONDS", 60)
-    )
-    # Celery Beat schedule (seconds) for periodic scans
-    INGEST_IMPORT_INTERVAL_SECONDS = int(
-        os.environ.get("INGEST_IMPORT_INTERVAL_SECONDS", 60)
-    )
-
-    # Auto-ingest compilations scanner (server-side Beat task)
-    AUTO_INGEST_COMPILATIONS_ENABLED = os.environ.get(
-        "AUTO_INGEST_COMPILATIONS_ENABLED", "false"
-    ).lower() in {"1", "true", "yes", "on"}
-    AUTO_INGEST_WORKER_IDS = os.environ.get("AUTO_INGEST_WORKER_IDS", "")
-    AUTO_INGEST_COMPILATIONS_INTERVAL_SECONDS = int(
-        os.environ.get("AUTO_INGEST_COMPILATIONS_INTERVAL_SECONDS", 60)
-    )
-
-    # Cleanup imported artifacts (server-side Beat task)
-    CLEANUP_IMPORTED_ENABLED = os.environ.get(
-        "CLEANUP_IMPORTED_ENABLED", "false"
-    ).lower() in {"1", "true", "yes", "on"}
-    CLEANUP_IMPORTED_AGE_HOURS = int(os.environ.get("CLEANUP_IMPORTED_AGE_HOURS", 24))
-    CLEANUP_IMPORTED_WORKER_IDS = os.environ.get("CLEANUP_IMPORTED_WORKER_IDS", "")
-    CLEANUP_IMPORTED_INTERVAL_SECONDS = int(
-        os.environ.get("CLEANUP_IMPORTED_INTERVAL_SECONDS", 3600)
-    )
-
     # Automation scheduler (Celery Beat) optional enable
     SCHEDULER_ENABLE_TICK = os.environ.get(
         "SCHEDULER_ENABLE_TICK", "false"

@@ -67,30 +67,6 @@ def make_celery(app_name=__name__):
             "task": "app.tasks.automation.scheduled_tasks_tick",
             "schedule": int(getattr(config, "SCHEDULER_TICK_SECONDS", 60) or 60),
         }
-    # Ingest import periodic scan
-    if getattr(config, "INGEST_IMPORT_ENABLED", False):
-        beat_schedule["ingest-importer-scan"] = {
-            "task": "app.tasks.media_maintenance.ingest_import_task",
-            "schedule": int(
-                getattr(config, "INGEST_IMPORT_INTERVAL_SECONDS", 60) or 60
-            ),
-        }
-    # Auto-ingest compilations scanner
-    if getattr(config, "AUTO_INGEST_COMPILATIONS_ENABLED", False):
-        beat_schedule["auto-ingest-compilations-scan"] = {
-            "task": "app.tasks.media_maintenance.auto_ingest_compilations_scan",
-            "schedule": int(
-                getattr(config, "AUTO_INGEST_COMPILATIONS_INTERVAL_SECONDS", 60) or 60
-            ),
-        }
-    # Cleanup imported artifacts
-    if getattr(config, "CLEANUP_IMPORTED_ENABLED", False):
-        beat_schedule["cleanup-imported-artifacts"] = {
-            "task": "app.tasks.media_maintenance.cleanup_imported_artifacts",
-            "schedule": int(
-                getattr(config, "CLEANUP_IMPORTED_INTERVAL_SECONDS", 3600) or 3600
-            ),
-        }
     if beat_schedule:
         celery_app.conf.beat_schedule = beat_schedule
 
