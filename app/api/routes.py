@@ -36,7 +36,6 @@ importlib.import_module("app.api.health")
 importlib.import_module("app.api.jobs")
 importlib.import_module("app.api.media")
 importlib.import_module("app.api.projects")
-importlib.import_module("app.api.automation")
 importlib.import_module("app.api.worker")
 importlib.import_module("app.api.tags")
 importlib.import_module("app.api.teams")
@@ -356,3 +355,97 @@ def discord_messages_api():
                 jsonify({"error": f"Failed to fetch Discord messages: {error_msg}"}),
                 502,
             )
+
+
+@api_bp.route("/twitch/clips/enrich", methods=["POST"])
+@login_required
+def enrich_clip_urls_api():
+    """Batch-fetch metadata for Twitch clip URLs.
+
+    Request body:
+        {
+            "urls": ["https://clips.twitch.tv/...", ...]
+        }
+
+    Returns:
+        {
+            "clips": [
+                {
+                    "url": str,
+                    "title": str,
+                    "duration": float,
+                    "creator_name": str,
+                    "creator_id": str,
+                    "game_name": str,
+                    "created_at": str
+                },
+                ...
+            ],
+            "total_duration": float,
+            "count": int
+        }
+    """
+    from app.integrations.twitch import get_clip_by_id
+
+    data = request.get_json(silent=True) or {}
+    urls = data.get("urls", [])
+
+    if not urls:
+        return jsonify({"error": "No URLs provided"}), 400
+
+    # Limit to 100 URLs max
+    urls = urls[:100]
+
+    def extract_clip_id(url: str) -> str | None:
+        """Extract clip ID/slug from Twitch clip URL."""
+        try:
+            url_lower = url.lower()
+            if "clips.twitch.tv" in url_lower:
+                slug = url.split("clips.twitch.tv/", 1)[1].split("/")[0].split("?")[0]
+                return slug
+            elif "twitch.tv" in url_lower and "/clip/" in url_lower:
+                slug = url.split("/clip/", 1)[1].split("/")[0].split("?")[0]
+                return slug
+        except Exception:
+            pass
+        return None
+
+    enriched_clips = []
+    total_duration = 0.0
+
+    for url in urls:
+        clip_id = extract_clip_id(url)
+        if not clip_id:
+            current_app.logger.warning(f"Could not extract clip ID from URL: {url}")
+            continue
+
+        try:
+            clip = get_clip_by_id(clip_id)
+            if clip:
+                enriched_clips.append(
+                    {
+                        "url": url,
+                        "title": clip.title,
+                        "duration": clip.duration,
+                        "creator_name": clip.creator_name,
+                        "creator_id": clip.creator_id,
+                        "game_name": clip.game_name,
+                        "created_at": clip.created_at,
+                        "view_count": clip.view_count,
+                        "thumbnail_url": clip.thumbnail_url,
+                    }
+                )
+                total_duration += clip.duration
+            else:
+                current_app.logger.warning(f"No metadata found for clip: {clip_id}")
+        except Exception as e:
+            current_app.logger.error(f"Failed to fetch metadata for {clip_id}: {e}")
+            continue
+
+    return jsonify(
+        {
+            "clips": enriched_clips,
+            "total_duration": total_duration,
+            "count": len(enriched_clips),
+        }
+    )

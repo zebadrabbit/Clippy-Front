@@ -978,7 +978,9 @@ def compile_project_api(project_id: int):
             },
             queue=queue_name,
         )
-        project.status = getattr(project, "status", project.status)
+
+        # Set project status to PROCESSING
+        project.status = ProjectStatus.PROCESSING
         from app.models import db
 
         db.session.commit()
@@ -1293,6 +1295,31 @@ def list_project_clips_api(project_id: int):
         )
 
     return jsonify({"items": items, "count": len(items)})
+
+
+@api_bp.route("/projects/<int:project_id>/clips", methods=["DELETE"])
+@login_required
+def delete_project_clips_api(project_id: int):
+    """Delete all clips from a project (keeps media files, just removes clip associations)."""
+    from app import db
+    from app.models import Clip, Project
+
+    project = Project.query.filter_by(id=project_id, user_id=current_user.id).first()
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+
+    # Get clip count before deletion
+    clip_count = project.clips.count()
+
+    # Delete all clips for this project
+    Clip.query.filter_by(project_id=project_id).delete()
+    db.session.commit()
+
+    current_app.logger.info(
+        f"Deleted {clip_count} clips from project {project_id} (user {current_user.id})"
+    )
+
+    return jsonify({"message": f"Deleted {clip_count} clips", "count": clip_count}), 200
 
 
 @api_bp.route("/projects/<int:project_id>/clips/order", methods=["POST"])

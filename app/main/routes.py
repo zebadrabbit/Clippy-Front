@@ -1000,69 +1000,6 @@ def media_library():
     )
 
 
-@main_bp.route("/automation")
-@login_required
-def automation():
-    """Render the Automation page for creating and managing compilation tasks and schedules.
-
-    The page consumes the Automation APIs to list tasks, run them, and (if allowed by tier)
-    create schedules. Tier gating for scheduling is enforced server-side by the API and
-    reflected in the UI.
-    """
-    # Determine tier gating flags for UI hints only
-    can_schedule = False
-    max_sched = 0
-    try:
-        t = getattr(current_user, "tier", None)
-        if t is not None:
-            can_schedule = bool(getattr(t, "can_schedule_tasks", False))
-            try:
-                max_sched = int(getattr(t, "max_schedules_per_user", 0) or 0)
-            except Exception:
-                max_sched = 0
-    except Exception:
-        can_schedule = False
-        max_sched = 0
-    return render_template(
-        "main/automation.html",
-        title="Automation",
-        can_schedule=can_schedule,
-        max_schedules=max_sched,
-    )
-
-
-@main_bp.route("/automation/tasks/<int:task_id>")
-@login_required
-def automation_task_details(task_id: int):
-    """Render a dedicated detail page for a single automation task.
-
-    The page consumes the Automation APIs to fetch task details and manage schedules.
-    """
-    # We don't load the task server-side to keep the page simple and API-driven.
-    # Ownership is enforced by the APIs.
-    # Tier hints for UI gating
-    can_schedule = False
-    max_sched = 0
-    try:
-        t = getattr(current_user, "tier", None)
-        if t is not None:
-            can_schedule = bool(getattr(t, "can_schedule_tasks", False))
-            try:
-                max_sched = int(getattr(t, "max_schedules_per_user", 0) or 0)
-            except Exception:
-                max_sched = 0
-    except Exception:
-        can_schedule = False
-        max_sched = 0
-    return render_template(
-        "main/automation_task.html",
-        title="Task Details",
-        task_id=task_id,
-        can_schedule=can_schedule,
-        max_schedules=max_sched,
-    )
-
-
 def _media_type_folder(media_type: MediaType, mime_type: str) -> str:
     """
     Map a MediaType/mime to a folder name.
@@ -1707,12 +1644,6 @@ def project_wizard():
     if step and 1 <= step <= 4:
         initial_step = step
 
-    # Get user's tier for feature flags
-    from app.quotas import get_effective_tier
-
-    user_tier = get_effective_tier(current_user)
-    can_schedule_tasks = user_tier.can_schedule_tasks if user_tier else False
-
     return render_template(
         "main/project_wizard.html",
         title="Project Wizard",
@@ -1720,7 +1651,6 @@ def project_wizard():
         discord_channel_id=discord_channel_id,
         existing_project=existing_project,
         initial_step=initial_step,
-        can_schedule_tasks=can_schedule_tasks,
     )
 
 

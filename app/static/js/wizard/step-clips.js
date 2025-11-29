@@ -222,7 +222,7 @@ async function fetchDiscordClips(wizard) {
     const reactionEmoji = wizard.projectData?.reaction_emoji || '';
     const channelId = wizard.projectData?.discord_channel_id || '';
 
-    const params = new URLSearchParams({ limit: '200' });
+    const params = new URLSearchParams({ limit: '40' });
     if (minReactions >= 0) params.set('min_reactions', String(minReactions));
     if (reactionEmoji) params.set('reaction_emoji', reactionEmoji);
     if (channelId) params.set('channel_id', channelId);
@@ -234,7 +234,39 @@ async function fetchDiscordClips(wizard) {
     const urls = (data.clip_urls || []).filter(Boolean);
     const filtered = data.filtered_count !== undefined ? data.filtered_count : (data.items || []).length;
 
-    setGcStatus(`Sifted ${filtered} messages • found ${urls.length} clip link(s)${minReactions > 1 ? ` (≥${minReactions} reactions)` : ''}.`);
+    // Always enrich Discord clip URLs with metadata (for duration calculation and display)
+    if (urls.length > 0) {
+      setGcStatus(`Enriching ${urls.length} clip URLs with metadata...`);
+
+      try {
+        const enrichRes = await fetch('/api/twitch/clips/enrich', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ urls })
+        });
+
+        if (enrichRes.ok) {
+          const enrichData = await enrichRes.json();
+          wizard.fetchedClips = enrichData.clips || [];
+
+          console.log(`[step-clips] Enriched ${wizard.fetchedClips.length} clips, total duration: ${enrichData.total_duration}s`);
+          console.log('[step-clips] Sample enriched clip:', wizard.fetchedClips[0]);
+
+          setGcStatus(`Sifted ${filtered} messages • found ${urls.length} clip link(s) (${enrichData.total_duration.toFixed(0)}s total)${minReactions > 1 ? ` (≥${minReactions} reactions)` : ''}.`);
+        } else {
+          console.warn('[step-clips] Clip enrichment failed, proceeding without duration data');
+          wizard.fetchedClips = [];
+          setGcStatus(`Sifted ${filtered} messages • found ${urls.length} clip link(s)${minReactions > 1 ? ` (≥${minReactions} reactions)` : ''}.`);
+        }
+      } catch (enrichErr) {
+        console.warn('[step-clips] Clip enrichment error:', enrichErr);
+        wizard.fetchedClips = [];
+        setGcStatus(`Sifted ${filtered} messages • found ${urls.length} clip link(s)${minReactions > 1 ? ` (≥${minReactions} reactions)` : ''}.`);
+      }
+    } else {
+      wizard.fetchedClips = [];
+      setGcStatus(`Sifted ${filtered} messages • found ${urls.length} clip link(s)${minReactions > 1 ? ` (≥${minReactions} reactions)` : ''}.`);
+    }
 
     return urls;
   } catch (e) {
@@ -256,31 +288,14 @@ async function queueDownloads(wizard, urls) {
     throw new Error('No clip URLs to download.');
   }
 
-  // CRITICAL: Check if project already has clips to prevent duplicate downloads
-  try {
-    const checkRes = await wizard.api(`/api/projects/${wizard.projectId}/clips`);
-    if (checkRes.ok) {
-      const checkData = await checkRes.json();
-      const existingClips = (checkData && checkData.items) || [];
-      if (existingClips.length > 0) {
-        console.warn(`[step-clips] Project already has ${existingClips.length} clips, aborting new downloads`);
-        setGcStatus(`Using ${existingClips.length} existing clips.`);
-        wizard.downloadTasks = []; // No new tasks
-        return;
-      }
-    }
-  } catch (e) {
-    console.warn('[step-clips] Could not check existing clips:', e);
-    // Continue anyway
-  }
-
-  // Calculate effective limit based on compilation_length
+  // Calculate effective limit based on compilation_length FIRST
   const compilationLength = wizard.projectData?.compilation_length || 'auto';
   let effectiveLimit = urls.length; // Default to all fetched clips
 
   console.log(`[step-clips] max_clips from projectData: ${wizard.projectData?.max_clips}`);
   console.log(`[step-clips] Total URLs available: ${urls.length}`);
   console.log(`[step-clips] Compilation length: ${compilationLength}`);
+  console.log(`[step-clips] wizard.fetchedClips:`, wizard.fetchedClips);
 
   // Only apply max_clips limit when in 'auto' mode
   if (compilationLength === 'auto') {
@@ -289,15 +304,21 @@ async function queueDownloads(wizard, urls) {
   } else {
     // Duration-based mode - calculate how many clips we actually need
     const targetDuration = parseInt(compilationLength, 10);
-    if (!isNaN(targetDuration) && targetDuration > 0 && Array.isArray(wizard.fetchedClips)) {
+    if (!isNaN(targetDuration) && targetDuration > 0 && Array.isArray(wizard.fetchedClips) && wizard.fetchedClips.length > 0) {
       let accumulatedDuration = 0;
       let clipsNeeded = 0;
+
+      console.log(`[step-clips] Duration mode: target=${targetDuration}s, have ${wizard.fetchedClips.length} enriched clips`);
 
       for (let i = 0; i < wizard.fetchedClips.length; i++) {
         const clip = wizard.fetchedClips[i];
         const clipDuration = clip?.duration || 0;
         accumulatedDuration += clipDuration;
         clipsNeeded++;
+
+        if (i < 3) {
+          console.log(`[step-clips]   Clip ${i}: duration=${clipDuration}s, accumulated=${accumulatedDuration.toFixed(1)}s`);
+        }
 
         if (accumulatedDuration >= targetDuration) {
           break;
@@ -317,8 +338,44 @@ async function queueDownloads(wizard, urls) {
     } else {
       // Fallback to all clips if we can't calculate
       effectiveLimit = urls.length;
-      console.log(`[step-clips] Duration mode - using all ${effectiveLimit} fetched clips (no duration metadata)`);
+      console.log(`[step-clips] Duration mode - using all ${effectiveLimit} fetched clips (no duration metadata or empty array)`);
     }
+  }
+
+  // Check if project already has clips - only skip if count matches what we need
+  try {
+    const checkRes = await wizard.api(`/api/projects/${wizard.projectId}/clips`);
+    if (checkRes.ok) {
+      const checkData = await checkRes.json();
+      const existingClips = (checkData && checkData.items) || [];
+      if (existingClips.length > 0) {
+        const limit = Math.max(1, Math.min(100, effectiveLimit));
+
+        // Only skip if existing clips count matches our calculated need
+        if (existingClips.length === limit) {
+          console.log(`[step-clips] Project already has ${existingClips.length} clips matching target (${limit}), skipping download`);
+          setGcStatus(`Using ${existingClips.length} existing clips.`);
+          wizard.downloadTasks = [];
+          return;
+        } else {
+          console.warn(`[step-clips] Project has ${existingClips.length} clips but needs ${limit}, will re-download`);
+          setGcStatus(`Existing clips (${existingClips.length}) don't match target (${limit}), clearing...`);
+
+          // Clear existing clips first
+          try {
+            const deleteRes = await wizard.api(`/api/projects/${wizard.projectId}/clips`, { method: 'DELETE' });
+            if (!deleteRes.ok) {
+              console.error('[step-clips] Failed to clear existing clips');
+            }
+          } catch (err) {
+            console.error('[step-clips] Error clearing clips:', err);
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[step-clips] Could not check existing clips:', e);
+    // Continue anyway
   }
 
   const limit = Math.max(1, Math.min(100, effectiveLimit));

@@ -40,8 +40,6 @@ DEFAULT_TIERS = [
         "is_unlimited": False,
         "is_active": True,
         "is_default": True,  # Default tier for new users
-        "can_schedule_tasks": False,
-        "max_schedules_per_user": 1,
         "max_teams_owned": 1,
         "max_team_members": 3,
     },
@@ -54,8 +52,6 @@ DEFAULT_TIERS = [
         "is_unlimited": False,
         "is_active": True,
         "is_default": False,
-        "can_schedule_tasks": True,
-        "max_schedules_per_user": 5,
         "max_teams_owned": 5,
         "max_team_members": 15,
     },
@@ -68,8 +64,6 @@ DEFAULT_TIERS = [
         "is_unlimited": True,
         "is_active": True,
         "is_default": False,
-        "can_schedule_tasks": True,
-        "max_schedules_per_user": 0,  # Unlimited
         "max_teams_owned": None,
         "max_team_members": None,
     },

@@ -237,6 +237,10 @@
                     </span>
                     {% endif %}
 
+                    <h3>
+                        {{ tier.name }}
+                    </h3>
+
                     <div class="price">
                         {% if tier.monthly_price_cents is none %}
                         Contact Sales
@@ -246,13 +250,6 @@
                         {{ currency_symbol }}{{ "%.2f"|format(tier.monthly_price_cents / 100) }}
                         {% endif %}
                     </div>
-
-                    <h3>
-                        {{ tier.name }}
-                        {% if tier.is_unlimited %}
-                        <span class="badge bg-success ms-2">Unlimited</span>
-                        {% endif %}
-                    </h3>
 
                     <div class="price-label">
                         {% if tier.monthly_price_cents is none %}
@@ -320,16 +317,6 @@
                             None
                             {% endif %}
                         </li>
-
-                        {% if tier.can_schedule_tasks %}
-                        <li>
-                            <i class="bi bi-calendar-event text-success"></i>
-                            <strong>Task Scheduling</strong>
-                            {% if tier.max_schedules_per_user %}
-                            ({{ tier.max_schedules_per_user }} max)
-                            {% endif %}
-                        </li>
-                        {% endif %}
 
                         {% if tier.max_teams_owned %}
                         <li>
@@ -474,18 +461,6 @@
                                 <i class="bi bi-check-circle text-warning"></i>
                                 {% else %}
                                 <i class="bi bi-x-circle text-success"></i>
-                                {% endif %}
-                            </td>
-                            {% endfor %}
-                        </tr>
-                        <tr>
-                            <td><strong>Task Scheduling</strong></td>
-                            {% for tier in tiers %}
-                            <td class="text-center {% if current_tier and current_tier.id == tier.id %}current-tier{% endif %}">
-                                {% if tier.can_schedule_tasks %}
-                                <i class="bi bi-check-circle text-success"></i>
-                                {% else %}
-                                <i class="bi bi-x-circle text-muted"></i>
                                 {% endif %}
                             </td>
                             {% endfor %}

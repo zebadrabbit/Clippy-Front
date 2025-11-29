@@ -27,7 +27,6 @@ def make_celery(app_name=__name__):
         "app.tasks.preview_video",  # Preview video generation
         "app.tasks.enrich_clip_metadata",  # Server-side Twitch metadata enrichment
         "app.tasks.media_maintenance",
-        "app.tasks.automation",
         "app.tasks.video_processing",  # Utility functions only (no DB-based tasks)
     ]
 
@@ -60,15 +59,10 @@ def make_celery(app_name=__name__):
         ),
     )
 
-    # Optional beat schedules
-    beat_schedule = {}
-    if getattr(config, "SCHEDULER_ENABLE_TICK", False):
-        beat_schedule["automation-scheduler-tick"] = {
-            "task": "app.tasks.automation.scheduled_tasks_tick",
-            "schedule": int(getattr(config, "SCHEDULER_TICK_SECONDS", 60) or 60),
-        }
-    if beat_schedule:
-        celery_app.conf.beat_schedule = beat_schedule
+    # Optional beat schedules (currently none configured)
+    # beat_schedule = {}
+    # if beat_schedule:
+    #     celery_app.conf.beat_schedule = beat_schedule
 
     return celery_app
 

@@ -204,24 +204,6 @@
                                 </div>
                             </div>
 
-                            {% if current_user.tier.can_schedule_tasks %}
-                            <div class="col-md-6 mb-3">
-                                <div class="d-flex align-items-start">
-                                    <i class="bi bi-calendar-event text-primary me-2 mt-1"></i>
-                                    <div>
-                                        <strong>Task Scheduling</strong>
-                                        <p class="mb-0 text-muted">
-                                            {% if current_user.tier.max_schedules_per_user %}
-                                                Up to {{ current_user.tier.max_schedules_per_user }} active schedules
-                                            {% else %}
-                                                Unlimited schedules
-                                            {% endif %}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                            {% endif %}
-
                             {% if current_user.tier.max_teams_owned is not none or current_user.tier.max_team_members is not none %}
                             <div class="col-md-6 mb-3">
                                 <div class="d-flex align-items-start">

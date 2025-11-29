@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Discord Integration**
+  - Increased message fetch limit from 20 to 40 URLs for better clip discovery
+  - Clip enrichment now always runs (previously only in duration mode)
+
+### Fixed
+- **Project Status Tracking**
+  - Compilation now correctly sets project status to PROCESSING during renders
+  - Dashboard now accurately shows processing count
+
+### Removed
+- **Task Scheduling Feature**
+  - Removed scheduling capability from tier system
+  - Dropped `can_schedule_tasks` and `max_schedules_per_user` fields from Tier model
+  - Removed scheduling UI from pricing page, tier list, tier edit form, and account settings
+  - Simplified tier system to focus on team collaboration features
+  - Database migration: `1ca9d4fcb507_remove_scheduling_fields_from_tiers_table.py`
+
 ---
 
 ## [1.3.0] - 2025-11-29

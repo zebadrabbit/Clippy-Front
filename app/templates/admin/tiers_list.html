@@ -29,7 +29,7 @@
                   <th class="text-nowrap">Output Caps</th>
                   <th>Watermark</th>
                   <th>Flags</th>
-                  <th class="text-nowrap">Scheduling</th>
+                  <th class="text-nowrap">Teams</th>
                   <th class="text-end">Actions</th>
                 </tr>
               </thead>
@@ -78,13 +78,13 @@
                     {% if t.is_active %}<span class="badge bg-primary">Active</span>{% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}
                   </td>
                   <td>
-                    {% if t.can_schedule_tasks %}
-                      <span class="badge bg-success">Enabled</span>
-                      {% if t.max_schedules_per_user %}
-                        <span class="badge bg-secondary">Max {{ t.max_schedules_per_user }}</span>
-                      {% endif %}
+                    {% if t.max_teams_owned %}
+                      <span class="badge bg-info">{{ t.max_teams_owned }} team{{ 's' if t.max_teams_owned != 1 else '' }}</span>
                     {% else %}
-                      <span class="badge bg-outline-secondary text-muted">Disabled</span>
+                      <span class="badge bg-success">Unlimited</span>
+                    {% endif %}
+                    {% if t.max_team_members %}
+                      <span class="badge bg-secondary">{{ t.max_team_members }} member{{ 's' if t.max_team_members != 1 else '' }}</span>
                     {% endif %}
                   </td>
                   <td class="text-end">

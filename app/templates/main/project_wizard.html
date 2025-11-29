@@ -58,7 +58,7 @@
           <li data-step="4"><a href="#">Compile</a></li>
         </ul>
       </div>
-  <div id="wizard-data" data-user-has-twitch="{{ '1' if current_user.is_authenticated and current_user.twitch_username else '0' }}" data-can-schedule-tasks="{{ '1' if can_schedule_tasks else '0' }}" data-date-format="{{ current_user.date_format if current_user.is_authenticated else 'auto' }}" class="d-none"></div>
+  <div id="wizard-data" data-user-has-twitch="{{ '1' if current_user.is_authenticated and current_user.twitch_username else '0' }}" data-date-format="{{ current_user.date_format if current_user.is_authenticated else 'auto' }}" class="d-none"></div>
       <!-- Step 1: Setup -->
       {% include 'main/wizard/step_setup.html' %}
 

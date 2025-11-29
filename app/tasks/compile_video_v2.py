@@ -436,7 +436,17 @@ def _process_clip_v2(
     end_time = clip_data.get("end_time")
     max_clip_duration = project_data.get("max_clip_duration")
 
-    if start_time is not None and end_time is not None:
+    # Preview mode: cap each clip to 4 seconds for quick preview generation
+    if project_data.get("_preview_mode"):
+        preview_clip_duration = 4.0
+        if start_time is not None and end_time is not None:
+            # User-specified trim: cap to 4s from start_time
+            duration = min(end_time - start_time, preview_clip_duration)
+            cmd.extend(["-ss", str(start_time), "-t", str(duration)])
+        else:
+            # No user trim: take first 4 seconds
+            cmd.extend(["-t", str(preview_clip_duration)])
+    elif start_time is not None and end_time is not None:
         duration = end_time - start_time
         cmd.extend(["-ss", str(start_time), "-t", str(duration)])
     elif max_clip_duration:
@@ -578,24 +588,21 @@ def _process_clip_v2(
         and (creator_name or game_name)
         and not project_data.get("_preview_mode")
     ):
-        # Calculate overlay scale factor based on target width (designed for 1080px)
-        overlay_scale = target_width / 1080.0
+        # Original hardcoded overlay positions (designed for 1920x1080)
+        box_y = 238
+        box_w = 1000
+        text_x = 198
+        avatar_x = 50
+        avatar_y = 223
+        avatar_size = 128
 
-        # Scale all overlay positions proportionally
-        box_y = int(238 * overlay_scale)
-        box_w = int(1000 * overlay_scale)
-        text_x = int(198 * overlay_scale)
-        avatar_x = int(50 * overlay_scale)
-        avatar_y = int(223 * overlay_scale)
-        avatar_size = int(128 * overlay_scale)
+        label_y = 210
+        author_y = 180
+        game_y = 130
 
-        label_y = int(210 * overlay_scale)
-        author_y = int(180 * overlay_scale)
-        game_y = int(130 * overlay_scale)
-
-        label_size = int(28 * overlay_scale)
-        author_size = int(48 * overlay_scale)
-        game_size = int(26 * overlay_scale)
+        label_size = 28
+        author_size = 48
+        game_size = 26
 
         if has_avatar:
             # Build filter matching original ffmpegApplyOverlay template

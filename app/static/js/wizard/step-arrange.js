@@ -180,6 +180,62 @@ function setupNavigation(wizard) {
       wizard.showToast?.('Failed to add clips', 'error');
     }
   });
+
+  // Shuffle Timeline Clips button
+  const shuffleBtn = document.getElementById('shuffle-timeline-clips');
+  shuffleBtn?.addEventListener('click', () => {
+    const list = document.getElementById('timeline-list');
+    if (!list) return;
+
+    // Get all clip cards (not intro/outro)
+    const clipCards = Array.from(list.querySelectorAll('.timeline-card.timeline-clip'));
+
+    if (clipCards.length === 0) {
+      wizard.showToast?.('No clips in timeline to shuffle', 'info');
+      return;
+    }
+
+    // Fisher-Yates shuffle algorithm
+    for (let i = clipCards.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [clipCards[i], clipCards[j]] = [clipCards[j], clipCards[i]];
+    }
+
+    // Get intro and outro references
+    const intro = list.querySelector('.timeline-card.timeline-intro');
+    const outro = list.querySelector('.timeline-card.timeline-outro');
+
+    // Clear the list (keep intro/outro)
+    const allCards = Array.from(list.querySelectorAll('.timeline-card'));
+    allCards.forEach(card => {
+      if (!card.classList.contains('timeline-intro') && !card.classList.contains('timeline-outro')) {
+        card.remove();
+      }
+    });
+
+    // Re-add shuffled clips in new order
+    clipCards.forEach(card => {
+      if (outro) {
+        list.insertBefore(card, outro);
+      } else {
+        list.appendChild(card);
+      }
+    });
+
+    // Rebuild separators and save state
+    rebuildSeparators(wizard);
+    updateArrangedConfirmState();
+
+    // Save the new order
+    const newOrder = Array.from(list.querySelectorAll('.timeline-card.timeline-clip'))
+      .map(c => parseInt(c.dataset.clipId))
+      .filter(id => !isNaN(id));
+
+    wizard.selectedClipIds = newOrder;
+    wizard.saveWizardState({ selectedClipIds: wizard.selectedClipIds });
+
+    wizard.showToast?.(`Shuffled ${clipCards.length} ${clipCards.length === 1 ? 'clip' : 'clips'}`, 'success');
+  });
 }
 
 /**
@@ -920,7 +976,7 @@ function renderMediaList(containerId, items, type, selectHandler, wizard = null)
     const card = document.createElement('div');
     card.className = 'card h-100 position-relative media-card';
     if (isSelected) card.classList.add('border-success');
-    card.style.width = '160px';
+    card.style.width = type === 'clip' ? '220px' : '160px';
     card.style.cursor = 'pointer';
     card.setAttribute('data-type', type);
     card.setAttribute('data-media-id', it.id);
@@ -1019,6 +1075,54 @@ function renderMediaList(containerId, items, type, selectHandler, wizard = null)
       durationSpan.appendChild(document.createTextNode(' ' + (it.duration_formatted || formatDuration(it.duration))));
       durationLi.appendChild(durationSpan);
       ul.appendChild(durationLi);
+    }
+
+    // Clip-specific metadata
+    if (type === 'clip') {
+      // Game name
+      if (it.game_name) {
+        const gameLi = document.createElement('li');
+        gameLi.className = 'text-muted small';
+        const gameIcon = document.createElement('i');
+        gameIcon.className = 'bi bi-controller';
+        gameLi.appendChild(gameIcon);
+        gameLi.appendChild(document.createTextNode(' ' + it.game_name));
+        ul.appendChild(gameLi);
+      }
+
+      // Creator name
+      if (it.creator_name) {
+        const creatorLi = document.createElement('li');
+        creatorLi.className = 'text-muted small';
+        const creatorIcon = document.createElement('i');
+        creatorIcon.className = 'bi bi-person';
+        creatorLi.appendChild(creatorIcon);
+        creatorLi.appendChild(document.createTextNode(' ' + it.creator_name));
+        ul.appendChild(creatorLi);
+      }
+
+      // View count
+      if (it.view_count !== undefined && it.view_count !== null) {
+        const viewsLi = document.createElement('li');
+        viewsLi.className = 'text-muted small';
+        const viewsIcon = document.createElement('i');
+        viewsIcon.className = 'bi bi-eye';
+        viewsLi.appendChild(viewsIcon);
+        viewsLi.appendChild(document.createTextNode(' ' + it.view_count.toLocaleString()));
+        ul.appendChild(viewsLi);
+      }
+
+      // Created date
+      if (it.created_at) {
+        const dateLi = document.createElement('li');
+        dateLi.className = 'text-muted small';
+        const dateIcon = document.createElement('i');
+        dateIcon.className = 'bi bi-calendar';
+        dateLi.appendChild(dateIcon);
+        const date = new Date(it.created_at);
+        dateLi.appendChild(document.createTextNode(' ' + date.toLocaleDateString()));
+        ul.appendChild(dateLi);
+      }
     }
 
     body.appendChild(ul);

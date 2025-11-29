@@ -435,7 +435,7 @@ async function handleSaveAsTask(wizard) {
       name: fd.get('name') || 'Untitled Task',
       description: fd.get('description') || '',
       tags: fd.get('tags') || '',
-      status: 'DRAFT'
+      status: 'draft'
     };
 
     console.log('[step-setup] Saving as task:', payload);

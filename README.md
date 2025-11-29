@@ -452,14 +452,10 @@ You can create reusable, parameterized compilation tasks and optionally schedule
 - Run now: POST /api/automation/tasks/<id>/run enqueues downloads (with reuse) and then the compile job.
 - Create schedules (if allowed by your tier): POST /api/automation/tasks/<id>/schedules with type=daily|weekly|monthly and time fields.
 - A periodic scheduler tick task scans for due schedules and kicks runs. To enable it, run Celery Beat or trigger manually:
-	- Celery Beat: configure a 1-minute periodic call of app.tasks.automation.scheduled_tasks_tick
-	- Manual: as an admin, POST /api/automation/scheduler/tick
+	Notes:
+	- Twitch source requires a connected `twitch_username` (same integration used by the wizard). The task fetches the most recent N clip URLs and processes them.
 
-Notes:
-- Twitch source requires a connected `twitch_username` (same integration used by the wizard). The task fetches the most recent N clip URLs and processes them.
-- Scheduling availability and per-user limits are enforced by tier fields `can_schedule_tasks` and `max_schedules_per_user`.
-
-Removed legacy: One-time ("once") schedules are no longer creatable via the API or UI. Existing legacy rows continue to be read to avoid breaking older data, but they won’t be offered in the interface.
+	Removed legacy: One-time ("once") schedules are no longer creatable via the API or UI. Existing legacy rows continue to be read to avoid breaking older data, but they won't be offered in the interface.
 
 ## Testing and Quality
 

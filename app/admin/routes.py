@@ -353,12 +353,6 @@ def tier_create():
             apply_wm = request.form.get("apply_watermark") in ("1", "true", "on")
             is_unlim = request.form.get("is_unlimited") in ("1", "true", "on")
             is_active = request.form.get("is_active") in ("1", "true", "on")
-            sched_enabled = request.form.get("can_schedule_tasks") in (
-                "1",
-                "true",
-                "on",
-            )
-            max_sched = request.form.get("max_schedules_per_user")
 
             def _to_int_or_none(v):
                 try:
@@ -418,8 +412,6 @@ def tier_create():
                 apply_watermark=apply_wm,
                 is_unlimited=is_unlim,
                 is_active=is_active,
-                can_schedule_tasks=sched_enabled,
-                max_schedules_per_user=_to_int_or_none(max_sched),
             )
 
             # Handle is_default - if set to true, unset all others
@@ -549,14 +541,10 @@ def tier_edit(tier_id: int):
             )
             tier.is_unlimited = request.form.get("is_unlimited") in ("1", "true", "on")
             tier.is_active = request.form.get("is_active") in ("1", "true", "on")
-            # Scheduling policy
-            tier.can_schedule_tasks = request.form.get("can_schedule_tasks") in (
-                "1",
-                "true",
-                "on",
-            )
-            tier.max_schedules_per_user = _to_int_or_none(
-                request.form.get("max_schedules_per_user")
+            # Team collaboration limits
+            tier.max_teams_owned = _to_int_or_none(request.form.get("max_teams_owned"))
+            tier.max_team_members = _to_int_or_none(
+                request.form.get("max_team_members")
             )
 
             # Handle is_default - if set to true, unset all others
