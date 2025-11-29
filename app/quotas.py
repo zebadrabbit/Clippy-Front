@@ -29,28 +29,35 @@ from sqlalchemy import func
 from app.models import MediaFile, Project, RenderUsage, Tier, User, db
 
 # Reasonable default tiers (can be customized via Admin UI)
+# These values match the production database settings
 DEFAULT_TIERS = [
     {
         "name": "Free",
         "description": "Starter tier with watermark and limited storage/render time.",
-        "storage_limit_bytes": 1 * 1024 * 1024 * 1024,  # 1 GB
-        "render_time_limit_seconds": 30 * 60,  # 30 minutes per month
+        "storage_limit_bytes": 1073741824,  # 1 GB
+        "render_time_limit_seconds": 1800,  # 30 minutes per month
         "apply_watermark": True,
         "is_unlimited": False,
         "is_active": True,
-        "max_teams_owned": 1,  # 1 team
-        "max_team_members": 3,  # 3 members (owner + 2 others)
+        "is_default": True,  # Default tier for new users
+        "can_schedule_tasks": False,
+        "max_schedules_per_user": 1,
+        "max_teams_owned": 1,
+        "max_team_members": 3,
     },
     {
         "name": "Pro",
-        "description": "Higher limits, no watermark.",
-        "storage_limit_bytes": 50 * 1024 * 1024 * 1024,  # 50 GB
-        "render_time_limit_seconds": 6 * 60 * 60,  # 6 hours per month
+        "description": "Higher limits, no watermark, automation enabled.",
+        "storage_limit_bytes": 53687091200,  # 50 GB
+        "render_time_limit_seconds": 21600,  # 6 hours per month
         "apply_watermark": False,
         "is_unlimited": False,
         "is_active": True,
-        "max_teams_owned": 5,  # 5 teams
-        "max_team_members": 15,  # 15 members per team
+        "is_default": False,
+        "can_schedule_tasks": True,
+        "max_schedules_per_user": 5,
+        "max_teams_owned": 5,
+        "max_team_members": 15,
     },
     {
         "name": "Unlimited",
@@ -60,8 +67,11 @@ DEFAULT_TIERS = [
         "apply_watermark": False,
         "is_unlimited": True,
         "is_active": True,
-        "max_teams_owned": None,  # Unlimited teams
-        "max_team_members": None,  # Unlimited members
+        "is_default": False,
+        "can_schedule_tasks": True,
+        "max_schedules_per_user": 0,  # Unlimited
+        "max_teams_owned": None,
+        "max_team_members": None,
     },
 ]
 
@@ -70,6 +80,7 @@ def ensure_default_tiers(session=None) -> None:
     """Ensure default tiers exist at runtime.
 
     Safe to call repeatedly; creates missing tiers by name.
+    Also ensures exactly one tier is marked as default.
     """
     s = session or db.session
     created = 0
@@ -85,11 +96,64 @@ def ensure_default_tiers(session=None) -> None:
         except Exception:
             s.rollback()
 
+    # Ensure exactly one default tier exists
+    ensure_single_default_tier(s)
+
+
+def ensure_single_default_tier(session=None) -> None:
+    """Ensure exactly one tier is marked as default.
+
+    If no default tier exists, mark the first active tier as default.
+    If multiple defaults exist, keep only the first one.
+    """
+    s = session or db.session
+
+    default_tiers = s.query(Tier).filter_by(is_default=True, is_active=True).all()
+
+    if len(default_tiers) == 0:
+        # No default tier - mark the first active tier as default
+        first_active = s.query(Tier).filter_by(is_active=True).first()
+        if first_active:
+            first_active.is_default = True
+            try:
+                s.commit()
+            except Exception:
+                s.rollback()
+    elif len(default_tiers) > 1:
+        # Multiple defaults - keep only the first one
+        for tier in default_tiers[1:]:
+            tier.is_default = False
+        try:
+            s.commit()
+        except Exception:
+            s.rollback()
+
+
+def get_default_tier(session=None) -> Tier | None:
+    """Get the tier marked as default for new users.
+
+    Returns the default tier, or falls back to Free tier if no default is set.
+    """
+    s = session or db.session
+
+    # Try to get the default tier
+    default = s.query(Tier).filter_by(is_default=True, is_active=True).first()
+    if default:
+        return default
+
+    # Fall back to Free tier
+    free = s.query(Tier).filter_by(name="Free", is_active=True).first()
+    if free:
+        return free
+
+    # Last resort: any active tier
+    return s.query(Tier).filter_by(is_active=True).first()
+
 
 def get_effective_tier(user: User, session=None) -> Tier | None:
     """Return the user's assigned tier or a sensible default.
 
-    If no tiers exist in the DB, attempt to create defaults and return "Free".
+    If no tiers exist in the DB, attempt to create defaults and return the default tier.
     """
     if not user:
         return None
@@ -99,14 +163,16 @@ def get_effective_tier(user: User, session=None) -> Tier | None:
             return user.tier
     except Exception:
         pass
-    # No assigned tier; fall back to Free if present
-    free = s.query(Tier).filter_by(name="Free").first()
-    if free:
-        return free
+
+    # No assigned tier; fall back to default tier
+    default_tier = get_default_tier(s)
+    if default_tier:
+        return default_tier
+
     # Try to seed defaults and fetch again
     try:
         ensure_default_tiers(s)
-        return s.query(Tier).filter_by(name="Free").first()
+        return get_default_tier(s)
     except Exception:
         return None
 
@@ -261,7 +327,6 @@ def should_apply_watermark(user: User, session=None) -> bool:
 
     Order of precedence:
       - Per-user override: watermark_disabled=True => never apply
-      - Unlimited tier => never apply
       - Tier.apply_watermark (True => apply, False => do not apply)
       - Fallback: apply (conservative)
     """
@@ -272,8 +337,6 @@ def should_apply_watermark(user: User, session=None) -> bool:
         pass
     tier = get_effective_tier(user, session=session)
     if tier:
-        if tier.is_unlimited:
-            return False
         return bool(tier.apply_watermark)
     return True
 

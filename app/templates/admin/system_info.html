@@ -1,17 +1,21 @@
 {% extends "base.html" %}
 
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin-dark.css') }}">
+{% endblock %}
+
 {% block content %}
 <div class="container py-4">
   <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2 class="mb-0"><i class="bi bi-info-circle"></i> System Information</h2>
+    <h2 class="mb-0"><i class="bi bi-speedometer2"></i> Admin Dashboard</h2>
   </div>
 
   <div class="row">
-    <div class="col-12 col-lg-3 mb-4 mb-lg-0">
+    <div class="col-12 col-lg-3 mb-4 mb-lg-0 admin-sidebar">
       {% set active_page = 'system' %}
       {% include 'admin/_includes/sidebar.html' with context %}
     </div>
-    <div class="col-12 col-lg-9">
+    <div class="col-12 col-lg-9 admin-content">
       <!-- Database Stats -->
       <div class="row g-3 mb-4">
         <div class="col-md-3">

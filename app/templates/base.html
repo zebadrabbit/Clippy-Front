@@ -113,7 +113,7 @@
                         <div class="nav-item dropdown">
                             <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" role="button" data-bs-toggle="dropdown" aria-label="User menu">
                                 <i class="bi bi-person-circle me-1"></i>
-                                <span>Me</span>
+                                <span>@{{ current_user.username }}</span>
                             </a>
                             <ul class="dropdown-menu dropdown-menu-end">
                                 <li><a class="dropdown-item" href="{{ url_for('main.profile') }}"><i class="bi bi-person"></i> Profile</a></li>
@@ -145,7 +145,7 @@
                     {% set cat = 'danger' if category in ['danger','error'] else category %}
                     {% set bg = 'danger' if cat == 'danger' else 'success' if cat == 'success' else 'info' if cat == 'info' else 'warning' if cat == 'warning' else 'secondary' %}
                     {% set icon = 'exclamation-triangle' if cat == 'danger' else 'check-circle' if cat == 'success' else 'info-circle' if cat == 'info' else 'exclamation-triangle' if cat == 'warning' else 'bell' %}
-                    <div class="toast text-bg-{{ bg }} border-0 mb-2" role="alert" aria-live="assertive" aria-atomic="true" data-bs-autohide="true" data-bs-delay="5000">
+                    <div class="toast text-bg-{{ bg }} border-0 mb-2" role="alert" aria-live="assertive" aria-atomic="true" data-bs-autohide="false">
                         <div class="d-flex">
                             <div class="toast-body">
                                 <i class="bi bi-{{ icon }} me-2"></i>

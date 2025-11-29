@@ -76,40 +76,15 @@ def admin_required(f):
 @admin_required
 def dashboard():
     """
-    Admin dashboard with system overview and statistics.
+    Admin dashboard redirect to system info.
 
-    Displays key metrics, recent activity, and system status
-    for platform administrators.
+    Since system info replaced the home area in the admin menu,
+    redirect dashboard requests to the system info page.
 
     Returns:
-        Response: Rendered admin dashboard template
+        Response: Redirect to system info page
     """
-    # Get system statistics
-    stats = {
-        "total_users": User.query.count(),
-        "active_users": User.query.filter_by(is_active=True).count(),
-        "admin_users": User.query.filter_by(role=UserRole.ADMIN).count(),
-        "total_projects": Project.query.count(),
-        "active_projects": Project.query.filter_by(
-            status=ProjectStatus.PROCESSING
-        ).count(),
-        "completed_projects": Project.query.filter_by(
-            status=ProjectStatus.COMPLETED
-        ).count(),
-        "total_media_files": MediaFile.query.count(),
-        "total_clips": Clip.query.count(),
-        "pending_jobs": ProcessingJob.query.filter_by(status="pending").count(),
-    }
-
-    # Keep the dashboard light: avoid expensive cross-service calls (Celery inspect)
-    # and large aggregates here. Defer details to dedicated pages.
-
-    return render_template(
-        "admin/dashboard.html",
-        title="Admin Dashboard",
-        stats=stats,
-        version=get_version(),
-    )
+    return redirect(url_for("admin.system_info"))
 
 
 @admin_bp.route("/users")
@@ -436,8 +411,27 @@ def tier_create():
                 can_schedule_tasks=sched_enabled,
                 max_schedules_per_user=_to_int_or_none(max_sched),
             )
+
+            # Handle is_default - if set to true, unset all others
+            is_default = request.form.get("is_default") in ("1", "true", "on")
+            tier.is_default = is_default
+
             db.session.add(tier)
+            db.session.flush()  # Get tier ID before updating others
+
+            if is_default:
+                # Unset all other tiers as default
+                db.session.query(Tier).filter(Tier.id != tier.id).update(
+                    {"is_default": False}
+                )
+
             db.session.commit()
+
+            # Ensure at least one default exists
+            from app.quotas import ensure_single_default_tier
+
+            ensure_single_default_tier()
+
             flash("Tier created", "success")
             return redirect(url_for("admin.tiers_list"))
         except Exception as e:
@@ -544,7 +538,23 @@ def tier_edit(tier_id: int):
             tier.max_schedules_per_user = _to_int_or_none(
                 request.form.get("max_schedules_per_user")
             )
+
+            # Handle is_default - if set to true, unset all others
+            is_default = request.form.get("is_default") in ("1", "true", "on")
+            if is_default and not tier.is_default:
+                # This tier is being set as default, unset all others
+                db.session.query(Tier).filter(Tier.id != tier.id).update(
+                    {"is_default": False}
+                )
+            tier.is_default = is_default
+
             db.session.commit()
+
+            # Ensure at least one default exists
+            from app.quotas import ensure_single_default_tier
+
+            ensure_single_default_tier()
+
             flash("Tier updated", "success")
             return redirect(url_for("admin.tiers_list"))
         except Exception as e:
@@ -564,11 +574,33 @@ def tier_delete(tier_id: int):
     if not tier:
         return jsonify({"error": "Tier not found"}), 404
     try:
+        # Check if this is the last tier
+        total_tiers = db.session.query(Tier).count()
+        if total_tiers <= 1:
+            return jsonify({"error": "Cannot delete the last tier"}), 400
+
+        # Check if this is the default tier
+        if tier.is_default:
+            return (
+                jsonify(
+                    {
+                        "error": "Cannot delete the default tier. Set another tier as default first."
+                    }
+                ),
+                400,
+            )
+
         # Disallow deleting a tier that is assigned to users
         if tier.users and tier.users.count() > 0:
             return jsonify({"error": "Cannot delete a tier assigned to users"}), 400
         db.session.delete(tier)
         db.session.commit()
+
+        # Ensure a default tier still exists
+        from app.quotas import ensure_single_default_tier
+
+        ensure_single_default_tier()
+
         return jsonify({"success": True})
     except Exception as e:
         db.session.rollback()
@@ -675,15 +707,38 @@ def resend_verification(user_id):
 @login_required
 @admin_required
 def user_delete(user_id):
-    """Delete a user and cascade related data; cannot delete self."""
+    """Delete a user and cascade related data; cannot delete self or admin (user_id=1)."""
     if user_id == current_user.id:
         return jsonify({"error": "Cannot delete your own account"}), 400
+    if user_id == 1:
+        return jsonify({"error": "Cannot delete the admin account"}), 400
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
     try:
+        username = user.username
+
+        # Delete user from database (cascades to related records)
         db.session.delete(user)
         db.session.commit()
+
+        # Delete user's data directory
+        import shutil
+        from pathlib import Path
+
+        instance_path = Path(current_app.instance_path)
+        user_data_dir = instance_path / "data" / username
+
+        if user_data_dir.exists() and user_data_dir.is_dir():
+            try:
+                shutil.rmtree(user_data_dir)
+                current_app.logger.info(f"Deleted user data directory: {user_data_dir}")
+            except Exception as fs_error:
+                current_app.logger.error(
+                    f"Failed to delete user data directory {user_data_dir}: {fs_error}"
+                )
+                # Don't fail the whole operation if filesystem cleanup fails
+
         return jsonify({"success": True})
     except Exception as e:
         db.session.rollback()
@@ -1168,6 +1223,11 @@ def system_config():
                 "label": "Watermark Opacity (0-1)",
             },
             {"key": "WATERMARK_POSITION", "type": "str", "label": "Watermark Position"},
+            {
+                "key": "WATERMARK_SIZE",
+                "type": "int",
+                "label": "Watermark Size (pixels)",
+            },
         ],
         "Email": [
             {

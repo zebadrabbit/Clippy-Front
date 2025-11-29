@@ -33,19 +33,21 @@ All remaining tasks are **low priority** enhancements for future releases. Core 
 
 ---
 
-#### 2. Advanced Notification Features (8-12 hours) - v1.1.0 Candidate
+#### 2. Advanced Notification Features (6-10 hours) - v1.1.0 Candidate
 **Description:** Enhance the existing SSE-based notification system with additional features
 
 **Features:**
-1. **Email Notifications** (3 hours)
-   - Send emails for: compilation complete, team role changes, project shares
-   - Add user preference toggles
-   - Daily digest option
+1. **Email Notifications** (3 hours) - ✅ **PARTIALLY COMPLETE**
+   - ✅ Send emails for: compilation complete, team role changes, project shares
+   - ✅ User preference toggles (per-event-type)
+   - ✅ Daily digest option with time selection
+   - ⚠️ Email sending implementation needs SMTP configuration
 
-2. **Notification Preferences** (2 hours)
-   - Per-event-type enable/disable
-   - Email vs. in-app settings
-   - Frequency controls (instant/hourly/daily)
+2. **Notification Preferences** (2 hours) - ✅ **COMPLETE**
+   - ✅ Per-event-type enable/disable (6 event types)
+   - ✅ Email vs. in-app settings
+   - ✅ Frequency controls (daily/weekly digest)
+   - ✅ Full UI in account settings with real-time save
 
 3. **Dedicated Notification Page** (3 hours)
    - Full-page view with pagination
@@ -69,7 +71,7 @@ All remaining tasks are **low priority** enhancements for future releases. Core 
    - Configurable retention per notification type
    - Prevent database growth
 
-**Current State:** Real-time SSE notifications working with navbar dropdown and polling fallback
+**Current State:** Real-time SSE notifications working with navbar dropdown, polling fallback, and **full notification preferences UI complete** (email toggles, digest settings, in-app controls)
 
 ---
 

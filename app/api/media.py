@@ -131,6 +131,68 @@ def static_bumper_asset():
         return jsonify({"error": "Failed to serve static bumper"}), 500
 
 
+@api_bp.route("/assets/watermark", methods=["GET"])
+def watermark_asset():
+    """Serve the watermark file for workers.
+
+    This allows remote workers to download the watermark image that gets
+    overlaid on compilations when tier requires it. The file path is configured
+    in SystemSettings as WATERMARK_PATH.
+    """
+    try:
+        import glob
+        import os
+
+        from app.models import SystemSetting
+
+        # Try to get watermark path from system settings
+        watermark_setting = SystemSetting.query.filter_by(key="WATERMARK_PATH").first()
+        watermark_path = watermark_setting.value if watermark_setting else None
+
+        if watermark_path and os.path.exists(watermark_path):
+            # Determine mimetype from extension
+            ext = os.path.splitext(watermark_path)[1].lower()
+            mimetype_map = {
+                ".png": "image/png",
+                ".jpg": "image/jpeg",
+                ".jpeg": "image/jpeg",
+                ".webp": "image/webp",
+                ".svg": "image/svg+xml",
+            }
+            mimetype = mimetype_map.get(ext, "application/octet-stream")
+
+            return send_file(watermark_path, mimetype=mimetype, conditional=True)
+
+        # Fallback: check standard location
+        watermark_dir = os.path.join(
+            current_app.instance_path, "assets", "system", "watermark"
+        )
+        if os.path.isdir(watermark_dir):
+            for ext in (".png", ".jpg", ".jpeg", ".webp", ".svg"):
+                matches = glob.glob(os.path.join(watermark_dir, f"watermark*{ext}"))
+                if matches:
+                    watermark_path = matches[0]
+                    ext = os.path.splitext(watermark_path)[1].lower()
+                    mimetype_map = {
+                        ".png": "image/png",
+                        ".jpg": "image/jpeg",
+                        ".jpeg": "image/jpeg",
+                        ".webp": "image/webp",
+                        ".svg": "image/svg+xml",
+                    }
+                    mimetype = mimetype_map.get(ext, "application/octet-stream")
+                    return send_file(
+                        watermark_path, mimetype=mimetype, conditional=True
+                    )
+
+        current_app.logger.warning("Watermark file not found")
+        return jsonify({"error": "Watermark file not found"}), 404
+
+    except Exception as e:
+        log_exception(current_app.logger, "Watermark serve error", e)
+        return jsonify({"error": "Failed to serve watermark"}), 500
+
+
 @api_bp.route("/avatars/by-clip/<int:clip_id>", methods=["GET"])
 def avatar_by_clip(clip_id: int):
     """Serve a cached avatar image for a given clip.

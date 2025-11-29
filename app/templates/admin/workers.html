@@ -1,13 +1,28 @@
 {% extends 'base.html' %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin-dark.css') }}">
+{% endblock %}
 {% block content %}
 <div class="container py-4">
   <div class="row">
     <h2 class="mb-3"><i class="bi bi-gear"></i> Admin Dashboard</h2>
-    <div class="col-12 col-lg-3 mb-3 mb-lg-0">
+    <div class="col-12 col-lg-3 mb-3 mb-lg-0 admin-sidebar">
       {% set active_page = 'workers' %}
       {% include 'admin/_includes/sidebar.html' with context %}
     </div>
-    <div class="col-12 col-lg-9">
+    <div class="col-12 col-lg-9 admin-content">
+      <!-- Loading State -->
+      <div id="workers-loading" class="text-center py-5">
+        <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <h4 class="text-muted">Searching for workers...</h4>
+        <p class="text-muted">This may take a moment</p>
+      </div>
+
+      <!-- Worker Content (hidden initially) -->
+      <div id="workers-content" style="display: none;">
       <!-- Server Version Info -->
       <div class="alert alert-info mb-3">
         <strong>Server Version:</strong> <code>{{ server_version }}</code>
@@ -109,7 +124,16 @@
           </ul>
         </div>
       {% endif %}
+      </div><!-- end workers-content -->
     </div>
   </div>
 </div>
+
+<script>
+  // Hide loading spinner and show content once page is fully loaded
+  document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('workers-loading').style.display = 'none';
+    document.getElementById('workers-content').style.display = 'block';
+  });
+</script>
 {% endblock %}

@@ -595,27 +595,6 @@ async function leaveTeam() {
     }
 }
 
-function escapeHtml(unsafe) {
-    if (!unsafe) return '';
-    return unsafe
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-}
-
-function showToast(message, type = 'info') {
-    // Simple toast notification (you can enhance this with Bootstrap toasts)
-    const alertClass = type === 'success' ? 'alert-success' : 'alert-info';
-    const toast = document.createElement('div');
-    toast.className = `alert ${alertClass} position-fixed top-0 end-0 m-3`;
-    toast.style.zIndex = '9999';
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
-}
-
 // Activity Feed
 let activityOffset = 0;
 const activityLimit = 20;

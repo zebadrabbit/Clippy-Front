@@ -1,43 +1,115 @@
 {% extends 'base.html' %}
-{% block content %}
-<div class="container mt-4">
-  <h2>Edit Project: {{ project.name }}</h2>
-  <form method="post">
-    <div class="mb-3">
-      <label class="form-label">Name</label>
-      <input class="form-control" name="name" value="{{ project.name }}" required />
-    </div>
-    <div class="mb-3">
-      <label class="form-label">Description</label>
-      <textarea class="form-control" name="description" rows="3">{{ project.description or '' }}</textarea>
-    </div>
-    <div class="row">
-      <div class="col-md-6 mb-3">
-        <label class="form-label">Status</label>
-        <select class="form-select" name="status">
-          {% for s in project_statuses %}
-          <option value="{{ s.value }}" {% if project.status==s %}selected{% endif %}>{{ s.name.title() }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-6 mb-3">
-        <label class="form-label">Owner</label>
-        <select class="form-select" name="user_id">
-          {% for u in users %}
-          <option value="{{ u.id }}" {% if project.user_id==u.id %}selected{% endif %}>{{ u.username }}</option>
-          {% endfor %}
-        </select>
-      </div>
-    </div>
 
-    <div class="d-flex gap-2">
-      <button class="btn btn-primary" type="submit">Save</button>
-      <a class="btn btn-secondary" href="{{ url_for('admin.projects') }}">Cancel</a>
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin-dark.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="row">
+    <div class="col-12">
+      <!-- Project Details Card -->
+      <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="mb-0">
+            <i class="bi bi-pencil-square"></i>
+            Edit Project: {{ project.name }}
+          </h5>
+          <small class="text-muted">
+            Project ID: {{ project.id }} | Created {{ project.created_at.strftime('%B %d, %Y') }}
+          </small>
+        </div>
+        <div class="card-body">
+          <!-- Project Status Summary -->
+          <div class="mb-4 pb-3 border-bottom">
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge bg-{{ 'success' if project.status.value == 'completed' else 'primary' if project.status.value == 'in_progress' else 'secondary' }}">
+                {{ project.status.name.replace('_', ' ').title() }}
+              </span>
+              <span class="text-muted">Owner: <strong>{{ project.owner.username }}</strong></span>
+              {% set clip_count = project.clips.count() %}
+              {% if clip_count > 0 %}
+                <span class="text-muted">{{ clip_count }} clip(s)</span>
+              {% endif %}
+            </div>
+          </div>
+
+          <!-- Edit Form -->
+          <form method="post">
+            <div class="row">
+              <!-- Project Information -->
+              <div class="col-md-6">
+                <h6 class="border-bottom pb-2 mb-3">Project Information</h6>
+
+                <div class="mb-3">
+                  <label class="form-label">Name</label>
+                  <input class="form-control" name="name" value="{{ project.name }}" required />
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label">Description</label>
+                  <textarea class="form-control" name="description" rows="4">{{ project.description or '' }}</textarea>
+                  <div class="form-text">Optional project description or notes.</div>
+                </div>
+              </div>
+
+              <!-- Project Settings -->
+              <div class="col-md-6">
+                <h6 class="border-bottom pb-2 mb-3">Project Settings</h6>
+
+                <div class="mb-3">
+                  <label class="form-label">Status</label>
+                  <select class="form-select" name="status">
+                    {% for s in project_statuses %}
+                    <option value="{{ s.value }}" {% if project.status==s %}selected{% endif %}>{{ s.name.replace('_', ' ').title() }}</option>
+                    {% endfor %}
+                  </select>
+                  <div class="form-text">Current project status or workflow stage.</div>
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label">Owner</label>
+                  <select class="form-select" name="user_id">
+                    {% for u in users %}
+                    <option value="{{ u.id }}" {% if project.user_id==u.id %}selected{% endif %}>{{ u.username }} (ID: {{ u.id }})</option>
+                    {% endfor %}
+                  </select>
+                  <div class="form-text">Reassign this project to a different user.</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Form Actions -->
+            <div class="d-flex justify-content-end gap-2 mt-3">
+              <a class="btn btn-secondary" href="{{ url_for('admin.projects') }}">Cancel</a>
+              <button class="btn btn-primary" type="submit">
+                <i class="bi bi-save"></i> Save Changes
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Danger Zone Card -->
+      <div class="card border-danger mb-4">
+        <div class="card-header bg-danger text-white">
+          <h5 class="mb-0">
+            <i class="bi bi-exclamation-triangle"></i>
+            Danger Zone
+          </h5>
+        </div>
+        <div class="card-body">
+          <p class="text-muted mb-3">
+            Deleting this project will permanently remove all associated clips, media files, and processing jobs. This action cannot be undone.
+          </p>
+          <form method="post" action="{{ url_for('admin.project_delete', project_id=project.id) }}" onsubmit="return confirm('Delete project {{ project.name }}? This will permanently delete all associated data and cannot be undone.');">
+            <button class="btn btn-danger" type="submit">
+              <i class="bi bi-trash"></i> Delete Project
+            </button>
+          </form>
+        </div>
+      </div>
     </div>
-  </form>
-  <hr/>
-  <form method="post" action="{{ url_for('admin.project_delete', project_id=project.id) }}" onsubmit="return confirm('Delete project {{ project.name }}? This cannot be undone.');">
-    <button class="btn btn-danger" type="submit">Delete Project</button>
-  </form>
+  </div>
 </div>
 {% endblock %}

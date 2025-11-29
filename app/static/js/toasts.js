@@ -17,9 +17,9 @@
  * Show a toast notification
  * @param {string} message - The message to display
  * @param {string} type - Toast type: 'success', 'danger', 'warning', 'info', 'primary'
- * @param {number} delay - Auto-hide delay in ms (default: 5000, 0 = no auto-hide)
+ * @param {number} delay - Auto-hide delay in ms (default: 10000, 0 = no auto-hide)
  */
-window.showToast = function(message, type = 'info', delay = 5000) {
+window.showToast = function(message, type = 'info', delay = 10000) {
   const container = document.getElementById('toast-container');
   if (!container) {
     console.warn('Toast container not found');

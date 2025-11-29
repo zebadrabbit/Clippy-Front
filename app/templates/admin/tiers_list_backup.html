@@ -10,7 +10,7 @@
     <h2 class="mb-3"><i class="bi bi-gear"></i> Admin Dashboard</h2>
     <div class="col-12 col-lg-3 mb-3 mb-lg-0 admin-sidebar">
       {% set active_page = 'tiers' %}
-      {% include 'admin/_includes/sidebar.html' with context %}
+      {% include 'admin/_includes/sidebar.html' with context %>
     </div>
     <div class="col-12 col-lg-9 admin-content">
       <div class="d-flex justify-content-between align-items-center mb-3">
@@ -44,7 +44,7 @@
                   </td>
                   <td>
                     {% if t.storage_limit_bytes %}
-                      {{ (t.storage_limit_bytes/1024/1024/1024)|round(2) }} GB
+                      {{ (t.storage_limit_bytes/1024/1024)|round(1) }} MB
                     {% else %}
                       <span class="badge bg-success">Unlimited</span>
                     {% endif %}
@@ -56,26 +56,27 @@
                       <span class="badge bg-success">Unlimited</span>
                     {% endif %}
                   </td>
+                  <td>{% if t.apply_watermark %}<span class="badge bg-secondary">Applied</span>{% else %}<span class="badge bg-info text-dark">Disabled</span>{% endif %}</td>
                   <td>
-                    {% if t.max_output_resolution or t.max_fps or t.max_clips_per_project %}
-                      {% if t.max_output_resolution %}
-                        <span class="badge bg-secondary me-1">{{ t.max_output_resolution|upper }}</span>
-                      {% endif %}
-                      {% if t.max_fps %}
-                        <span class="badge bg-secondary me-1">{{ t.max_fps }} FPS</span>
-                      {% endif %}
-                      {% if t.max_clips_per_project %}
-                        <span class="badge bg-secondary me-1">{{ t.max_clips_per_project }} Clips</span>
-                      {% endif %}
-                    {% else %}
+                    {% set caps = [] %}
+                    {% if t.max_output_resolution %}
+                      {% do caps.append('<= ' ~ t.max_output_resolution|upper) %}
+                    {% endif %}
+                    {% if t.max_fps %}
+                      {% do caps.append('FPS ≤ ' ~ t.max_fps) %}
+                    {% endif %}
+                    {% if t.max_clips_per_project %}
+                      {% do caps.append('Clips ≤ ' ~ t.max_clips_per_project) %}
+                    {% endif %}
+                    {% if caps|length == 0 %}
                       <span class="badge bg-success">Unlimited</span>
+                    {% else %}
+                      {% for c in caps %}<span class="badge bg-secondary me-1">{{ c }}</span>{% endfor %}
                     {% endif %}
                   </td>
-                  <td>{% if t.apply_watermark %}<span class="badge bg-warning text-dark">Applied</span>{% else %}<span class="badge bg-success">No Watermark</span>{% endif %}</td>
                   <td>
-                    {% if t.is_default %}<span class="badge bg-info me-1">Default</span>{% endif %}
-                    {% if t.is_unlimited %}<span class="badge bg-success me-1">Unlimited</span>{% endif %}
-                    {% if t.is_active %}<span class="badge bg-primary">Active</span>{% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}
+                    {% if t.is_unlimited %}<span class="badge bg-warning text-dark">Unlimited</span>{% endif %}
+                    {% if t.is_active %}<span class="badge bg-primary">Active</span>{% else %}<span class="badge bg-outline-secondary">Inactive</span>{% endif %}
                   </td>
                   <td>
                     {% if t.can_schedule_tasks %}

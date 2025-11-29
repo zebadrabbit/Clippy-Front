@@ -344,7 +344,7 @@
     el.setAttribute('role','alert'); el.setAttribute('aria-live','assertive'); el.setAttribute('aria-atomic','true');
     el.innerHTML = '<div class="d-flex"><div class="toast-body">'+message+'</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button></div>';
     toastWrap.appendChild(el);
-    const t = new bootstrap.Toast(el, { delay: 2500 });
+    const t = new bootstrap.Toast(el, { autohide: false });
     t.show();
     setTimeout(function(){ el.remove(); }, 3000);
   }

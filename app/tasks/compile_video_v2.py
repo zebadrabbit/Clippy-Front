@@ -25,7 +25,6 @@ import structlog
 from app import storage as storage_lib
 from app.ffmpeg_config import (
     audio_args,
-    build_overlay_filter,
     encoder_args,
     overlay_enabled,
     parse_resolution,
@@ -140,6 +139,87 @@ def _resolve_avatar_path(
             app.logger.error(f"Failed to download avatar for '{creator_name}': {e}")
 
     app.logger.warning(f"Avatar not found for creator '{creator_name}'")
+    return None
+
+
+def _resolve_watermark_path(app, watermark_path: str | None) -> str | None:
+    """Resolve the watermark file path.
+
+    Checks multiple locations in this order:
+    1. Configured watermark_path if it exists locally
+    2. instance/assets/system/watermark directory
+    3. Download from main server via worker API (if configured)
+
+    Args:
+        app: Flask app instance
+        watermark_path: Configured watermark path from SystemSetting
+
+    Returns:
+        str: Path to watermark file, or None if not found
+    """
+    if not watermark_path:
+        return None
+
+    # Check if configured path exists locally
+    if os.path.isfile(watermark_path):
+        app.logger.info(f"Found watermark at configured path: {watermark_path}")
+        return watermark_path
+
+    # Check instance/assets/system/watermark directory
+    instance_path = app.config.get("INSTANCE_PATH") or app.instance_path
+    watermark_dir = os.path.join(instance_path, "assets", "system", "watermark")
+    if os.path.isdir(watermark_dir):
+        import glob
+
+        for ext in (".png", ".jpg", ".jpeg", ".webp", ".svg"):
+            # Try exact filename from configured path
+            basename = os.path.basename(watermark_path)
+            exact_match = os.path.join(watermark_dir, basename)
+            if os.path.isfile(exact_match):
+                app.logger.info(f"Found watermark (exact): {exact_match}")
+                return exact_match
+            # Try any watermark file
+            matches = glob.glob(os.path.join(watermark_dir, f"watermark*{ext}"))
+            if matches:
+                app.logger.info(f"Found watermark (pattern): {matches[0]}")
+                return matches[0]
+
+    # Try downloading from main server if API is configured
+    api_base = app.config.get("MEDIA_BASE_URL", "").rstrip("/")
+    api_key = app.config.get("WORKER_API_KEY", "")
+
+    if api_base and api_key:
+        try:
+            import tempfile
+
+            import requests
+
+            url = f"{api_base}/api/assets/watermark"
+            headers = {"Authorization": f"Bearer {api_key}"}
+
+            app.logger.info(f"Downloading watermark from {url}")
+            response = requests.get(url, headers=headers, timeout=30, stream=True)
+
+            if response.status_code == 200:
+                # Save to temp directory
+                ext = os.path.splitext(watermark_path)[1] or ".png"
+                temp_dir = tempfile.gettempdir()
+                watermark_file = os.path.join(temp_dir, f"watermark{ext}")
+
+                with open(watermark_file, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+
+                app.logger.info(f"Downloaded watermark to {watermark_file}")
+                return watermark_file
+            else:
+                app.logger.warning(
+                    f"Watermark download failed: HTTP {response.status_code}"
+                )
+        except Exception as e:
+            app.logger.error(f"Failed to download watermark: {e}")
+
+    app.logger.warning("Watermark not found")
     return None
 
 
@@ -362,8 +442,36 @@ def _process_clip_v2(
     elif max_clip_duration:
         cmd.extend(["-t", str(max_clip_duration)])
 
-    # Apply tier-based resolution cap
+    # Apply tier-based resolution cap (or preview override)
     project_output_res = project_data.get("output_resolution", "1080p")
+
+    # Preview mode: calculate 480p dimensions based on project aspect ratio
+    preview_override_res = None
+    if project_data.get("_preview_mode"):
+        # Get original project dimensions to preserve aspect ratio
+        original_res = parse_resolution(
+            None, project_data.get("output_resolution", "1080p")
+        )
+        orig_w, orig_h = map(int, original_res.split("x"))
+
+        # Scale to 480p while maintaining aspect ratio
+        # For portrait (1080x1920), we want width=480 -> 480x854
+        # For landscape (1920x1080), we want height=480 -> 854x480
+        if orig_h > orig_w:  # Portrait
+            preview_w = 480
+            preview_h = int(480 * orig_h / orig_w)
+            preview_override_res = f"{preview_w}x{preview_h}"
+        else:  # Landscape or square
+            preview_h = 480
+            preview_w = int(480 * orig_w / orig_h)
+            preview_override_res = f"{preview_w}x{preview_h}"
+
+        logger.info(
+            "preview_mode_resolution_override",
+            original=original_res,
+            preview=preview_override_res,
+        )
+
     tier_max_res = tier_limits.get("max_res_label")
     logger.info(
         "resolution_pipeline",
@@ -375,28 +483,50 @@ def _process_clip_v2(
         f"[CLIP] Resolution debug - Project: {project_output_res}, Tier max: {tier_max_res}"
     )
 
-    eff_label = _cap_resolution_label(project_output_res, tier_max_res)
-    logger.info(
-        "resolution_after_cap", effective_label=eff_label, clip_id=clip_data.get("id")
-    )
-    print(f"[CLIP] Resolution debug - After cap: {eff_label}")
+    # Use preview override if set, otherwise apply tier cap
+    if preview_override_res:
+        target_res = preview_override_res
+        logger.info(
+            "resolution_final",
+            target_res=target_res,
+            preview_mode=True,
+            clip_id=clip_data.get("id"),
+        )
+        print(f"[CLIP] Resolution debug - Final target_res (preview): {target_res}")
+    else:
+        eff_label = _cap_resolution_label(project_output_res, tier_max_res)
+        logger.info(
+            "resolution_after_cap",
+            effective_label=eff_label,
+            clip_id=clip_data.get("id"),
+        )
+        print(f"[CLIP] Resolution debug - After cap: {eff_label}")
 
-    target_res = parse_resolution(None, eff_label or project_output_res)
-    logger.info("resolution_final", target_res=target_res, clip_id=clip_data.get("id"))
-    print(f"[CLIP] Resolution debug - Final target_res: {target_res}")
+        target_res = parse_resolution(None, eff_label or project_output_res)
+        logger.info(
+            "resolution_final", target_res=target_res, clip_id=clip_data.get("id")
+        )
+        print(f"[CLIP] Resolution debug - Final target_res: {target_res}")
 
     # Determine if we need letterboxing (portrait output with landscape input)
     target_width, target_height = map(int, target_res.split("x"))
     is_portrait_output = target_height > target_width
 
     # Get vertical video settings from project
-    vertical_zoom = project_data.get("vertical_zoom", 100)  # 100-120
+    vertical_zoom = project_data.get("vertical_zoom", 100)  # 100-180
     vertical_align = project_data.get("vertical_align", "center")  # left, center, right
 
     # Build scale filter with letterboxing for portrait outputs
     if is_portrait_output:
         # Convert zoom percentage to scale factor (100% = 1.0, 120% = 1.2)
         zoom_factor = vertical_zoom / 100.0
+        logger.info(
+            "portrait_zoom_settings",
+            clip_id=clip_data.get("id"),
+            vertical_zoom=vertical_zoom,
+            zoom_factor=zoom_factor,
+            vertical_align=vertical_align,
+        )
 
         # Determine crop position based on alignment
         if vertical_align == "left":
@@ -406,8 +536,12 @@ def _process_clip_v2(
         else:  # center
             crop_x = "(iw-ow)/2"
 
-        # For portrait: scale up by zoom factor, crop to fit width, then pad to canvas size
-        scale_filter = f"scale=iw*{zoom_factor}:ih*{zoom_factor},crop={target_width}:ih:{crop_x}:0,pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:black"
+        # For portrait output: scale input to fit width, apply zoom, crop and pad
+        # Step 1: Scale to target width (height auto-calculated to preserve aspect ratio)
+        # Step 2: Scale by zoom factor
+        # Step 3: Crop to canvas width, limited by available height
+        # Step 4: Pad to full canvas size with black bars
+        scale_filter = f"scale={target_width}:-1,scale=iw*{zoom_factor}:ih*{zoom_factor},crop={target_width}:min(ih\\,{target_height}):{crop_x}:0,pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:black"
     else:
         # For landscape/square: scale normally
         scale_filter = f"scale={target_width}:{target_height}:flags=lanczos"
@@ -438,7 +572,31 @@ def _process_clip_v2(
         cmd.extend(["-i", avatar_path])
 
     # Build filter complex
-    if overlay_enabled() and (creator_name or game_name):
+    # Skip overlays in preview mode for simplicity and speed
+    if (
+        overlay_enabled()
+        and (creator_name or game_name)
+        and not project_data.get("_preview_mode")
+    ):
+        # Calculate overlay scale factor based on target width (designed for 1080px)
+        overlay_scale = target_width / 1080.0
+
+        # Scale all overlay positions proportionally
+        box_y = int(238 * overlay_scale)
+        box_w = int(1000 * overlay_scale)
+        text_x = int(198 * overlay_scale)
+        avatar_x = int(50 * overlay_scale)
+        avatar_y = int(223 * overlay_scale)
+        avatar_size = int(128 * overlay_scale)
+
+        label_y = int(210 * overlay_scale)
+        author_y = int(180 * overlay_scale)
+        game_y = int(130 * overlay_scale)
+
+        label_size = int(28 * overlay_scale)
+        author_size = int(48 * overlay_scale)
+        game_size = int(26 * overlay_scale)
+
         if has_avatar:
             # Build filter matching original ffmpegApplyOverlay template
             # [0:v] is main video, [1:v] is avatar (if present)
@@ -448,24 +606,34 @@ def _process_clip_v2(
             # Scale video first (with letterboxing if portrait), then apply overlays
             filter_chain = (
                 f"[0:v]{scale_filter},"
-                f"drawbox=enable='between(t,3,10)':x=0:y=(ih)-238:h=157:w=1000:color=black@0.7:t=fill,"
-                f"drawtext=enable='between(t,3,10)':x=198:y=(h)-210:fontfile='{font}':fontsize=28:fontcolor=white@0.4:text='clip by',"
-                f"drawtext=enable='between(t,3,10)':x=198:y=(h)-180:fontfile='{font}':fontsize=48:fontcolor=white@0.9:text='{author_text}'"
+                f"drawbox=enable='between(t,3,10)':x=0:y=(ih)-{box_y}:h=157:w={box_w}:color=black@0.7:t=fill,"
+                f"drawtext=enable='between(t,3,10)':x={text_x}:y=(h)-{label_y}:fontfile='{font}':fontsize={label_size}:fontcolor=white@0.4:text='clip by',"
+                f"drawtext=enable='between(t,3,10)':x={text_x}:y=(h)-{author_y}:fontfile='{font}':fontsize={author_size}:fontcolor=white@0.9:text='{author_text}'"
             )
 
             if game_text:
-                filter_chain += f",drawtext=enable='between(t,3,10)':x=198:y=(h)-130:fontfile='{font}':fontsize=26:fontcolor=white@0.5:text='{game_text}'"
+                filter_chain += f",drawtext=enable='between(t,3,10)':x={text_x}:y=(h)-{game_y}:fontfile='{font}':fontsize={game_size}:fontcolor=white@0.5:text='{game_text}'"
 
-            # Scale avatar to 128x128 and overlay on top
-            filter_chain += "[overlay];[1:v]scale=128:128[avatar];[overlay][avatar]overlay=enable='between(t,3,10)':x=50:y=H-223[v]"
+            # Scale avatar and overlay on top
+            filter_chain += f"[overlay];[1:v]scale={avatar_size}:{avatar_size}[avatar];[overlay][avatar]overlay=enable='between(t,3,10)':x={avatar_x}:y=H-{avatar_y}[v]"
 
             filter_complex = filter_chain
         else:
-            # No avatar - use build_overlay_filter for text only
-            has_avatar_flag, overlay_chain = build_overlay_filter(
-                author=creator_name, game=game_name, fontfile=font, avatar_path=None
+            # No avatar - build overlay with scaled positions
+            author_text = (creator_name or "").replace("'", "'")
+            game_text = (game_name or "").replace("'", "'") if game_name else ""
+
+            filter_chain = (
+                f"[0:v]{scale_filter},"
+                f"drawbox=enable='between(t,3,10)':x=0:y=(ih)-{box_y}:h=157:w={box_w}:color=black@0.7:t=fill,"
+                f"drawtext=enable='between(t,3,10)':x={text_x}:y=(h)-{label_y}:fontfile='{font}':fontsize={label_size}:fontcolor=white@0.4:text='clip by',"
+                f"drawtext=enable='between(t,3,10)':x={text_x}:y=(h)-{author_y}:fontfile='{font}':fontsize={author_size}:fontcolor=white@0.9:text='{author_text}'"
             )
-            filter_complex = f"[0:v]{scale_filter}," + overlay_chain + "[v]"
+
+            if game_text:
+                filter_chain += f",drawtext=enable='between(t,3,10)':x={text_x}:y=(h)-{game_y}:fontfile='{font}':fontsize={game_size}:fontcolor=white@0.5:text='{game_text}'"
+
+            filter_complex = filter_chain + "[v]"
     else:
         filter_complex = f"[0:v]{scale_filter}[v]"
 
@@ -477,6 +645,11 @@ def _process_clip_v2(
 
     # Add encoder args
     cmd.extend(encoder_args(ffmpeg_bin))
+
+    # Preview mode: force 10fps for faster encoding
+    if project_data.get("_preview_mode"):
+        cmd.extend(["-r", "10"])
+        logger.info("preview_mode_fps_override", fps=10)
 
     # Add audio normalization if configured
     audio_profile = project_data.get("audio_norm_profile")
@@ -558,14 +731,43 @@ def _process_media_file_v2(
 
     from app.ffmpeg_config import config_args as _cfg_args
 
-    # Apply tier-based resolution cap
-    eff_label = _cap_resolution_label(
-        project_data.get("output_resolution", "1080p"),
-        tier_limits.get("max_res_label"),
-    )
-    target_res = parse_resolution(
-        None, eff_label or project_data.get("output_resolution", "1080p")
-    )
+    # Apply tier-based resolution cap (or preview override)
+    project_output_res = project_data.get("output_resolution", "1080p")
+
+    # Preview mode: calculate 480p dimensions based on project aspect ratio
+    preview_override_res = None
+    if project_data.get("_preview_mode"):
+        # Get original project dimensions to preserve aspect ratio
+        original_res = parse_resolution(
+            None, project_data.get("output_resolution", "1080p")
+        )
+        orig_w, orig_h = map(int, original_res.split("x"))
+
+        # Scale to 480p while maintaining aspect ratio
+        if orig_h > orig_w:  # Portrait
+            preview_w = 480
+            preview_h = int(480 * orig_h / orig_w)
+            preview_override_res = f"{preview_w}x{preview_h}"
+        else:  # Landscape or square
+            preview_h = 480
+            preview_w = int(480 * orig_w / orig_h)
+            preview_override_res = f"{preview_w}x{preview_h}"
+
+        logger.info(
+            "preview_mode_media_resolution_override",
+            original=original_res,
+            preview=preview_override_res,
+        )
+
+    # Use preview override if set, otherwise apply tier cap
+    if preview_override_res:
+        target_res = preview_override_res
+    else:
+        eff_label = _cap_resolution_label(
+            project_output_res,
+            tier_limits.get("max_res_label"),
+        )
+        target_res = parse_resolution(None, eff_label or project_output_res)
 
     target_width, target_height = map(int, target_res.split("x"))
     is_portrait_output = target_height > target_width
@@ -587,15 +789,24 @@ def _process_media_file_v2(
         "-vf",
         scale_filter,
         *encoder_args(ffmpeg_bin),
-        "-c:a",
-        "aac",  # Re-encode audio to standardize format
-        "-b:a",
-        "192k",
-        "-ar",
-        "48000",  # Standardize sample rate
-        "-y",
-        output_path,
     ]
+
+    # Preview mode: force 10fps
+    if project_data.get("_preview_mode"):
+        cmd.extend(["-r", "10"])
+
+    cmd.extend(
+        [
+            "-c:a",
+            "aac",  # Re-encode audio to standardize format
+            "-b:a",
+            "192k",
+            "-ar",
+            "48000",  # Standardize sample rate
+            "-y",
+            output_path,
+        ]
+    )
 
     subprocess.run(cmd, check=True, capture_output=True)
 
@@ -769,21 +980,59 @@ def _build_timeline_with_transitions_v2(
         # We re-encode audio to match video duration exactly
         from app.ffmpeg_config import config_args as _cfg_args
 
-        eff_label = _cap_resolution_label(
-            project_data.get("output_resolution", "1080p"),
-            tier_limits.get("max_res_label"),
-        )
-        target_res = parse_resolution(
-            None, eff_label or project_data.get("output_resolution", "1080p")
-        )
+        # Preview mode: calculate 480p dimensions based on project aspect ratio
+        preview_override_res = None
+        if project_data.get("_preview_mode"):
+            # Get original project dimensions to preserve aspect ratio
+            original_res = parse_resolution(
+                None, project_data.get("output_resolution", "1080p")
+            )
+            orig_w, orig_h = map(int, original_res.split("x"))
+
+            # Scale to 480p while maintaining aspect ratio
+            if orig_h > orig_w:  # Portrait
+                preview_w = 480
+                preview_h = int(480 * orig_h / orig_w)
+                preview_override_res = f"{preview_w}x{preview_h}"
+            else:  # Landscape or square
+                preview_h = 480
+                preview_w = int(480 * orig_w / orig_h)
+                preview_override_res = f"{preview_w}x{preview_h}"
+
+            logger.info(
+                "preview_mode_static_resolution_override",
+                original=original_res,
+                preview=preview_override_res,
+            )
+
+        # Use preview override if set, otherwise apply tier cap
+        if preview_override_res:
+            target_res = preview_override_res
+            logger.info(
+                "static_resolution_final",
+                target_res=target_res,
+                preview_mode=True,
+            )
+        else:
+            eff_label = _cap_resolution_label(
+                project_data.get("output_resolution", "1080p"),
+                tier_limits.get("max_res_label"),
+            )
+            target_res = parse_resolution(
+                None, eff_label or project_data.get("output_resolution", "1080p")
+            )
+            logger.info(
+                "static_resolution_final",
+                target_res=target_res,
+            )
 
         target_width, target_height = map(int, target_res.split("x"))
         is_portrait_output = target_height > target_width
 
         if is_portrait_output:
-            scale_filter = (
-                f"scale=-1:{target_height},crop={target_width}:{target_height}"
-            )
+            # Match clip processing: scale to height, crop to width, pad to canvas
+            # This ensures static bumper matches the letterboxed look of clips
+            scale_filter = f"scale=-1:{target_height},crop=min(iw\\,{target_width}):{target_height}:(iw-min(iw\\,{target_width}))/2:0,pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:black"
         else:
             scale_filter = f"scale={target_width}:{target_height}:flags=lanczos"
 
@@ -796,15 +1045,25 @@ def _build_timeline_with_transitions_v2(
             "-vf",
             scale_filter,
             *encoder_args(ffmpeg_bin),
-            "-c:a",
-            "aac",
-            "-b:a",
-            "192k",
-            "-ar",
-            "48000",
-            "-y",
-            processed_static_path,
         ]
+
+        # Preview mode: force 10fps
+        if project_data.get("_preview_mode"):
+            static_cmd.extend(["-r", "10"])
+            logger.info("preview_mode_static_fps_override", fps=10)
+
+        static_cmd.extend(
+            [
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-ar",
+                "48000",
+                "-y",
+                processed_static_path,
+            ]
+        )
         subprocess.run(static_cmd, check=True, capture_output=True)
 
     # Build timeline with transitions between segments
@@ -1327,6 +1586,84 @@ def _compile_final_video_v2(
     return output_path
 
 
+def _apply_watermark_overlay(
+    input_path: str,
+    output_path: str,
+    watermark_path: str,
+    opacity: float = 0.3,
+    position: str = "bottom-right",
+    size: int = 40,
+    margin: int = 10,
+) -> str:
+    """Apply watermark overlay to video.
+
+    Args:
+        input_path: Input video file path
+        output_path: Output video file path
+        watermark_path: Watermark image file path
+        opacity: Watermark opacity (0.0-1.0)
+        position: Watermark position (bottom-right, bottom-left, top-right, top-left)
+        size: Watermark size in pixels (square)
+        margin: Margin from edges in pixels
+
+    Returns:
+        Output file path
+    """
+    app = _get_app()
+    ffmpeg_bin = resolve_binary(app, "ffmpeg")
+
+    # Calculate position based on position parameter
+    if position == "bottom-right":
+        x_pos = f"W-w-{margin}"
+        y_pos = f"H-h-{margin}"
+    elif position == "bottom-left":
+        x_pos = str(margin)
+        y_pos = f"H-h-{margin}"
+    elif position == "top-right":
+        x_pos = f"W-w-{margin}"
+        y_pos = str(margin)
+    elif position == "top-left":
+        x_pos = str(margin)
+        y_pos = str(margin)
+    else:
+        # Default to bottom-right
+        x_pos = f"W-w-{margin}"
+        y_pos = f"H-h-{margin}"
+
+    # Build filter: scale watermark, set opacity, overlay
+    # Use simpler approach: overlay filter with alpha blending
+    filter_complex = (
+        f"[1:v]scale={size}:{size},format=yuva420p,colorchannelmixer=aa={opacity}[wm];"
+        f"[0:v][wm]overlay={x_pos}:{y_pos}"
+    )
+
+    from app.ffmpeg_config import config_args as _cfg_args
+    from app.ffmpeg_config import encoder_args
+
+    cmd = [
+        ffmpeg_bin,
+        *_cfg_args(app, "ffmpeg", "encode"),
+        "-i",
+        input_path,
+        "-i",
+        watermark_path,  # Add watermark as second input
+        "-filter_complex",
+        filter_complex,
+        "-map",
+        "0:a?",  # Map audio from first input if it exists
+        *encoder_args(ffmpeg_bin),
+        "-y",
+        output_path,
+    ]
+
+    app.logger.info(f"Applying watermark overlay: {' '.join(cmd[:20])}...")
+    result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+    if result.stderr:
+        app.logger.debug(f"FFmpeg watermark stderr: {result.stderr[-500:]}")
+
+    return output_path
+
+
 def _save_final_video_v2(temp_path: str, project_data: dict, user_id: int) -> str:
     """Save final video to persistent storage (API-based).
 
@@ -1382,6 +1719,7 @@ def compile_video_task_v2(
     music_volume: float | None = None,
     music_start_mode: str | None = None,
     music_end_mode: str | None = None,
+    preview_mode: bool = False,
 ) -> dict[str, Any]:
     """Compile video clips into final compilation (Worker API version).
 
@@ -1398,6 +1736,7 @@ def compile_video_task_v2(
         background_music_id: Optional background music file ID
         music_volume: Music volume (0.0-1.0), defaults to 0.3
         music_start_mode: When to start music ('start' or 'after_intro')
+        preview_mode: If True, render at 480p 10fps for fast preview generation
         music_end_mode: When to end music ('end' or 'before_outro')
 
     Returns:
@@ -1405,14 +1744,15 @@ def compile_video_task_v2(
     """
     try:
         # Log received parameters for debugging
-        import logging
-
-        logger = logging.getLogger(__name__)
         logger.info(
-            f"[compile_video_task_v2] Starting compilation for project {project_id}: "
-            f"intro_id={intro_id}, outro_id={outro_id}, "
-            f"transition_ids={transition_ids}, randomize_transitions={randomize_transitions}, "
-            f"background_music_id={background_music_id}, clip_ids={clip_ids}"
+            "compile_video_task_v2_start",
+            project_id=project_id,
+            intro_id=intro_id,
+            outro_id=outro_id,
+            transition_ids=transition_ids,
+            randomize_transitions=randomize_transitions,
+            background_music_id=background_music_id,
+            clip_ids=clip_ids,
         )
 
         # Update task status
@@ -1425,6 +1765,11 @@ def compile_video_task_v2(
         project_data = context["project"]
         all_clips = context["clips"]
         tier_limits = context["tier_limits"]
+
+        # Inject preview mode flag into project_data for filter/encoding overrides
+        if preview_mode:
+            project_data["_preview_mode"] = True
+            logger.info("preview_mode_enabled", project_id=project_id)
 
         # Create processing job
         job_response = worker_api.create_processing_job(
@@ -1483,7 +1828,16 @@ def compile_video_task_v2(
         worker_api.update_processing_job(job_id, progress=10)
 
         # Process clips in temporary directory
-        with tempfile.TemporaryDirectory() as temp_dir:
+        # Preview mode: use mkdtemp (manual cleanup) so preview task can access file
+        # Normal mode: use TemporaryDirectory (auto-cleanup)
+        if project_data.get("_preview_mode"):
+            temp_dir = tempfile.mkdtemp(prefix="preview_compile_")
+            log("info", f"Preview mode: using persistent temp dir {temp_dir}")
+        else:
+            temp_dir_context = tempfile.TemporaryDirectory()
+            temp_dir = temp_dir_context.__enter__()
+
+        try:
             processed_clips = []
             used_clip_ids = []
 
@@ -1578,6 +1932,48 @@ def compile_video_task_v2(
                 duck_release=project_data.get("duck_release"),
             )
 
+            # Apply watermark if required by tier
+            if tier_limits.get("apply_watermark", False):
+                watermark_path_cfg = tier_limits.get("watermark_path")
+                if watermark_path_cfg:
+                    self.update_state(
+                        state="PROGRESS",
+                        meta={"progress": 85, "status": "Applying watermark"},
+                    )
+                    log("info", "Applying watermark overlay", status="watermark")
+                    worker_api.update_processing_job(job_id, progress=85)
+
+                    try:
+                        app = _get_app()
+                        watermark_path = _resolve_watermark_path(
+                            app, watermark_path_cfg
+                        )
+                        if watermark_path:
+                            watermark_output = os.path.join(
+                                temp_dir, "final_watermarked.mp4"
+                            )
+                            _apply_watermark_overlay(
+                                input_path=output_path,
+                                output_path=watermark_output,
+                                watermark_path=watermark_path,
+                                opacity=tier_limits.get("watermark_opacity", 0.3),
+                                position=tier_limits.get(
+                                    "watermark_position", "bottom-right"
+                                ),
+                                size=tier_limits.get("watermark_size", 150),
+                                margin=10,
+                            )
+                            output_path = watermark_output
+                            log("success", "Watermark applied successfully")
+                        else:
+                            log(
+                                "warning",
+                                "Watermark configured but file not found, skipping",
+                            )
+                    except Exception as wm_err:
+                        log("warning", f"Failed to apply watermark: {wm_err}")
+                        # Continue with non-watermarked video
+
             self.update_state(
                 state="PROGRESS",
                 meta={"progress": 90, "status": "Uploading compilation"},
@@ -1652,36 +2048,43 @@ def compile_video_task_v2(
                         }
                     )
 
-                upload_result = worker_api.upload_compilation(
-                    project_id=project_id,
-                    video_path=output_path,
-                    thumbnail_path=thumb_path,
-                    metadata=upload_metadata,
-                )
+                # Skip upload in preview mode - preview task will handle it
+                if project_data.get("_preview_mode"):
+                    log("info", "Preview mode: skipping compilation upload")
+                    final_output_path = output_path
+                else:
+                    upload_result = worker_api.upload_compilation(
+                        project_id=project_id,
+                        video_path=output_path,
+                        thumbnail_path=thumb_path,
+                        metadata=upload_metadata,
+                    )
 
-                log(
-                    "success",
-                    f"Uploaded compilation: {upload_result.get('media_id')}",
-                    status="uploaded",
-                )
-                final_output_path = upload_result.get("file_path", output_path)
+                    log(
+                        "success",
+                        f"Uploaded compilation: {upload_result.get('media_id')}",
+                        status="uploaded",
+                    )
+                    final_output_path = upload_result.get("file_path", output_path)
 
             except Exception as e:
                 log("error", f"Failed to upload compilation: {e}")
                 # Fall back to local path if upload fails
                 final_output_path = output_path
-                # Still try to save locally
-                final_output_path = _save_final_video_v2(
-                    output_path, project_data, project_data["user_id"]
-                )
+                # Don't save locally in preview mode - preview task needs temp file
+                if not project_data.get("_preview_mode"):
+                    final_output_path = _save_final_video_v2(
+                        output_path, project_data, project_data["user_id"]
+                    )
 
-            # Update project status
-            worker_api.update_project_status(
-                project_id=project_id,
-                status="completed",
-                output_filename=os.path.basename(final_output_path),
-                output_file_size=file_size,
-            )
+            # Update project status (skip in preview mode)
+            if not project_data.get("_preview_mode"):
+                worker_api.update_project_status(
+                    project_id=project_id,
+                    status="completed",
+                    output_filename=os.path.basename(final_output_path),
+                    output_file_size=file_size,
+                )
 
             # Record render usage
             try:
@@ -1697,9 +2100,17 @@ def compile_video_task_v2(
                 pass
 
             # Update job status
+            # In preview mode, return raw temp path for preview task to use
+            if project_data.get("_preview_mode"):
+                result_output_file = final_output_path
+            else:
+                result_output_file = (
+                    storage_lib.instance_canonicalize(final_output_path)
+                    or final_output_path
+                )
+
             result_data = {
-                "output_file": storage_lib.instance_canonicalize(final_output_path)
-                or final_output_path,
+                "output_file": result_output_file,
                 "clips_processed": len(processed_clips),
                 "used_clip_ids": used_clip_ids,
             }
@@ -1715,12 +2126,18 @@ def compile_video_task_v2(
 
             return {
                 "status": "completed",
-                "output_file": storage_lib.instance_canonicalize(final_output_path)
-                or final_output_path,
+                "output_file": result_output_file,
                 "clips_processed": len(processed_clips),
                 "project_id": project_id,
                 "used_clip_ids": used_clip_ids,
             }
+        finally:
+            # Cleanup temp directory (but not in preview mode - preview task needs it)
+            if not project_data.get("_preview_mode"):
+                try:
+                    temp_dir_context.__exit__(None, None, None)
+                except Exception:
+                    pass
 
     except Exception as e:
         # Update project and job on error

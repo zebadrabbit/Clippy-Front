@@ -1,14 +1,18 @@
 {% extends "base.html" %}
 
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin-dark.css') }}">
+{% endblock %}
+
 {% block content %}
 <div class="container py-4">
   <div class="row">
     <h2 class="mb-3"><i class="bi bi-gear"></i> Admin Dashboard</h2>
-    <div class="col-12 col-lg-3 mb-3 mb-lg-0">
+    <div class="col-12 col-lg-3 mb-3 mb-lg-0 admin-sidebar">
       {% set active_page = 'projects' %}
       {% include 'admin/_includes/sidebar.html' with context %}
     </div>
-    <div class="col-12 col-lg-9">
+    <div class="col-12 col-lg-9 admin-content">
       <form class="row g-2 mb-3" method="GET">
     <div class="col-auto">
       <select class="form-select" name="status">

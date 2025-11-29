@@ -1,16 +1,20 @@
 {% extends "base.html" %}
 
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin-dark.css') }}">
+{% endblock %}
+
 {% block content %}
 <div class="container py-4">
     <div class="row">
         <!-- Sidebar -->
-        <div class="col-md-3">
+        <div class="col-md-3 admin-sidebar">
             {% set active = 'settings' %}
             {% include 'auth/_account_sidebar.html' with context %}
         </div>
 
         <!-- Main Content -->
-        <div class="col-md-9">
+        <div class="col-md-9 admin-content">
             <h3 class="mb-4">
                 <i class="bi bi-gear"></i>
                 Account Settings
@@ -71,6 +75,180 @@
                             {% endif %}
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- Tier Information Section -->
+            <div class="card mb-4" id="tier">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-star"></i>
+                        Subscription Tier
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if current_user.tier %}
+                        <div class="row mb-3">
+                            <div class="col-md-12">
+                                <h4 class="mb-1">
+                                    {{ current_user.tier.name }}
+                                    {% if current_user.tier.is_unlimited %}
+                                        <span class="badge bg-success">Unlimited</span>
+                                    {% endif %}
+                                </h4>
+                                {% if current_user.tier.description %}
+                                    <p class="text-muted">{{ current_user.tier.description }}</p>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <hr>
+
+                        <h6 class="mb-3">Tier Benefits & Limits</h6>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <div class="d-flex align-items-start">
+                                    <i class="bi bi-hdd text-primary me-2 mt-1"></i>
+                                    <div>
+                                        <strong>Storage Limit</strong>
+                                        <p class="mb-0 text-muted">
+                                            {% if current_user.tier.is_unlimited or current_user.tier.storage_limit_bytes is none %}
+                                                Unlimited
+                                            {% else %}
+                                                {{ (current_user.tier.storage_limit_bytes / 1024 / 1024 / 1024) | round(2) }} GB
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <div class="d-flex align-items-start">
+                                    <i class="bi bi-clock-history text-primary me-2 mt-1"></i>
+                                    <div>
+                                        <strong>Monthly Render Time</strong>
+                                        <p class="mb-0 text-muted">
+                                            {% if current_user.tier.is_unlimited or current_user.tier.render_time_limit_seconds is none %}
+                                                Unlimited
+                                            {% else %}
+                                                {{ (current_user.tier.render_time_limit_seconds / 60) | round(0) | int }} minutes
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <div class="d-flex align-items-start">
+                                    <i class="bi bi-display text-primary me-2 mt-1"></i>
+                                    <div>
+                                        <strong>Max Output Resolution</strong>
+                                        <p class="mb-0 text-muted">
+                                            {% if current_user.tier.max_output_resolution %}
+                                                {{ current_user.tier.max_output_resolution }}
+                                            {% else %}
+                                                Unlimited
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <div class="d-flex align-items-start">
+                                    <i class="bi bi-camera-reels text-primary me-2 mt-1"></i>
+                                    <div>
+                                        <strong>Max FPS</strong>
+                                        <p class="mb-0 text-muted">
+                                            {% if current_user.tier.max_fps %}
+                                                {{ current_user.tier.max_fps }} fps
+                                            {% else %}
+                                                Unlimited
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <div class="d-flex align-items-start">
+                                    <i class="bi bi-film text-primary me-2 mt-1"></i>
+                                    <div>
+                                        <strong>Max Clips Per Project</strong>
+                                        <p class="mb-0 text-muted">
+                                            {% if current_user.tier.max_clips_per_project %}
+                                                {{ current_user.tier.max_clips_per_project }} clips
+                                            {% else %}
+                                                Unlimited
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <div class="d-flex align-items-start">
+                                    <i class="bi bi-droplet text-primary me-2 mt-1"></i>
+                                    <div>
+                                        <strong>Watermark</strong>
+                                        <p class="mb-0 text-muted">
+                                            {% if current_user.watermark_disabled %}
+                                                <span class="badge bg-success">Disabled</span>
+                                            {% elif current_user.tier.apply_watermark %}
+                                                <span class="badge bg-warning">Applied</span>
+                                            {% else %}
+                                                <span class="badge bg-success">Not Applied</span>
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {% if current_user.tier.can_schedule_tasks %}
+                            <div class="col-md-6 mb-3">
+                                <div class="d-flex align-items-start">
+                                    <i class="bi bi-calendar-event text-primary me-2 mt-1"></i>
+                                    <div>
+                                        <strong>Task Scheduling</strong>
+                                        <p class="mb-0 text-muted">
+                                            {% if current_user.tier.max_schedules_per_user %}
+                                                Up to {{ current_user.tier.max_schedules_per_user }} active schedules
+                                            {% else %}
+                                                Unlimited schedules
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endif %}
+
+                            {% if current_user.tier.max_teams_owned is not none or current_user.tier.max_team_members is not none %}
+                            <div class="col-md-6 mb-3">
+                                <div class="d-flex align-items-start">
+                                    <i class="bi bi-people text-primary me-2 mt-1"></i>
+                                    <div>
+                                        <strong>Team Collaboration</strong>
+                                        <p class="mb-0 text-muted">
+                                            {% if current_user.tier.max_teams_owned %}
+                                                {{ current_user.tier.max_teams_owned }} team(s)
+                                            {% else %}
+                                                Unlimited teams
+                                            {% endif %}
+                                            {% if current_user.tier.max_team_members %}
+                                                <br>{{ current_user.tier.max_team_members }} members per team
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    {% else %}
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i>
+                            You are not currently assigned to a tier. Default limits may apply.
+                        </div>
+                    {% endif %}
                 </div>
             </div>
 
@@ -317,30 +495,6 @@
                     showToast('Error saving notification preferences', 'error');
                 });
             }
-
-            function showToast(message, type) {
-                // Create a simple toast notification
-                const toastHtml = `
-                    <div class="toast align-items-center text-white bg-${type === 'success' ? 'success' : 'danger'} border-0" role="alert">
-                        <div class="d-flex">
-                            <div class="toast-body">${message}</div>
-                            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-                        </div>
-                    </div>
-                `;
-
-                // Append to body or toast container
-                const container = document.querySelector('.toast-container') || document.body;
-                container.insertAdjacentHTML('beforeend', toastHtml);
-
-                // Show toast
-                const toastEl = container.lastElementChild;
-                const toast = new bootstrap.Toast(toastEl);
-                toast.show();
-
-                // Remove after hidden
-                toastEl.addEventListener('hidden.bs.toast', () => toastEl.remove());
-            }
             </script>
 
             <!-- Preferences Section -->
@@ -409,54 +563,106 @@
                     </h5>
                 </div>
                 <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <div class="d-flex align-items-center">
-                                <i class="bi bi-discord text-primary fs-3 me-3"></i>
-                                <div class="flex-grow-1">
-                                    <h6 class="mb-0">Discord</h6>
+                    <form method="POST" action="{{ url_for('main.profile') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6 class="border-bottom pb-2 mb-3">
+                                    <i class="bi bi-discord"></i> Discord Integration
+                                </h6>
+
+                                <!-- Discord User ID -->
+                                <div class="mb-3">
+                                    <label class="form-label" for="discord_user_id">Discord User ID</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="bi bi-discord"></i>
+                                        </span>
+                                        <input type="text" name="discord_user_id" id="discord_user_id" class="form-control" value="{{ current_user.discord_user_id or '' }}">
+                                    </div>
                                     {% if current_user.discord_user_id %}
-                                        <small class="text-success">Connected (ID: {{ current_user.discord_user_id }})</small>
+                                        <div class="form-text text-success">
+                                            <i class="bi bi-check-circle"></i> Discord account linked
+                                        </div>
                                     {% else %}
-                                        <small class="text-muted">Not connected</small>
+                                        <div class="form-text">
+                                            Link your Discord account to enable bot integration
+                                        </div>
                                     {% endif %}
                                 </div>
-                                <div>
-                                    {% if current_user.discord_user_id %}
-                                        <form method="POST" action="{{ url_for('main.disconnect_discord') }}" class="d-inline">
-                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                            <button type="submit" class="btn btn-outline-danger btn-sm">Disconnect</button>
-                                        </form>
+
+                                <!-- Discord Channel ID -->
+                                <div class="mb-3">
+                                    <label class="form-label" for="discord_channel_id">Discord Channel ID</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="bi bi-hash"></i>
+                                        </span>
+                                        <input type="text" name="discord_channel_id" id="discord_channel_id" class="form-control" value="{{ current_user.discord_channel_id or '' }}" placeholder="Your Discord channel ID">
+                                    </div>
+                                    {% if current_user.discord_channel_id %}
+                                        <div class="form-text text-success">
+                                            <i class="bi bi-link-45deg"></i> Channel configured
+                                        </div>
                                     {% else %}
-                                        <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#connectDiscordModal">Connect</button>
+                                        <div class="form-text text-warning">
+                                            <i class="bi bi-link-45deg-broken"></i> No channel configured yet
+                                        </div>
+                                    {% endif %}
+                                    <div class="form-text mt-2">
+                                        <strong><i class="bi bi-1-circle"></i> First, add the bot to your server:</strong>
+                                        <div class="mt-1">
+                                            <a href="https://discord.com/oauth2/authorize?client_id=837480234043179058&permissions=65536&scope=bot" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary">
+                                                <i class="bi bi-discord me-1"></i>Invite Bot to Discord
+                                                <i class="bi bi-box-arrow-up-right ms-1"></i>
+                                            </a>
+                                            <small class="text-muted d-block mt-1">Grant "Read Message History" permission</small>
+                                        </div>
+                                    </div>
+                                    <div class="form-text mt-2">
+                                        <strong><i class="bi bi-2-circle"></i> Then get your Channel ID:</strong>
+                                        <ol class="mb-0 mt-1">
+                                            <li>Enable Developer Mode in Discord (User Settings → Advanced → Developer Mode)</li>
+                                            <li>Right-click on your channel and select "Copy Channel ID"</li>
+                                            <li>Paste it here</li>
+                                        </ol>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <h6 class="border-bottom pb-2 mb-3">
+                                    <i class="bi bi-twitch"></i> Twitch Integration
+                                </h6>
+
+                                <!-- Twitch Username -->
+                                <div class="mb-3">
+                                    <label class="form-label" for="twitch_username">Twitch Username</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="bi bi-twitch"></i>
+                                        </span>
+                                        <input type="text" name="twitch_username" id="twitch_username" class="form-control" value="{{ current_user.twitch_username or '' }}">
+                                    </div>
+                                    {% if current_user.twitch_username %}
+                                        <div class="form-text text-success">
+                                            <i class="bi bi-check-circle"></i> Twitch account linked
+                                        </div>
+                                    {% else %}
+                                        <div class="form-text">
+                                            Link your Twitch account to enable clip collection
+                                        </div>
                                     {% endif %}
                                 </div>
                             </div>
                         </div>
-                        <div class="col-md-6 mb-3">
-                            <div class="d-flex align-items-center">
-                                <i class="bi bi-twitch text-purple fs-3 me-3"></i>
-                                <div class="flex-grow-1">
-                                    <h6 class="mb-0">Twitch</h6>
-                                    {% if current_user.twitch_username %}
-                                        <small class="text-success">Connected (@{{ current_user.twitch_username }})</small>
-                                    {% else %}
-                                        <small class="text-muted">Not connected</small>
-                                    {% endif %}
-                                </div>
-                                <div>
-                                    {% if current_user.twitch_username %}
-                                        <form method="POST" action="{{ url_for('main.disconnect_twitch') }}" class="d-inline">
-                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                            <button type="submit" class="btn btn-outline-danger btn-sm">Disconnect</button>
-                                        </form>
-                                    {% else %}
-                                        <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#connectTwitchModal">Connect</button>
-                                    {% endif %}
-                                </div>
-                            </div>
+
+                        <!-- Submit Button -->
+                        <div class="d-flex justify-content-end mt-3">
+                            <button type="submit" class="btn btn-primary">Update Integrations</button>
                         </div>
-                    </div>
+                    </form>
                 </div>
             </div>
 
@@ -677,6 +883,8 @@
 {% endblock %}
 
 {% block scripts %}
+{{ super() }}
+<script src="{{ url_for('static', filename='js/utils.js') }}"></script>
 <script id="account-settings-config" type="application/json">{ "expectedUsername": "{{ current_user.username }}" }</script>
 <script src="{{ url_for('static', filename='js/account_settings.js') }}"></script>
 {% endblock %}

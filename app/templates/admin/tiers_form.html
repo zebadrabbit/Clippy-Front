@@ -78,6 +78,11 @@
                   <input class="form-check-input" type="checkbox" name="is_active" id="is_active" {% if (tier and tier.is_active) or not tier %}checked{% endif %}>
                   <label class="form-check-label" for="is_active">Active</label>
                 </div>
+                <div class="form-check mb-2">
+                  <input class="form-check-input" type="checkbox" name="is_default" id="is_default" {% if tier and tier.is_default %}checked{% endif %}>
+                  <label class="form-check-label" for="is_default"><strong>Default tier for new users</strong></label>
+                  <div class="form-text">Only one tier can be default. Setting this will unset all others.</div>
+                </div>
                 <hr>
                 <div class="form-check mb-2">
                   <input class="form-check-input" type="checkbox" name="can_schedule_tasks" id="can_schedule_tasks" {% if tier and tier.can_schedule_tasks %}checked{% endif %}>

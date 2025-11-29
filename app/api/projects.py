@@ -92,7 +92,7 @@ def create_project_api():
 
     # Vertical video settings (for 9:16 conversions)
     vertical_zoom = int(data.get("vertical_zoom") or 100)
-    vertical_zoom = max(100, min(120, vertical_zoom))  # Clamp to 100-120
+    vertical_zoom = max(100, min(180, vertical_zoom))  # Clamp to 100-180
     vertical_align = (data.get("vertical_align") or "center").strip()
     if vertical_align not in ["left", "center", "right"]:
         vertical_align = "center"

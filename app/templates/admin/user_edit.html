@@ -1,68 +1,183 @@
 {% extends 'base.html' %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin-dark.css') }}">
+{% endblock %}
+
 {% block content %}
-<div class="container mt-4">
-  <h2>Edit User: {{ user.username }}</h2>
-  <form method="post">
-    <div class="mb-3">
-      <label class="form-label">Email</label>
-      <input type="email" class="form-control" name="email" value="{{ user.email }}" required />
-    </div>
-    <div class="row">
-      <div class="col-md-6 mb-3">
-        <label class="form-label">First name</label>
-        <input class="form-control" name="first_name" value="{{ user.first_name or '' }}" />
+<div class="container py-4">
+  <div class="row">
+    <!-- Main Content -->
+    <div class="col-12">
+      <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="mb-0">
+            <i class="bi bi-person-gear"></i>
+            Edit User: {{ user.username }}
+          </h5>
+          <small class="text-muted">
+            User ID: {{ user.id }} | Member since {{ user.created_at.strftime('%B %Y') }}
+          </small>
+        </div>
+        <div class="card-body">
+          <!-- User Status Summary -->
+          <div class="mb-4 pb-3 border-bottom">
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge bg-{{ 'success' if user.is_active else 'secondary' }}">
+                {{ 'Active' if user.is_active else 'Inactive' }}
+              </span>
+              {% if user.email_verified %}
+                <span class="badge bg-success">
+                  <i class="bi bi-check-circle"></i> Email Verified
+                </span>
+              {% else %}
+                <span class="badge bg-warning">
+                  <i class="bi bi-exclamation-triangle"></i> Email Not Verified
+                </span>
+              {% endif %}
+              <span class="badge bg-info">{{ user.role.value | capitalize }}</span>
+              {% if user.tier %}
+                <span class="badge bg-primary">{{ user.tier.name }}</span>
+              {% endif %}
+            </div>
+          </div>
+
+          <!-- Edit Form -->
+          <form method="post">
+            <div class="row">
+              <!-- Personal Information -->
+              <div class="col-md-6">
+                <h6 class="border-bottom pb-2 mb-3">Personal Information</h6>
+
+                <div class="mb-3">
+                  <label class="form-label">Email</label>
+                  <input type="email" class="form-control" name="email" value="{{ user.email }}" required />
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label">First name</label>
+                  <input class="form-control" name="first_name" value="{{ user.first_name or '' }}" />
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label">Last name</label>
+                  <input class="form-control" name="last_name" value="{{ user.last_name or '' }}" />
+                </div>
+              </div>
+
+              <!-- Account Settings -->
+              <div class="col-md-6">
+                <h6 class="border-bottom pb-2 mb-3">Account Settings</h6>
+
+                <div class="mb-3">
+                  <label class="form-label">Role</label>
+                  <select class="form-select" name="role">
+                    {% for r in user_roles %}
+                    <option value="{{ r.value }}" {% if user.role==r %}selected{% endif %}>{{ r.value | capitalize }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label">Subscription Tier</label>
+                  <select class="form-select" name="tier_id">
+                    <option value="">(None / Default)</option>
+                    {% for t in tiers %}
+                    <option value="{{ t.id }}" {% if user.tier_id==t.id %}selected{% endif %}>
+                      {{ t.name }}{% if t.is_unlimited %} (Unlimited){% endif %}{% if not t.is_active %} [inactive]{% endif %}
+                    </option>
+                    {% endfor %}
+                  </select>
+                  <div class="form-text">Controls storage/render limits and watermark policy; leave blank for default Free tier.</div>
+                </div>
+
+                <div class="form-check mb-3">
+                  <input class="form-check-input" type="checkbox" name="is_active" id="is_active" {% if user.is_active %}checked{% endif %}>
+                  <label class="form-check-label" for="is_active">Active</label>
+                </div>
+
+                <div class="form-check mb-3">
+                  <input class="form-check-input" type="checkbox" name="watermark_disabled" id="watermark_disabled" {% if user.watermark_disabled %}checked{% endif %}>
+                  <label class="form-check-label" for="watermark_disabled">Disable watermark overlay for this user</label>
+                  <div class="form-text">Global watermark is applied by default; check to exempt this user.</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Form Actions -->
+            <div class="d-flex justify-content-end gap-2 mt-3">
+              <a class="btn btn-secondary" href="{{ url_for('admin.user_details', user_id=user.id) }}">Cancel</a>
+              <button class="btn btn-primary" type="submit">
+                <i class="bi bi-save"></i> Save Changes
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
-      <div class="col-md-6 mb-3">
-        <label class="form-label">Last name</label>
-        <input class="form-control" name="last_name" value="{{ user.last_name or '' }}" />
+
+      <!-- Password Reset Card -->
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="mb-0">
+            <i class="bi bi-key"></i>
+            Password Management
+          </h5>
+        </div>
+        <div class="card-body">
+          <form method="post" action="{{ url_for('admin.admin_reset_password', user_id=user.id) }}" onsubmit="return confirm('Reset password for {{ user.username }}?');">
+            <div class="row align-items-end">
+              <div class="col-md-6">
+                <label class="form-label">New Password</label>
+                <input type="password" name="new_password" class="form-control" placeholder="Leave blank to generate random password" />
+                <div class="form-text">If left blank, a secure random password will be generated and emailed to the user.</div>
+              </div>
+              <div class="col-md-6">
+                <button class="btn btn-warning" type="submit">
+                  <i class="bi bi-arrow-clockwise"></i> Reset Password
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Account Actions Card -->
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="mb-0">
+            <i class="bi bi-gear"></i>
+            Account Actions
+          </h5>
+        </div>
+        <div class="card-body">
+          <div class="d-flex gap-2 flex-wrap">
+            <form method="post" action="{{ url_for('admin.resend_verification', user_id=user.id) }}" class="d-inline">
+              <button class="btn btn-outline-primary" type="submit">
+                <i class="bi bi-envelope-check"></i> Resend Verification Email
+              </button>
+            </form>
+
+            {% if user.id != 1 %}
+            <form method="post" action="{{ url_for('admin.user_delete', user_id=user.id) }}" onsubmit="return confirm('Delete {{ user.username }}? This will permanently delete all their data and cannot be undone.');" class="d-inline">
+              <button class="btn btn-danger" type="submit">
+                <i class="bi bi-trash"></i> Delete User
+              </button>
+            </form>
+            {% else %}
+            <button class="btn btn-danger" type="button" disabled title="Cannot delete the admin account">
+              <i class="bi bi-shield-lock"></i> Delete User (Protected)
+            </button>
+            {% endif %}
+          </div>
+          {% if user.id == 1 %}
+          <div class="alert alert-info mt-3 mb-0">
+            <i class="bi bi-info-circle"></i>
+            This is the admin account (User ID 1) and cannot be deleted for security reasons.
+          </div>
+          {% endif %}
+        </div>
       </div>
     </div>
-    <div class="mb-3">
-      <label class="form-label">Role</label>
-      <select class="form-select" name="role">
-        {% for r in user_roles %}
-        <option value="{{ r.value }}" {% if user.role==r %}selected{% endif %}>{{ r.value | capitalize }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="mb-3">
-      <label class="form-label">Subscription Tier</label>
-      <select class="form-select" name="tier_id">
-        <option value="">(None / Default)</option>
-        {% for t in tiers %}
-        <option value="{{ t.id }}" {% if user.tier_id==t.id %}selected{% endif %}>
-          {{ t.name }}{% if t.is_unlimited %} (Unlimited){% endif %}{% if not t.is_active %} [inactive]{% endif %}
-        </option>
-        {% endfor %}
-      </select>
-      <div class="form-text">Controls storage/render limits and watermark policy; leave blank for default Free tier.</div>
-    </div>
-    <div class="form-check mb-3">
-      <input class="form-check-input" type="checkbox" name="is_active" id="is_active" {% if user.is_active %}checked{% endif %}>
-      <label class="form-check-label" for="is_active">Active</label>
-    </div>
-    <div class="form-check mb-4">
-      <input class="form-check-input" type="checkbox" name="watermark_disabled" id="watermark_disabled" {% if user.watermark_disabled %}checked{% endif %}>
-      <label class="form-check-label" for="watermark_disabled">Disable watermark overlay for this user</label>
-      <div class="form-text">Global watermark is applied by default; check to exempt this user.</div>
-    </div>
-    <button class="btn btn-primary" type="submit">Save</button>
-    <a class="btn btn-secondary" href="{{ url_for('admin.user_details', user_id=user.id) }}">Cancel</a>
-  </form>
-  <hr/>
-  <form method="post" action="{{ url_for('admin.admin_reset_password', user_id=user.id) }}" onsubmit="return confirm('Reset password for {{ user.username }}?');">
-    <h5>Reset Password</h5>
-    <div class="input-group mb-3" style="max-width: 420px;">
-      <input type="password" name="new_password" class="form-control" placeholder="Leave blank to generate" />
-      <button class="btn btn-warning" type="submit">Reset</button>
-    </div>
-  </form>
-  <form method="post" action="{{ url_for('admin.resend_verification', user_id=user.id) }}">
-    <button class="btn btn-outline-primary" type="submit">Resend Verification</button>
-  </form>
-  <hr/>
-  <form method="post" action="{{ url_for('admin.user_delete', user_id=user.id) }}" onsubmit="return confirm('Delete {{ user.username }}? This cannot be undone.');">
-    <button class="btn btn-danger" type="submit">Delete User</button>
-  </form>
+  </div>
 </div>
 {% endblock %}

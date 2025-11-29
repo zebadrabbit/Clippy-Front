@@ -199,6 +199,11 @@ def register():
 
     if form.validate_on_submit():
         try:
+            # Get default tier for new users
+            from app.quotas import get_default_tier
+
+            default_tier = get_default_tier()
+
             # Create new user
             user = User(
                 username=form.username.data,
@@ -207,6 +212,7 @@ def register():
                 last_name=form.last_name.data or None,
                 discord_user_id=form.discord_user_id.data or None,
                 twitch_username=form.twitch_username.data or None,
+                tier=default_tier,  # Assign default tier
             )
             user.set_password(form.password.data)
 
@@ -215,7 +221,7 @@ def register():
             db.session.commit()
 
             current_app.logger.info(
-                f"New user registered: {user.username} ({user.email})"
+                f"New user registered: {user.username} ({user.email}) with tier: {default_tier.name if default_tier else 'None'}"
             )
             flash("Registration successful! You can now sign in.", "success")
             return redirect(url_for("auth.login"))

@@ -1,0 +1,40 @@
+/* Project Details Page Styles */
+
+/* Media preview popover styling */
+.media-popover .popover-body {
+    padding: 0;
+    border-radius: 0.375rem;
+    overflow: hidden;
+}
+
+.media-popover .popover-body img {
+    display: block;
+    max-width: 320px;
+    max-height: 180px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+}
+
+/* Platform export button custom colors */
+.btn-outline-purple {
+    color: #9146ff;
+    border-color: #9146ff;
+}
+
+.btn-outline-purple:hover {
+    color: #fff;
+    background-color: #9146ff;
+    border-color: #9146ff;
+}
+
+.btn-outline-tiktok {
+    color: #000;
+    border-color: #000;
+}
+
+.btn-outline-tiktok:hover {
+    color: #fff;
+    background-color: #000;
+    border-color: #000;
+}

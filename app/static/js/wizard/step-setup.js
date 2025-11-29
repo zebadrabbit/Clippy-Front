@@ -17,6 +17,7 @@ export async function onEnter(wizard) {
   initAudioNormSlider();
   initPlatformPresets();
   initVerticalVideoControls();
+  initTaskButton(); // Check tier permissions for save-as-task button
 
   // Setup form submission
   setupFormHandlers(wizard);
@@ -64,6 +65,25 @@ function initRouteToggle() {
     const val = routeSelect?.value;
     const show = (val === 'twitch') && !userHasTwitch;
     if (twitchWarn) twitchWarn.classList.toggle('d-none', !show);
+
+    // Disable Next button if Twitch selected but not configured
+    disableControlsIfNeeded();
+  }
+
+  function disableControlsIfNeeded() {
+    const val = routeSelect?.value;
+    const shouldDisable = (val === 'twitch') && !userHasTwitch;
+
+    // Disable the Next/Continue button
+    const nextBtn = document.querySelector('.wizard-step[data-step="1"] .btn-primary');
+    if (nextBtn) {
+      nextBtn.disabled = shouldDisable;
+      if (shouldDisable) {
+        nextBtn.title = 'Connect your Twitch account first';
+      } else {
+        nextBtn.title = '';
+      }
+    }
   }
 
   function updateDiscordParams() {
@@ -85,6 +105,25 @@ function initRouteToggle() {
   // Initialize on load
   updateTwitchWarning();
   updateDiscordParams();
+  disableControlsIfNeeded();
+}
+
+/**
+ * Initialize save-as-task button based on tier permissions
+ */
+function initTaskButton() {
+  const saveTaskBtn = document.getElementById('save-as-task');
+  if (!saveTaskBtn) return;
+
+  const wizardData = document.getElementById('wizard-data');
+  const canScheduleTasks = wizardData?.dataset?.canScheduleTasks === '1';
+
+  if (!canScheduleTasks) {
+    saveTaskBtn.disabled = true;
+    saveTaskBtn.title = 'Upgrade your tier to schedule tasks';
+    saveTaskBtn.classList.add('opacity-50');
+    console.log('[step-setup] Save-as-task button disabled (tier does not allow scheduling)');
+  }
 }
 
 /**

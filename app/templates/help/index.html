@@ -2,20 +2,7 @@
 
 {% block styles %}
 {{ super() }}
-<style>
-    .help-category {
-        transition: transform 0.2s;
-    }
-    .help-category:hover {
-        transform: translateY(-2px);
-    }
-    .help-topic-link {
-        transition: background-color 0.2s;
-    }
-    .help-topic-link:hover {
-        background-color: rgba(var(--bs-primary-rgb), 0.1);
-    }
-</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/help.css') }}">
 {% endblock %}
 
 {% block content %}

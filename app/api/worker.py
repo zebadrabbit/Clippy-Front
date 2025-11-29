@@ -864,11 +864,14 @@ def worker_get_tier_limits(user_id: int):
             "storage_limit_bytes": int,
             "render_time_limit_seconds": int,
             "apply_watermark": bool,
-            "is_unlimited": bool
+            "is_unlimited": bool,
+            "watermark_path": str | None,
+            "watermark_opacity": float,
+            "watermark_position": str
         }
     """
     try:
-        from app.models import User
+        from app.models import SystemSetting, User
         from app.quotas import get_effective_tier, should_apply_watermark
 
         user = db.session.get(User, user_id)
@@ -876,6 +879,33 @@ def worker_get_tier_limits(user_id: int):
             return jsonify({"error": "User not found"}), 404
 
         tier = get_effective_tier(user)
+
+        # Get watermark settings from system settings
+        watermark_path = None
+        watermark_opacity = 0.3
+        watermark_position = "bottom-right"
+
+        try:
+            wm_path_setting = SystemSetting.query.filter_by(
+                key="WATERMARK_PATH"
+            ).first()
+            if wm_path_setting and wm_path_setting.value:
+                watermark_path = wm_path_setting.value
+
+            wm_opacity_setting = SystemSetting.query.filter_by(
+                key="WATERMARK_OPACITY"
+            ).first()
+            if wm_opacity_setting and wm_opacity_setting.value:
+                watermark_opacity = float(wm_opacity_setting.value)
+
+            wm_pos_setting = SystemSetting.query.filter_by(
+                key="WATERMARK_POSITION"
+            ).first()
+            if wm_pos_setting and wm_pos_setting.value:
+                watermark_position = wm_pos_setting.value
+        except Exception as wm_err:
+            current_app.logger.warning(f"Error loading watermark settings: {wm_err}")
+
         if not tier:
             # Return sensible defaults if no tier
             return jsonify(
@@ -884,6 +914,9 @@ def worker_get_tier_limits(user_id: int):
                     "render_time_limit_seconds": 0,
                     "apply_watermark": True,
                     "is_unlimited": False,
+                    "watermark_path": watermark_path,
+                    "watermark_opacity": watermark_opacity,
+                    "watermark_position": watermark_position,
                 }
             )
 
@@ -893,6 +926,9 @@ def worker_get_tier_limits(user_id: int):
                 "render_time_limit_seconds": tier.render_time_limit_seconds or 0,
                 "apply_watermark": should_apply_watermark(user),
                 "is_unlimited": tier.is_unlimited,
+                "watermark_path": watermark_path,
+                "watermark_opacity": watermark_opacity,
+                "watermark_position": watermark_position,
             }
         )
     except Exception as e:
@@ -1403,22 +1439,68 @@ def worker_get_compilation_context(project_id: int):
         )
 
         # Get tier limits
-        from app.models import User
+        from app.models import SystemSetting, User
 
         user = db.session.get(User, project.user_id)
-        tier_limits = {"max_res_label": None, "max_fps": None, "max_clips": None}
+        tier_limits = {
+            "max_res_label": None,
+            "max_fps": None,
+            "max_clips": None,
+            "apply_watermark": False,
+            "watermark_path": None,
+            "watermark_opacity": 0.3,
+            "watermark_position": "bottom-right",
+            "watermark_size": 150,
+        }
         username = None
 
-        if user and hasattr(user, "tier") and user.tier:
+        if user:
             username = user.username
-            if not user.tier.is_unlimited:
-                tier_limits = {
-                    "max_res_label": user.tier.max_output_resolution,
-                    "max_fps": user.tier.max_fps,
-                    "max_clips": user.tier.max_clips_per_project,
-                }
-        elif user:
-            username = user.username
+
+            # Get watermark settings
+            from app.quotas import should_apply_watermark
+
+            apply_wm = should_apply_watermark(user)
+            tier_limits["apply_watermark"] = apply_wm
+
+            if apply_wm:
+                # Get watermark configuration from SystemSettings
+                try:
+                    wm_path_setting = SystemSetting.query.filter_by(
+                        key="WATERMARK_PATH"
+                    ).first()
+                    if wm_path_setting and wm_path_setting.value:
+                        tier_limits["watermark_path"] = wm_path_setting.value
+
+                    wm_opacity_setting = SystemSetting.query.filter_by(
+                        key="WATERMARK_OPACITY"
+                    ).first()
+                    if wm_opacity_setting and wm_opacity_setting.value:
+                        tier_limits["watermark_opacity"] = float(
+                            wm_opacity_setting.value
+                        )
+
+                    wm_pos_setting = SystemSetting.query.filter_by(
+                        key="WATERMARK_POSITION"
+                    ).first()
+                    if wm_pos_setting and wm_pos_setting.value:
+                        tier_limits["watermark_position"] = wm_pos_setting.value
+
+                    wm_size_setting = SystemSetting.query.filter_by(
+                        key="WATERMARK_SIZE"
+                    ).first()
+                    if wm_size_setting and wm_size_setting.value:
+                        tier_limits["watermark_size"] = int(wm_size_setting.value)
+                except Exception as wm_err:
+                    current_app.logger.warning(
+                        f"Error loading watermark settings: {wm_err}"
+                    )
+
+            # Get tier-specific limits
+            if hasattr(user, "tier") and user.tier and not user.tier.is_unlimited:
+                tier_limits["max_res_label"] = user.tier.max_output_resolution
+                tier_limits["max_fps"] = user.tier.max_fps
+                tier_limits["max_clips"] = user.tier.max_clips_per_project
 
         # Serialize response
         return jsonify(

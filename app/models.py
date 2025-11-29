@@ -573,7 +573,7 @@ class Project(db.Model):
     watermark_enabled = db.Column(db.Boolean, default=False)
 
     # Vertical video settings (for 9:16 conversions)
-    vertical_zoom = db.Column(db.Integer, default=100)  # 100-120 (percentage)
+    vertical_zoom = db.Column(db.Integer, default=100)  # 100-180 (percentage)
     vertical_align = db.Column(db.String(10), default="center")  # left, center, right
 
     # Intro/Outro media references
@@ -978,11 +978,15 @@ class ProcessingJob(db.Model):
     # Relationships
     project = db.relationship(
         "Project",
-        backref=db.backref("processing_jobs", lazy="dynamic"),
+        backref=db.backref(
+            "processing_jobs", lazy="dynamic", cascade="all, delete-orphan"
+        ),
     )
     user = db.relationship(
         "User",
-        backref=db.backref("processing_jobs", lazy="dynamic"),
+        backref=db.backref(
+            "processing_jobs", lazy="dynamic", cascade="all, delete-orphan"
+        ),
     )
 
     @property
@@ -1035,6 +1039,13 @@ class Tier(db.Model):
     apply_watermark = db.Column(db.Boolean, default=True, nullable=False)
     is_unlimited = db.Column(db.Boolean, default=False, nullable=False)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
+    is_default = db.Column(
+        db.Boolean,
+        default=False,
+        nullable=False,
+        index=True,
+        doc="Whether this tier is assigned to new users by default. Only one tier should be default.",
+    )
     # Output constraints (optional; None => unlimited)
     max_output_resolution = db.Column(
         db.String(10),
@@ -1101,7 +1112,12 @@ class RenderUsage(db.Model):
     seconds_used = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
-    user = db.relationship("User", backref=db.backref("render_usages", lazy="dynamic"))
+    user = db.relationship(
+        "User",
+        backref=db.backref(
+            "render_usages", lazy="dynamic", cascade="all, delete-orphan"
+        ),
+    )
     project = db.relationship(
         "Project", backref=db.backref("render_usages", lazy="dynamic")
     )
@@ -1554,7 +1570,10 @@ class ActivityLog(db.Model):
     )
 
     # Relationships
-    user = db.relationship("User", backref=db.backref("activities", lazy="dynamic"))
+    user = db.relationship(
+        "User",
+        backref=db.backref("activities", lazy="dynamic", cascade="all, delete-orphan"),
+    )
     team = db.relationship(
         "Team",
         backref=db.backref("activities", lazy="dynamic", cascade="all, delete-orphan"),
@@ -1787,7 +1806,9 @@ class Notification(db.Model):
     user = db.relationship(
         "User",
         foreign_keys=[user_id],
-        backref=db.backref("notifications", lazy="dynamic"),
+        backref=db.backref(
+            "notifications", lazy="dynamic", cascade="all, delete-orphan"
+        ),
     )
     actor = db.relationship("User", foreign_keys=[actor_id])
     team = db.relationship("Team", backref=db.backref("notifications", lazy="dynamic"))
@@ -1892,7 +1913,10 @@ class NotificationPreferences(db.Model):
 
     # Relationship
     user = db.relationship(
-        "User", backref=db.backref("notification_preferences", uselist=False)
+        "User",
+        backref=db.backref(
+            "notification_preferences", uselist=False, cascade="all, delete-orphan"
+        ),
     )
 
     def __repr__(self) -> str:
@@ -2029,7 +2053,10 @@ class DismissedAnnouncement(db.Model):
     )
 
     # Relationships
-    user = db.relationship("User", backref="dismissed_announcements")
+    user = db.relationship(
+        "User",
+        backref=db.backref("dismissed_announcements", cascade="all, delete-orphan"),
+    )
     announcement = db.relationship("Announcement", back_populates="dismissed_by")
 
     def __repr__(self) -> str:

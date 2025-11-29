@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.2.1] - 2025-11-29
+
+### Added
+- Extended portrait zoom range from 100-120% to 100-180% for greater creative control
+  - UI sliders in setup and arrange steps now support up to 180% zoom
+  - API validation updated to accept 100-180% range
+  - Proper zoom application in both preview and final compilations
+- Portrait zoom debug logging to track zoom factor application
+
+### Changed
+- Toast notifications now auto-dismiss after 10 seconds (previously stayed until manually closed)
+  - Changed default delay from 0 (no auto-hide) to 10000ms
+  - Individual toasts can still override delay if needed
+
+### Fixed
+- Portrait zoom now correctly applies to landscape clips in portrait compilations
+  - Filter chain: scale to width → apply zoom → crop → pad
+  - 120% zoom example: shows 83% of clip width (17% cropped from sides)
+  - Preview mode respects project zoom settings (previously had inconsistent zoom)
+
+---
+
+## [1.2.0] - 2025-11-27
+
 ### Added
 - Audio metadata extraction and attribution fields for music/audio files
   - New fields: artist, album, title, license, attribution_url, attribution_text on MediaFile model

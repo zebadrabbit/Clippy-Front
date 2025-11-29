@@ -11,9 +11,9 @@
   popoverTriggerList.map(function (popoverTriggerEl) {
     return new bootstrap.Popover(popoverTriggerEl);
   });
-  // Auto-hide alerts after 5 seconds
+  // Auto-hide flash alerts after 5 seconds (but NOT announcements, profile alerts, or wizard warnings)
   setTimeout(function() {
-    var alerts = document.querySelectorAll('.alert');
+    var alerts = document.querySelectorAll('.alert:not([id^="announcement-"]):not(#profile-setup-alert):not(#twitch-warning):not(#discord-setup-alert)');
     alerts.forEach(function(alert) {
       try {
         var bsAlert = new bootstrap.Alert(alert);

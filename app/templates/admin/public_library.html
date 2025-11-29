@@ -1,5 +1,9 @@
 {% extends "base.html" %}
 
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin-dark.css') }}">
+{% endblock %}
+
 {% block content %}
 <div class="container py-4">
   <div class="d-flex justify-content-between align-items-center mb-4">
@@ -10,39 +14,43 @@
   </div>
 
   <div class="row">
-    <div class="col-12 col-lg-3 mb-4 mb-lg-0">
+    <div class="col-12 col-lg-3 mb-4 mb-lg-0 admin-sidebar">
       {% set active_page = 'public_library' %}
       {% include 'admin/_includes/sidebar.html' with context %}
     </div>
-    <div class="col-12 col-lg-9">
+    <div class="col-12 col-lg-9 admin-content">
       <!-- Filter Tabs -->
-      <ul class="nav nav-pills mb-3">
-        <li class="nav-item">
-          <a class="nav-link {{ 'active' if not active_filter else '' }}" href="{{ url_for('admin.public_library') }}">
-            All ({{ counts.intro + counts.outro + counts.transition + counts.music }})
-          </a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link {{ 'active' if active_filter == 'intro' else '' }}" href="{{ url_for('admin.public_library', type='intro') }}">
-            Intros ({{ counts.intro }})
-          </a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link {{ 'active' if active_filter == 'outro' else '' }}" href="{{ url_for('admin.public_library', type='outro') }}">
-            Outros ({{ counts.outro }})
-          </a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link {{ 'active' if active_filter == 'transition' else '' }}" href="{{ url_for('admin.public_library', type='transition') }}">
-            Transitions ({{ counts.transition }})
-          </a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link {{ 'active' if active_filter == 'music' else '' }}" href="{{ url_for('admin.public_library', type='music') }}">
-            Music ({{ counts.music }})
-          </a>
-        </li>
-      </ul>
+      <div class="card mb-3">
+        <div class="card-body">
+          <ul class="nav nav-pills">
+            <li class="nav-item">
+              <a class="nav-link {{ 'active' if not active_filter else '' }}" href="{{ url_for('admin.public_library') }}">
+                All ({{ counts.intro + counts.outro + counts.transition + counts.music }})
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {{ 'active' if active_filter == 'intro' else '' }}" href="{{ url_for('admin.public_library', type='intro') }}">
+                Intros ({{ counts.intro }})
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {{ 'active' if active_filter == 'outro' else '' }}" href="{{ url_for('admin.public_library', type='outro') }}">
+                Outros ({{ counts.outro }})
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {{ 'active' if active_filter == 'transition' else '' }}" href="{{ url_for('admin.public_library', type='transition') }}">
+                Transitions ({{ counts.transition }})
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {{ 'active' if active_filter == 'music' else '' }}" href="{{ url_for('admin.public_library', type='music') }}">
+                Music ({{ counts.music }})
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
 
       <!-- Media Grid -->
       {% if public_media %}

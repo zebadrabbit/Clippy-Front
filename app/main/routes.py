@@ -185,12 +185,31 @@ def dashboard():
         "total_media_files": current_user.media_files.count(),
     }
 
+    # Get active announcements not dismissed by this user
+    from app.models import Announcement
+
+    announcements = (
+        Announcement.query.filter_by(active=True)
+        .order_by(Announcement.created_at.desc())
+        .all()
+    )
+    active_announcements = [
+        a for a in announcements if not a.is_dismissed_by(current_user.id)
+    ]
+
+    # Check if profile setup is incomplete
+    profile_incomplete = not (
+        current_user.twitch_username or current_user.discord_user_id
+    )
+
     return render_template(
         "main/dashboard.html",
         title="Dashboard",
         projects=enriched_projects,
         recent_clips=recent_clips,
         stats=stats,
+        announcements=active_announcements,
+        profile_incomplete=profile_incomplete,
     )
 
 
@@ -1673,6 +1692,12 @@ def project_wizard():
     if step and 1 <= step <= 4:
         initial_step = step
 
+    # Get user's tier for feature flags
+    from app.quotas import get_effective_tier
+
+    user_tier = get_effective_tier(current_user)
+    can_schedule_tasks = user_tier.can_schedule_tasks if user_tier else False
+
     return render_template(
         "main/project_wizard.html",
         title="Project Wizard",
@@ -1680,6 +1705,7 @@ def project_wizard():
         discord_channel_id=discord_channel_id,
         existing_project=existing_project,
         initial_step=initial_step,
+        can_schedule_tasks=can_schedule_tasks,
     )
 
 
@@ -2452,35 +2478,56 @@ def profile():
 
     if form.validate_on_submit():
         try:
-            # Update user profile
-            current_user.first_name = form.first_name.data or None
-            current_user.last_name = form.last_name.data or None
-            current_user.discord_user_id = form.discord_user_id.data or None
-            current_user.discord_channel_id = form.discord_channel_id.data or None
-            current_user.twitch_username = form.twitch_username.data or None
-            if form.date_format.data:
-                current_user.date_format = form.date_format.data
-            # Timezone: validate IANA name when provided
-            tz_input = (form.timezone.data or "").strip()
-            if tz_input:
-                try:
-                    from zoneinfo import ZoneInfo
+            # Update user profile - only update fields that were actually submitted
+            # Check if personal info section was submitted (first_name is in that form)
+            if "first_name" in request.form or "last_name" in request.form:
+                current_user.first_name = form.first_name.data or None
+                current_user.last_name = form.last_name.data or None
 
-                    _ = ZoneInfo(tz_input)
-                    current_user.timezone = tz_input
-                except Exception as tz_err:
-                    safe_log_error(
-                        current_app.logger,
-                        "Invalid timezone validation",
-                        exc_info=tz_err,
-                        level=logging.WARNING,
-                        user_id=current_user.id,
-                        timezone_input=tz_input,
-                    )
-                    flash(
-                        "Invalid timezone. Please use a valid IANA name (e.g., America/Los_Angeles).",
-                        "warning",
-                    )
+            # Check if external services section was submitted
+            if (
+                "discord_user_id" in request.form
+                or "discord_channel_id" in request.form
+                or "twitch_username" in request.form
+            ):
+                current_user.discord_user_id = form.discord_user_id.data or None
+                current_user.discord_channel_id = form.discord_channel_id.data or None
+                current_user.twitch_username = form.twitch_username.data or None
+
+            # Preferences are in the first form, so update them when personal info is submitted
+            if (
+                "first_name" in request.form
+                or "last_name" in request.form
+                or "date_format" in request.form
+            ):
+                if form.date_format.data:
+                    current_user.date_format = form.date_format.data
+            # Timezone: validate IANA name when provided (part of preferences form)
+            if (
+                "first_name" in request.form
+                or "last_name" in request.form
+                or "timezone" in request.form
+            ):
+                tz_input = (form.timezone.data or "").strip()
+                if tz_input:
+                    try:
+                        from zoneinfo import ZoneInfo
+
+                        _ = ZoneInfo(tz_input)
+                        current_user.timezone = tz_input
+                    except Exception as tz_err:
+                        safe_log_error(
+                            current_app.logger,
+                            "Invalid timezone validation",
+                            exc_info=tz_err,
+                            level=logging.WARNING,
+                            user_id=current_user.id,
+                            timezone_input=tz_input,
+                        )
+                        flash(
+                            "Invalid timezone. Please use a valid IANA name (e.g., America/Los_Angeles).",
+                            "warning",
+                        )
 
             db.session.commit()
 

@@ -1,7 +1,7 @@
-<div class="card sticky-top" style="top: 80px;">
-  <div class="list-group list-group-flush">
-    <a class="list-group-item list-group-item-action d-flex align-items-center gap-2 {{ 'active' if active_page == 'dashboard' else '' }}" href="{{ url_for('admin.dashboard') }}">
-      <i class="bi bi-speedometer2"></i> <span>Home</span>
+<nav class="position-sticky" style="top: 80px;">
+  <div class="list-group">
+    <a class="list-group-item list-group-item-action d-flex align-items-center gap-2 {{ 'active' if active_page == 'system' else '' }}" href="{{ url_for('admin.system_info') }}">
+      <i class="bi bi-cpu"></i> <span>System Info</span>
     </a>
     <a class="list-group-item list-group-item-action d-flex align-items-center gap-2 {{ 'active' if active_page == 'users' else '' }}" href="{{ url_for('admin.users') }}">
       <i class="bi bi-people"></i> <span>Manage Users</span>
@@ -21,9 +21,6 @@
     <a class="list-group-item list-group-item-action d-flex align-items-center gap-2 {{ 'active' if active_page == 'public_library' else '' }}" href="{{ url_for('admin.public_library') }}">
       <i class="bi bi-collection-play"></i> <span>Public Library</span>
     </a>
-    <a class="list-group-item list-group-item-action d-flex align-items-center gap-2 {{ 'active' if active_page == 'system' else '' }}" href="{{ url_for('admin.system_info') }}">
-      <i class="bi bi-cpu"></i> <span>System Info</span>
-    </a>
     <a class="list-group-item list-group-item-action d-flex align-items-center gap-2 {{ 'active' if active_page == 'workers' else '' }}" href="{{ url_for('admin.workers') }}">
       <i class="bi bi-gear-wide-connected"></i> <span>Workers</span>
     </a>
@@ -31,7 +28,7 @@
       <i class="bi bi-sliders"></i> <span>System Config</span>
     </a>
     {% if active_page == 'config' %}
-    <div class="list-group list-group-flush ms-3 border-start">
+    <div class="list-group ms-3 border-start">
       <a class="list-group-item list-group-item-action py-2 {{ 'active' if (config_section or '') == 'general' else '' }}" href="{{ url_for('admin.system_config', section='general') }}">
         General
       </a>
@@ -65,4 +62,4 @@
       <i class="bi bi-file-text"></i> <span>Logs</span>
     </a>
   </div>
-</div>
+</nav>

@@ -1,74 +1,33 @@
 """
 Celery task for generating preview videos (low-res, 480p 10fps) for compilations.
-Applies same filters/transformations as final output.
-Caches preview for fast subsequent loads.
+Uses the actual compilation logic with preview-optimized settings to ensure accuracy.
 """
 import os
-import subprocess
-import tempfile
+import shutil
 from datetime import datetime
 
 import structlog
 from celery import shared_task
 
 from app import create_app
-from app.ffmpeg_config import parse_resolution
 from app.models import Clip, Project
 
 logger = structlog.get_logger(__name__)
 
 
-def _build_preview_filter(project, target_width, target_height):
-    """Build ffmpeg filter matching compilation output but optimized for preview.
-
-    Applies same vertical zoom/align transformations as full compilation.
-    """
-    is_portrait_output = target_height > target_width
-    vertical_zoom = getattr(project, "vertical_zoom", 100) or 100
-    vertical_align = getattr(project, "vertical_align", "center") or "center"
-
-    logger.info(
-        "preview_filter_settings",
-        project_id=project.id,
-        target_size=f"{target_width}x{target_height}",
-        is_portrait=is_portrait_output,
-        vertical_zoom=vertical_zoom,
-        vertical_align=vertical_align,
-    )
-
-    if is_portrait_output:
-        # Portrait: apply zoom and crop (matching compile_video_v2.py logic)
-        zoom_factor = vertical_zoom / 100.0
-
-        # Determine crop position based on alignment
-        if vertical_align == "left":
-            crop_x = "0"
-        elif vertical_align == "right":
-            crop_x = "iw-ow"
-        else:  # center
-            crop_x = "(iw-ow)/2"
-
-        # Scale up by zoom factor, crop to target dimensions, then pad if needed
-        # The crop needs both width and height to ensure we don't exceed target size
-        scale_filter = f"scale=iw*{zoom_factor}:ih*{zoom_factor},crop={target_width}:min(ih\\,{target_height}):{crop_x}:0,scale={target_width}:{target_height}:force_original_aspect_ratio=decrease,pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:black"
-    else:
-        # Landscape: simple scale
-        scale_filter = f"scale={target_width}:{target_height}:flags=lanczos"
-
-    # For preview, apply fps reduction
-    return f"{scale_filter},fps=10"
-
-
 @shared_task(bind=True)
 def generate_preview_video_task(self, project_id, clip_ids=None):
-    """Generate low-resolution preview for compilation.
+    """Generate low-resolution preview by calling actual compilation with preview settings.
 
-    Renders first 3 clips (or all if fewer) with actual project transformations.
-    Updates progress for UI feedback.
+    Instead of reimplementing filter logic, this uses the real compilation pipeline
+    with preview-optimized settings (480p, 10fps, limited clips).
 
     Args:
         project_id: ID of the project to generate preview for
-        clip_ids: Optional list of clip IDs to use (from timeline). If None, uses first 3 downloaded clips.
+        clip_ids: Optional list of clip IDs from timeline. If None, uses first 3 downloaded clips.
+
+    Returns:
+        dict: Preview result with path, file_size, cached status
     """
     app = create_app()
     with app.app_context():
@@ -82,10 +41,9 @@ def generate_preview_video_task(self, project_id, clip_ids=None):
                 logger.error("preview_project_not_found", project_id=project_id)
                 return {"error": "Project not found"}
 
-            # Cache invalidation: check if preview already exists and is fresh
+            # Cache check: use existing preview if fresh
             if project.preview_filename:
                 try:
-                    # For local workers, check file mtime
                     preview_dir = os.path.join(
                         app.instance_path, "previews", str(project.user_id)
                     )
@@ -102,7 +60,11 @@ def generate_preview_video_task(self, project_id, clip_ids=None):
                                 preview_mtime=preview_mtime.isoformat(),
                                 project_mtime=project_mtime.isoformat(),
                             )
-                            return {"preview": preview_path, "cached": True}
+                            return {
+                                "preview": preview_path,
+                                "cached": True,
+                                "file_size": os.path.getsize(preview_path),
+                            }
                         logger.info(
                             "preview_cache_stale",
                             project_id=project_id,
@@ -116,11 +78,10 @@ def generate_preview_video_task(self, project_id, clip_ids=None):
                 state="PROGRESS", meta={"progress": 10, "status": "Loading clips"}
             )
 
-            # Get clips for preview
+            # Get clips for preview (limit to 3 for speed)
             if clip_ids:
-                # Use specified clip IDs from timeline (in order)
                 clips = []
-                for clip_id in clip_ids[:3]:  # Limit to first 3 for preview
+                for clip_id in clip_ids[:3]:
                     clip = (
                         Clip.query.filter_by(id=clip_id, project_id=project.id)
                         .filter(Clip.is_downloaded.is_(True))
@@ -130,7 +91,6 @@ def generate_preview_video_task(self, project_id, clip_ids=None):
                     if clip:
                         clips.append(clip)
             else:
-                # Fallback to first 3 clips in order
                 clips = (
                     Clip.query.filter_by(project_id=project.id)
                     .filter(Clip.is_downloaded.is_(True))
@@ -142,7 +102,7 @@ def generate_preview_video_task(self, project_id, clip_ids=None):
 
             if not clips:
                 logger.error("preview_no_clips", project_id=project_id)
-                return {"error": "No clips available"}
+                return {"error": "No clips available for preview"}
 
             logger.info(
                 "preview_clips_loaded",
@@ -151,267 +111,138 @@ def generate_preview_video_task(self, project_id, clip_ids=None):
                 clip_ids=[c.id for c in clips],
             )
 
-            # Determine target resolution (use 480p for preview)
-            output_res = getattr(project, "output_resolution", "1080p") or "1080p"
-            target_res = parse_resolution(None, output_res)
-            target_width, target_height = map(int, target_res.split("x"))
-
-            # Scale down to 480p while maintaining aspect ratio
-            if target_height > target_width:
-                # Portrait
-                preview_width = int(480 * target_width / target_height)
-                preview_height = 480
-            else:
-                # Landscape
-                preview_width = 480
-                preview_height = int(480 * target_height / target_width)
-
-            # Build filter with project transformations
-            scale_filter = _build_preview_filter(project, preview_width, preview_height)
-
             self.update_state(
                 state="PROGRESS",
-                meta={"progress": 20, "status": f"Processing {len(clips)} clip(s)"},
+                meta={
+                    "progress": 20,
+                    "status": f"Compiling preview with {len(clips)} clips",
+                },
             )
 
-            # Get ffmpeg binary
-            from app.tasks.compile_video_v2 import _download_media_file
-            from app.tasks.video_processing import (
-                _resolve_media_input_path,
-                resolve_binary,
+            # Call the real compilation task with preview overrides
+            # This ensures all filters/zoom/alignment work identically to final output
+            from app.tasks.compile_video_v2 import compile_video_task_v2
+
+            # We'll inject preview mode via a context variable that compile_video_v2 can check
+            # For now, just call with limited clips and no intro/outro for speed
+            result = compile_video_task_v2.apply(
+                args=(project_id,),
+                kwargs={
+                    "intro_id": None,  # Skip intro/outro for preview speed
+                    "outro_id": None,
+                    "transition_ids": None,
+                    "randomize_transitions": False,
+                    "clip_ids": [c.id for c in clips],
+                    "background_music_id": None,  # Skip music for preview
+                    "music_volume": 0.2,
+                    "music_start_mode": "fade_in",
+                    "music_end_mode": "fade_out",
+                    "preview_mode": True,  # Enable 480p 10fps preview rendering
+                },
             )
 
-            ffmpeg_bin = resolve_binary(app, "ffmpeg")
-
-            # Process clips to temp files with transformations
-            temp_files = []
-            temp_dir = tempfile.mkdtemp(prefix="preview_")
-
-            try:
-                for i, clip in enumerate(clips):
-                    if not clip.media_file or not clip.media_file.file_path:
-                        logger.warning("preview_clip_no_media", clip_id=clip.id)
-                        continue
-
-                    # Resolve canonical path to actual filesystem path
-                    input_path = _resolve_media_input_path(clip.media_file.file_path)
-
-                    # If file doesn't exist locally, download it from main server
-                    if not os.path.exists(input_path):
-                        logger.warning(
-                            "preview_clip_missing_downloading",
-                            clip_id=clip.id,
-                            canonical_path=clip.media_file.file_path,
-                            resolved_path=input_path,
-                        )
-                        try:
-                            # Create cache directory
-                            cache_dir = os.path.join(
-                                tempfile.gettempdir(), "clippy-worker-cache"
-                            )
-                            input_path = _download_media_file(
-                                clip.media_file.id, project.user_id, cache_dir
-                            )
-                            logger.info(
-                                "preview_clip_downloaded",
-                                clip_id=clip.id,
-                                media_id=clip.media_file.id,
-                                path=input_path,
-                            )
-                        except Exception as e:
-                            logger.error(
-                                "preview_clip_download_failed",
-                                clip_id=clip.id,
-                                media_id=clip.media_file.id,
-                                error=str(e),
-                            )
-                            continue
-
-                    temp_output = os.path.join(temp_dir, f"clip_{i}.mp4")
-
-                    # Limit each clip to 10 seconds for preview
-                    max_duration = min(float(clip.media_file.duration or 10), 10.0)
-
-                    cmd = [
-                        ffmpeg_bin,
-                        "-y",
-                        "-i",
-                        input_path,
-                        "-t",
-                        str(max_duration),
-                        "-vf",
-                        scale_filter,
-                        "-c:v",
-                        "libx264",
-                        "-preset",
-                        "veryfast",
-                        "-crf",
-                        "28",
-                        "-c:a",
-                        "aac",
-                        "-b:a",
-                        "96k",
-                        "-ar",
-                        "44100",
-                        temp_output,
-                    ]
-
-                    logger.info("preview_processing_clip", clip_id=clip.id, index=i)
-                    try:
-                        subprocess.run(cmd, check=True, capture_output=True, timeout=60)
-                    except subprocess.CalledProcessError as e:
-                        stderr = (
-                            e.stderr.decode("utf-8", errors="replace")
-                            if e.stderr
-                            else ""
-                        )
-                        logger.error(
-                            "preview_clip_ffmpeg_failed",
-                            clip_id=clip.id,
-                            index=i,
-                            returncode=e.returncode,
-                            command=" ".join(cmd),
-                            stderr_full=stderr,
-                        )
-                        raise
-
-                    if os.path.exists(temp_output) and os.path.getsize(temp_output) > 0:
-                        temp_files.append(temp_output)
-
-                    progress = 20 + int((i + 1) / len(clips) * 50)
-                    self.update_state(
-                        state="PROGRESS",
-                        meta={
-                            "progress": progress,
-                            "status": f"Processed clip {i+1}/{len(clips)}",
-                        },
-                    )
-
-                if not temp_files:
-                    logger.error("preview_no_valid_clips", project_id=project_id)
-                    return {"error": "No valid clips could be processed"}
-
-                self.update_state(
-                    state="PROGRESS",
-                    meta={"progress": 75, "status": "Concatenating clips"},
+            if result.failed():
+                error = (
+                    str(result.info)
+                    if hasattr(result, "info")
+                    else "Unknown compilation error"
                 )
-
-                # Concatenate clips to temp output
-                preview_output = os.path.join(temp_dir, "preview_final.mp4")
-
-                if len(temp_files) == 1:
-                    # Single clip, just copy
-                    import shutil
-
-                    shutil.move(temp_files[0], preview_output)
-                else:
-                    # Multiple clips, concat
-                    concat_file = os.path.join(temp_dir, "concat.txt")
-                    with open(concat_file, "w") as f:
-                        for tf in temp_files:
-                            f.write(f"file '{tf}'\n")
-
-                    concat_cmd = [
-                        ffmpeg_bin,
-                        "-y",
-                        "-f",
-                        "concat",
-                        "-safe",
-                        "0",
-                        "-i",
-                        concat_file,
-                        "-c",
-                        "copy",
-                        preview_output,
-                    ]
-
-                    try:
-                        subprocess.run(
-                            concat_cmd, check=True, capture_output=True, timeout=60
-                        )
-                    except subprocess.CalledProcessError as e:
-                        stderr = (
-                            e.stderr.decode("utf-8", errors="replace")
-                            if e.stderr
-                            else ""
-                        )
-                        logger.error(
-                            "preview_concat_ffmpeg_failed",
-                            returncode=e.returncode,
-                            command=" ".join(concat_cmd),
-                            stderr_full=stderr,
-                        )
-                        raise
-
-                self.update_state(
-                    state="PROGRESS",
-                    meta={"progress": 85, "status": "Uploading preview"},
+                logger.error(
+                    "preview_compilation_failed", project_id=project_id, error=error
                 )
+                return {"error": f"Preview compilation failed: {error}"}
 
-                # Validate output
-                if not os.path.exists(preview_output):
-                    raise RuntimeError("Preview file was not created")
+            compilation_result = result.result
 
-                file_size = os.path.getsize(preview_output)
-                if file_size < 1024:
-                    raise RuntimeError(f"Preview file too small: {file_size} bytes")
-
-                # Upload to main server (works for both local and remote workers)
-                from app.tasks import worker_api
-
-                upload_result = worker_api.upload_preview(
+            if "error" in compilation_result:
+                logger.error(
+                    "preview_compilation_error",
                     project_id=project_id,
-                    video_path=preview_output,
-                    metadata={"file_size": file_size, "clips_used": len(temp_files)},
+                    error=compilation_result["error"],
                 )
+                return {"error": compilation_result["error"]}
 
-                logger.info(
-                    "preview_uploaded",
-                    project_id=project_id,
-                    filename=upload_result.get("preview_filename"),
-                    size=file_size,
-                    clips=len(temp_files),
-                )
+            # The compilation created output_file - move it to preview directory
+            output_file = compilation_result.get("output_file")
 
-                self.update_state(
-                    state="PROGRESS", meta={"progress": 100, "status": "Preview ready"}
-                )
-
-                return {
-                    "preview": upload_result.get("preview_path"),
-                    "cached": False,
-                    "file_size": file_size,
-                    "clips_used": len(temp_files),
-                }
-
-            finally:
-                # Cleanup temp files
-                try:
-                    import shutil
-
-                    shutil.rmtree(temp_dir, ignore_errors=True)
-                except Exception:
-                    pass
-
-        except subprocess.TimeoutExpired as e:
-            logger.error("preview_timeout", project_id=project_id, error=str(e))
-            return {"error": "Preview generation timed out"}
-        except subprocess.CalledProcessError as e:
-            stderr = e.stderr.decode("utf-8", errors="replace") if e.stderr else ""
-            logger.error(
-                "preview_ffmpeg_failed",
+            logger.info(
+                "preview_compilation_result",
                 project_id=project_id,
-                returncode=e.returncode,
-                stderr_full=stderr,
+                output_file=output_file,
+                result_keys=list(compilation_result.keys()),
             )
+
+            # Resolve the output file path (may be relative like /instance/...)
+            if output_file and output_file.startswith("/instance/"):
+                output_file = os.path.join(
+                    app.instance_path, output_file[10:]
+                )  # Strip "/instance/" prefix
+
+            logger.info(
+                "preview_resolved_path",
+                project_id=project_id,
+                output_file=output_file,
+                exists=os.path.exists(output_file) if output_file else False,
+            )
+
+            if not output_file or not os.path.exists(output_file):
+                logger.error(
+                    "preview_output_missing",
+                    project_id=project_id,
+                    output_file=output_file,
+                )
+                return {"error": "Compilation output file not found"}
+
+            preview_dir = os.path.join(
+                app.instance_path, "previews", str(project.user_id)
+            )
+            os.makedirs(preview_dir, exist_ok=True)
+
+            preview_filename = f"preview_{project_id}.mp4"
+            preview_path = os.path.join(preview_dir, preview_filename)
+
+            # Move compilation output to preview location
+            shutil.move(output_file, preview_path)
+
+            file_size = os.path.getsize(preview_path)
+
+            self.update_state(
+                state="PROGRESS", meta={"progress": 90, "status": "Uploading preview"}
+            )
+
+            # Upload to main server
+            from app.tasks import worker_api
+
+            upload_result = worker_api.upload_preview(
+                project_id=project_id,
+                video_path=preview_path,
+                metadata={"file_size": file_size, "clips_used": len(clips)},
+            )
+
+            logger.info(
+                "preview_uploaded",
+                project_id=project_id,
+                filename=upload_result.get("preview_filename"),
+                size=file_size,
+                clips=len(clips),
+            )
+
+            self.update_state(
+                state="PROGRESS", meta={"progress": 100, "status": "Preview ready"}
+            )
+
             return {
-                "error": f"Video processing failed: {stderr[-500:] if len(stderr) > 500 else stderr}"
+                "preview": upload_result.get("preview_path"),
+                "cached": False,
+                "file_size": file_size,
+                "clips_used": len(clips),
             }
+
         except Exception as e:
             logger.error(
-                "preview_failed",
+                "preview_generation_failed",
                 project_id=project_id,
                 error=str(e),
-                error_type=type(e).__name__,
+                exc_info=True,
             )
             return {"error": str(e)}
