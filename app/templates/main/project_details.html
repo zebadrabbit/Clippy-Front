@@ -270,6 +270,77 @@
     </div>
   </div>
 
+  <!-- Compilation History -->
+  {% if all_compilations and all_compilations|length > 1 %}
+  <div class="card mt-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <strong><i class="bi bi-clock-history"></i> Compilation History</strong>
+      <small class="text-muted">{{ all_compilations|length }} version{{ 's' if all_compilations|length > 1 else '' }}</small>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        {% for comp in all_compilations %}
+        <div class="col-md-6 col-lg-4">
+          <div class="card h-100">
+            <div class="position-relative" style="cursor: pointer;" onclick="playCompilation({{ comp.id }}, this)">
+              {% if comp.thumbnail_path %}
+              <img src="{{ url_for('main.media_thumbnail', media_id=comp.id) }}" class="card-img-top compilation-thumbnail" alt="thumbnail" style="height: 180px; object-fit: cover;">
+              {% else %}
+              <div class="bg-secondary d-flex align-items-center justify-content-center compilation-thumbnail" style="height: 180px;">
+                <i class="bi bi-film text-white fs-1"></i>
+              </div>
+              {% endif %}
+              <video class="card-img-top compilation-video d-none" style="height: 180px; object-fit: cover;" controls>
+                <source src="{{ url_for('main.media_preview', media_id=comp.id) }}" type="video/mp4">
+              </video>
+              <div class="position-absolute top-50 start-50 translate-middle compilation-play-overlay">
+                <div class="bg-dark bg-opacity-75 rounded-circle p-3">
+                  <i class="bi bi-play-fill text-white" style="font-size: 2rem;"></i>
+                </div>
+              </div>
+              {% if comp.duration %}
+              {% set mins = (comp.duration // 60)|int %}
+              {% set secs = (comp.duration % 60)|int %}
+              <span class="badge bg-dark position-absolute bottom-0 end-0 m-2" style="opacity:0.9;">
+                {{ '%d:%02d' | format(mins, secs) }}
+              </span>
+              {% endif %}
+              {% if loop.first %}
+              <span class="badge bg-success position-absolute top-0 start-0 m-2">Latest</span>
+              {% endif %}
+            </div>
+            <div class="card-body">
+              <h6 class="card-title text-truncate mb-2" title="{{ comp.filename }}">{{ comp.filename }}</h6>
+              <p class="small text-muted mb-2">
+                <i class="bi bi-calendar"></i> {{ comp.uploaded_at.strftime('%b %d, %Y at %I:%M %p') if comp.uploaded_at else 'Unknown' }}
+              </p>
+              {% if comp.file_size %}
+              <p class="small text-muted mb-3">
+                <i class="bi bi-file-earmark"></i> {{ '%.1f'|format(comp.file_size / (1024*1024)) }} MB
+                {% if comp.width and comp.height %}
+                • {{ comp.width }}×{{ comp.height }}
+                {% endif %}
+              </p>
+              {% endif %}
+              <div class="d-flex gap-2">
+                <a href="{{ url_for('main.media_preview', media_id=comp.id) }}" download="{{ comp.filename }}" class="btn btn-sm btn-outline-success flex-grow-1">
+                  <i class="bi bi-download"></i> Download
+                </a>
+                {% if not loop.first %}
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteCompilation({{ comp.id }}, '{{ comp.filename }}')">
+                  <i class="bi bi-trash"></i>
+                </button>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <!-- Export & Share -->
   <div class="card mt-4">
     <div class="card-header">
@@ -576,5 +647,69 @@ document.getElementById('recompileBtn')?.addEventListener('click', async functio
         btn.innerHTML = originalHTML;
     }
 });
+
+// Play compilation inline (replace thumbnail with video player)
+function playCompilation(mediaId, cardElement) {
+    const thumbnail = cardElement.querySelector('.compilation-thumbnail');
+    const video = cardElement.querySelector('.compilation-video');
+    const playOverlay = cardElement.querySelector('.compilation-play-overlay');
+
+    if (thumbnail && video && playOverlay) {
+        // Hide thumbnail and play overlay
+        thumbnail.classList.add('d-none');
+        playOverlay.classList.add('d-none');
+
+        // Show and play video
+        video.classList.remove('d-none');
+        video.play();
+
+        // When video ends, show thumbnail again
+        video.addEventListener('ended', function() {
+            video.classList.add('d-none');
+            thumbnail.classList.remove('d-none');
+            playOverlay.classList.remove('d-none');
+            video.currentTime = 0;
+        });
+
+        // If user pauses, they can click again to resume
+        video.addEventListener('pause', function() {
+            if (video.currentTime < video.duration) {
+                // Video was paused (not ended), allow click to resume
+                cardElement.style.cursor = 'pointer';
+            }
+        });
+
+        video.addEventListener('play', function() {
+            cardElement.style.cursor = 'default';
+        });
+    }
+}
+
+async function deleteCompilation(mediaId, filename) {
+    if (!confirm(`Delete compilation "${filename}"?\n\nThis action cannot be undone.`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/media/${mediaId}/delete`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+            }
+        });
+
+        if (response.ok) {
+            window.showToast('Compilation deleted successfully', 'success');
+            // Reload page to update compilation list
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            const error = await response.json();
+            window.showToast(`Error: ${error.error || 'Failed to delete compilation'}`, 'error');
+        }
+    } catch (err) {
+        console.error('Delete failed:', err);
+        window.showToast('Failed to delete compilation. Please try again.', 'error');
+    }
+}
 </script>
 {% endblock %}

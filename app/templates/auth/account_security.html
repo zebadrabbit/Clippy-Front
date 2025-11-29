@@ -1,0 +1,21 @@
+{%extends "auth/_account_base.html" %}
+
+{% set active = 'security' %}
+
+{% block account_content %}
+<h3 class="mb-4">
+    <i class="bi bi-shield-check"></i>
+    Security
+</h3>
+
+{% include 'auth/_section_security.html' %}
+
+
+{% include 'auth/_modal_change_password.html' %}
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="{{ url_for('static', filename='js/utils.js') }}"></script>
+<script src="{{ url_for('static', filename='js/account_settings.js') }}"></script>
+{% endblock %}

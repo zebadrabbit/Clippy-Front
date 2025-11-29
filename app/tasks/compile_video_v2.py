@@ -1664,6 +1664,90 @@ def _apply_watermark_overlay(
     return output_path
 
 
+def _cleanup_old_compilations(
+    output_dir: str, keep_count: int = 3, project_id: int | None = None
+) -> None:
+    """Remove old compilation files, keeping only the most recent ones.
+
+    Args:
+        output_dir: Directory containing compilation files
+        keep_count: Number of most recent compilations to keep (default 3)
+        project_id: Optional project ID to also clean up database records
+    """
+    try:
+        # Get all video files in compilations directory
+        video_files = []
+        for filename in os.listdir(output_dir):
+            file_path = os.path.join(output_dir, filename)
+            if os.path.isfile(file_path) and filename.endswith(
+                (".mp4", ".webm", ".mov")
+            ):
+                mtime = os.path.getmtime(file_path)
+                video_files.append((mtime, file_path, filename))
+
+        # Sort by modification time (newest first)
+        video_files.sort(reverse=True, key=lambda x: x[0])
+
+        # Collect stems of videos we're keeping
+        kept_stems = set()
+        for _, _, filename in video_files[:keep_count]:
+            stem = os.path.splitext(filename)[0]
+            kept_stems.add(stem)
+
+        # Delete old compilations beyond keep_count
+        for _, file_path, filename in video_files[keep_count:]:
+            try:
+                os.remove(file_path)
+                logger.info(f"Deleted old compilation: {filename}")
+
+                # Also delete associated thumbnail if it exists
+                stem = os.path.splitext(filename)[0]
+                thumb_path = os.path.join(output_dir, f"{stem}.jpg")
+                if os.path.exists(thumb_path):
+                    os.remove(thumb_path)
+                    logger.info(f"Deleted old thumbnail: {stem}.jpg")
+            except Exception as e:
+                logger.warning(f"Failed to delete old compilation {filename}: {e}")
+
+        # Clean up orphaned thumbnails (thumbnails without corresponding videos)
+        for filename in os.listdir(output_dir):
+            if filename.endswith(".jpg"):
+                stem = os.path.splitext(filename)[0]
+                if stem not in kept_stems:
+                    orphan_path = os.path.join(output_dir, filename)
+                    try:
+                        os.remove(orphan_path)
+                        logger.info(f"Deleted orphaned thumbnail: {filename}")
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to delete orphaned thumbnail {filename}: {e}"
+                        )
+
+        # Clean up orphaned MediaFile records (compilations deleted from disk but still in DB)
+        if project_id:
+            try:
+                from app.models import MediaFile, MediaType, db
+
+                orphaned_records = MediaFile.query.filter_by(
+                    project_id=project_id, media_type=MediaType.COMPILATION
+                ).all()
+
+                for record in orphaned_records:
+                    if not os.path.exists(record.file_path):
+                        logger.info(
+                            f"Deleting orphaned MediaFile record: {record.filename}"
+                        )
+                        db.session.delete(record)
+                db.session.commit()
+            except Exception as e:
+                logger.warning(f"Failed to clean up orphaned MediaFile records: {e}")
+                db.session.rollback()
+
+    except Exception as e:
+        # Don't fail compilation if cleanup fails
+        logger.warning(f"Compilation cleanup failed: {e}")
+
+
 def _save_final_video_v2(temp_path: str, project_data: dict, user_id: int) -> str:
     """Save final video to persistent storage (API-based).
 
@@ -1688,6 +1772,11 @@ def _save_final_video_v2(temp_path: str, project_data: dict, user_id: int) -> st
         project_name = project_data.get("name", f"project_{project_data['id']}")
         output_dir = storage_lib.compilations_dir(user, project_name)
         os.makedirs(output_dir, exist_ok=True)
+
+        # Clean up old compilations (keep most recent 3)
+        _cleanup_old_compilations(
+            output_dir, keep_count=3, project_id=project_data.get("id")
+        )
 
         # Generate filename
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")

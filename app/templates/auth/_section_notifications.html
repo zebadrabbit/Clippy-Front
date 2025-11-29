@@ -1,0 +1,92 @@
+<div class="card mb-4" id="notifications">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-bell"></i>
+                        Notifications
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Email Notifications</h6>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input notification-pref" type="checkbox" id="emailCompilationComplete" data-field="email_compilation_complete">
+                                <label class="form-check-label" for="emailCompilationComplete">
+                                    Compilation completed
+                                </label>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input notification-pref" type="checkbox" id="emailCompilationFailed" data-field="email_compilation_failed">
+                                <label class="form-check-label" for="emailCompilationFailed">
+                                    Compilation failed
+                                </label>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input notification-pref" type="checkbox" id="emailTeamInvitation" data-field="email_team_invitation">
+                                <label class="form-check-label" for="emailTeamInvitation">
+                                    Team invitations
+                                </label>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input notification-pref" type="checkbox" id="emailMemberAdded" data-field="email_team_member_added">
+                                <label class="form-check-label" for="emailMemberAdded">
+                                    Team member added
+                                </label>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input notification-pref" type="checkbox" id="emailProjectShared" data-field="email_project_shared">
+                                <label class="form-check-label" for="emailProjectShared">
+                                    Project shared with team
+                                </label>
+                            </div>
+                            <div class="form-check mb-3">
+                                <input class="form-check-input notification-pref" type="checkbox" id="emailMention" data-field="email_mention">
+                                <label class="form-check-label" for="emailMention">
+                                    Mentions and replies
+                                </label>
+                            </div>
+
+                            <hr class="my-3">
+
+                            <h6>Email Digest</h6>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input notification-pref" type="checkbox" id="emailDigestEnabled" data-field="email_digest_enabled">
+                                <label class="form-check-label" for="emailDigestEnabled">
+                                    Enable daily/weekly digest emails
+                                </label>
+                            </div>
+                            <div id="digestSettings" style="display: none;">
+                                <div class="mb-2">
+                                    <label for="digestFrequency" class="form-label small">Frequency</label>
+                                    <select class="form-select form-select-sm notification-pref" id="digestFrequency" data-field="email_digest_frequency">
+                                        <option value="daily">Daily</option>
+                                        <option value="weekly">Weekly</option>
+                                    </select>
+                                </div>
+                                <div class="mb-2">
+                                    <label for="digestTime" class="form-label small">Time (24-hour format)</label>
+                                    <input type="time" class="form-control form-control-sm notification-pref" id="digestTime" data-field="email_digest_time">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>In-App Notifications</h6>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input notification-pref" type="checkbox" id="inappAllEnabled" data-field="inapp_all_enabled">
+                                <label class="form-check-label" for="inappAllEnabled">
+                                    Enable in-app notifications
+                                </label>
+                            </div>
+                            <small class="text-muted">
+                                In-app notifications appear in the notification bell at the top of the page.
+                            </small>
+                        </div>
+                    </div>
+                    <hr>
+                    <div class="d-flex justify-content-end">
+                        <button class="btn btn-primary" id="saveNotificationPrefs">
+                            <i class="bi bi-check-lg"></i> Save Notification Preferences
+                        </button>
+                    </div>
+                </div>
+            </div>

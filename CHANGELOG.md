@@ -9,6 +9,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.0] - 2025-11-29
+
+### Added
+- **Pricing System**
+  - Public pricing page at `/pricing` with tier comparison
+  - Monthly pricing field (`monthly_price_cents`) added to Tier model
+  - Pricing input in admin tier create/edit forms (accepts decimal values like 19.99)
+  - Support for Free ($0), Paid, and Custom (contact sales) tiers
+  - Database migration for pricing field
+
+- **Currency and Localization Settings**
+  - New system settings: `CURRENCY`, `LOCATION`, `TIMEZONE`, `SITE_NAME`
+  - Configurable in Admin Config at `/admin/config?section=general`
+  - Dynamic currency symbol display (USD: $, EUR: €, GBP: £)
+  - Pricing page adapts to configured currency
+
+- **Account Settings Refactor**
+  - Split monolithic account settings page into 7 dedicated routes:
+    - `/account/info` - Email & Username
+    - `/account/tier` - Subscription tier details
+    - `/account/security` - Password & 2FA
+    - `/account/privacy` - Privacy settings
+    - `/account/sessions` - Active sessions
+    - `/account/integrations` - Discord/Twitch connections
+    - `/account/notifications` - Email notifications
+    - `/account/danger` - Account deletion
+  - Replaced hash-based navigation (#security) with proper server-side routing
+  - Modular template structure (24 files: 1 base, 7 pages, 11 sections, 5 modals)
+  - Updated sidebar with proper route links
+
+- **Teams Navigation**
+  - Added "My Teams" link to account sidebar (separate from Admin Panel)
+  - Team management accessible at `/teams`
+
+### Changed
+- **Pricing Page Design**
+  - Modern card-based layout with gradient background
+  - Swapped tier name/price positions (price shown prominently, name below)
+  - Current tier highlighted with purple border and glow effect
+  - Hover effects with elevation and shadow
+  - Responsive grid (3 columns → 2 → 1)
+  - Dark theme with purple accents matching site design
+
+- **Profile Page**
+  - Centered profile image above Remove button
+  - Improved visual alignment
+
+- **Account Info Page**
+  - Removed duplicate "Account Information" heading
+  - Separated tier information to dedicated `/account/tier` page
+
+### Fixed
+- Template syntax error in `_section_tier.html` (missing closing tags)
+- All account settings forms now redirect to proper routes instead of hash URLs
+- Tier section extraction completed with all feature details
+
+---
+
 ## [1.2.1] - 2025-11-29
 
 ### Added

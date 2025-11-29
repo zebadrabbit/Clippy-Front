@@ -25,6 +25,11 @@
                   <label class="form-label">Description</label>
                   <textarea class="form-control" rows="2" name="description">{{ tier.description if tier else '' }}</textarea>
                 </div>
+                <div class="mb-3">
+                  <label class="form-label">Monthly Price (USD)</label>
+                  <input class="form-control" name="monthly_price" type="number" min="0" step="0.01" placeholder="e.g. 19.99" value="{% if tier and tier.monthly_price_cents is not none %}{{ '%.2f'|format(tier.monthly_price_cents / 100) }}{% endif %}">
+                  <div class="form-text">Leave blank for custom/contact pricing. Use 0 for free tier.</div>
+                </div>
                 <div class="row">
                   <div class="col-md-4 mb-3">
                     <label class="form-label">Max Output Resolution</label>

@@ -1,0 +1,22 @@
+{%extends "auth/_account_base.html" %}
+
+{% set active = 'integrations' %}
+
+{% block account_content %}
+<h3 class="mb-4">
+    <i class="bi bi-plug"></i>
+    Connected Services
+</h3>
+
+{% include 'auth/_section_integrations.html' %}
+
+
+{% include 'auth/_modal_connect_discord.html' %}
+{% include 'auth/_modal_connect_twitch.html' %}
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="{{ url_for('static', filename='js/utils.js') }}"></script>
+<script src="{{ url_for('static', filename='js/account_settings.js') }}"></script>
+{% endblock %}

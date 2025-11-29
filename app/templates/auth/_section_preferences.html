@@ -1,0 +1,55 @@
+<div class="card mb-4" id="preferences">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-sliders"></i>
+                        Preferences
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Video Processing Defaults</h6>
+                            <div class="mb-3">
+                                <label for="defaultResolution" class="form-label">Default Output Resolution</label>
+                                <select class="form-select" id="defaultResolution">
+                                    <option value="720p">720p HD</option>
+                                    <option value="1080p" selected>1080p Full HD</option>
+                                    <option value="1440p">1440p 2K</option>
+                                    <option value="2160p">2160p 4K</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label for="defaultFormat" class="form-label">Default Output Format</label>
+                                <select class="form-select" id="defaultFormat">
+                                    <option value="mp4" selected>MP4</option>
+                                    <option value="mov">MOV</option>
+                                    <option value="avi">AVI</option>
+                                    <option value="webm">WebM</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Interface Preferences</h6>
+                            <div class="mb-3">
+                                <label for="theme" class="form-label">Theme</label>
+                                <select class="form-select" id="theme">
+                                    <option value="light" selected>Light</option>
+                                    <option value="dark">Dark</option>
+                                    <option value="auto">Auto (System)</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label for="language" class="form-label">Language</label>
+                                <select class="form-select" id="language">
+                                    <option value="en" selected>English</option>
+                                    <option value="es">Español</option>
+                                    <option value="fr">Français</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-end">
+                        <button class="btn btn-primary">Save Preferences</button>
+                    </div>
+                </div>
+            </div>

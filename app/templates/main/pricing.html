@@ -1,0 +1,526 @@
+{% extends "base.html" %}
+
+{% block styles %}
+{{ super() }}
+<style>
+.pricing-section {
+    background: linear-gradient(135deg, #0d1117, #161b22);
+    padding: 80px 0;
+    min-height: 100vh;
+}
+
+.pricing-card {
+    border-radius: 15px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    background-color: var(--bs-card-bg, #161b22);
+    border: 1px solid var(--bs-border-color, #30363d);
+    padding: 40px 30px;
+    text-align: center;
+    transition: transform 0.3s, box-shadow 0.3s;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.pricing-card:hover {
+    transform: translateY(-10px);
+    box-shadow: 0 15px 40px rgba(111, 66, 193, 0.3);
+    border-color: var(--bs-primary, #6f42c1);
+}
+
+.pricing-card.current-plan {
+    border: 2px solid var(--bs-primary, #6f42c1);
+    box-shadow: 0 0 30px rgba(111, 66, 193, 0.5);
+}
+
+.pricing-card.current-plan .current-badge {
+    background-color: var(--bs-primary, #6f42c1);
+    color: white;
+    padding: 5px 15px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: bold;
+    margin-bottom: 15px;
+    display: inline-block;
+}
+
+.pricing-card h3 {
+    color: var(--bs-body-color, #e6edf3);
+    font-size: 1.5rem;
+    margin-bottom: 10px;
+    font-weight: 600;
+}
+
+.pricing-card .price {
+    font-size: 2.5rem;
+    margin: 10px 0 5px 0;
+    color: var(--bs-primary, #6f42c1);
+    font-weight: bold;
+}
+
+.pricing-card .price-label {
+    font-size: 0.9rem;
+    color: var(--color-muted, #adb5bd);
+    margin-bottom: 20px;
+}
+
+.pricing-card .description {
+    color: var(--color-muted, #adb5bd);
+    font-size: 0.95rem;
+    margin-bottom: 25px;
+    min-height: 40px;
+}
+
+.pricing-card ul {
+    list-style-type: none;
+    padding: 0;
+    margin: 25px 0;
+    text-align: left;
+    flex-grow: 1;
+}
+
+.pricing-card ul li {
+    margin-bottom: 15px;
+    color: var(--bs-body-color, #e6edf3);
+    padding-left: 25px;
+    position: relative;
+}
+
+.pricing-card ul li i {
+    position: absolute;
+    left: 0;
+    top: 2px;
+    color: var(--bs-primary, #6f42c1);
+}
+
+.pricing-card .btn {
+    margin-top: 20px;
+    padding: 12px 30px;
+    font-weight: 600;
+    border-radius: 8px;
+    transition: all 0.3s;
+}
+
+.pricing-card .btn-primary {
+    background-color: var(--bs-primary, #6f42c1);
+    border-color: var(--bs-primary, #6f42c1);
+}
+
+.pricing-card .btn-primary:hover {
+    background-color: color-mix(in srgb, var(--bs-primary, #6f42c1), #000000 15%);
+    border-color: color-mix(in srgb, var(--bs-primary, #6f42c1), #000000 15%);
+    transform: scale(1.05);
+}
+
+.pricing-card .btn-outline-primary {
+    color: var(--bs-primary, #6f42c1);
+    border-color: var(--bs-primary, #6f42c1);
+}
+
+.pricing-card .btn-outline-primary:hover {
+    background-color: var(--bs-primary, #6f42c1);
+    border-color: var(--bs-primary, #6f42c1);
+    color: white;
+}
+
+.pricing-card .btn-outline-secondary {
+    color: var(--color-muted, #adb5bd);
+    border-color: var(--bs-border-color, #30363d);
+}
+
+.pricing-card .btn-outline-secondary:hover {
+    background-color: var(--bs-border-color, #30363d);
+    border-color: var(--bs-border-color, #30363d);
+    color: white;
+}
+
+.pricing-header {
+    text-align: center;
+    margin-bottom: 60px;
+    color: var(--bs-body-color, #e6edf3);
+}
+
+.pricing-header h1 {
+    font-size: 3rem;
+    font-weight: bold;
+    margin-bottom: 15px;
+}
+
+.pricing-header h1 i {
+    color: var(--bs-primary, #6f42c1);
+}
+
+.pricing-header p {
+    font-size: 1.2rem;
+    color: var(--color-muted, #adb5bd);
+}
+
+.comparison-section {
+    margin-top: 80px;
+    padding-top: 60px;
+    border-top: 1px solid var(--bs-border-color, #30363d);
+}
+
+.comparison-section h3 {
+    color: var(--bs-body-color, #e6edf3);
+    margin-bottom: 30px;
+}
+
+.comparison-section h3 i {
+    color: var(--bs-primary, #6f42c1);
+}
+
+.table-dark {
+    background-color: var(--bs-card-bg, #161b22);
+    color: var(--bs-body-color, #e6edf3);
+}
+
+.table-dark th {
+    border-color: var(--bs-border-color, #30363d);
+    color: var(--bs-body-color, #e6edf3);
+}
+
+.table-dark td {
+    border-color: var(--bs-border-color, #30363d);
+}
+
+.table-dark .current-tier {
+    background-color: rgba(111, 66, 193, 0.15);
+}
+
+.table-dark .badge {
+    background-color: var(--bs-primary, #6f42c1);
+}
+
+.pricing-footer {
+    text-align: center;
+    margin-top: 60px;
+    padding-top: 40px;
+    border-top: 1px solid var(--bs-border-color, #30363d);
+}
+
+.pricing-footer p {
+    color: var(--color-muted, #adb5bd);
+}
+
+.pricing-footer a {
+    color: var(--bs-primary, #6f42c1);
+    text-decoration: none;
+}
+
+.pricing-footer a:hover {
+    color: color-mix(in srgb, var(--bs-primary, #6f42c1), #ffffff 20%);
+    text-decoration: underline;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="pricing-section">
+    <div class="container">
+        <div class="pricing-header">
+            <h1>
+                <i class="bi bi-star-fill"></i>
+                Pricing Plans
+            </h1>
+            <p>Choose the perfect plan for your video editing needs</p>
+        </div>
+
+        <!-- Pricing Cards -->
+        <div class="row g-4 mb-5">
+            {% for tier in tiers %}
+            <div class="col-lg-4 col-md-6">
+                <div class="pricing-card {% if current_tier and current_tier.id == tier.id %}current-plan{% endif %}">
+                    {% if current_tier and current_tier.id == tier.id %}
+                    <span class="current-badge">
+                        <i class="bi bi-check-circle"></i> Current Plan
+                    </span>
+                    {% endif %}
+
+                    <div class="price">
+                        {% if tier.monthly_price_cents is none %}
+                        Contact Sales
+                        {% elif tier.monthly_price_cents == 0 %}
+                        Free
+                        {% else %}
+                        {{ currency_symbol }}{{ "%.2f"|format(tier.monthly_price_cents / 100) }}
+                        {% endif %}
+                    </div>
+
+                    <h3>
+                        {{ tier.name }}
+                        {% if tier.is_unlimited %}
+                        <span class="badge bg-success ms-2">Unlimited</span>
+                        {% endif %}
+                    </h3>
+
+                    <div class="price-label">
+                        {% if tier.monthly_price_cents is none %}
+                        Custom enterprise pricing
+                        {% elif tier.monthly_price_cents == 0 %}
+                        Forever free
+                        {% else %}
+                        per month
+                        {% endif %}
+                    </div>
+
+                    {% if tier.description %}
+                    <div class="description">{{ tier.description }}</div>
+                    {% else %}
+                    <div class="description">&nbsp;</div>
+                    {% endif %}
+
+                    <ul>
+                        <li>
+                            <i class="bi bi-hdd-fill text-primary"></i>
+                            <strong>Storage:</strong>
+                            {% if tier.is_unlimited or tier.storage_limit_bytes is none %}
+                            Unlimited
+                            {% else %}
+                            {{ "%.0f"|format(tier.storage_limit_bytes / 1024 / 1024 / 1024) }} GB
+                            {% endif %}
+                        </li>
+
+                        <li>
+                            <i class="bi bi-clock-history text-primary"></i>
+                            <strong>Render Time:</strong>
+                            {% if tier.is_unlimited or tier.render_time_limit_seconds is none %}
+                            Unlimited
+                            {% else %}
+                            {{ (tier.render_time_limit_seconds / 60)|round(0)|int }} min/mo
+                            {% endif %}
+                        </li>
+
+                        <li>
+                            <i class="bi bi-display text-primary"></i>
+                            <strong>Max Resolution:</strong>
+                            {% if tier.max_output_resolution %}
+                            {{ tier.max_output_resolution }}
+                            {% else %}
+                            Unlimited
+                            {% endif %}
+                        </li>
+
+                        <li>
+                            <i class="bi bi-film text-primary"></i>
+                            <strong>Clips per Project:</strong>
+                            {% if tier.max_clips_per_project %}
+                            {{ tier.max_clips_per_project }}
+                            {% else %}
+                            Unlimited
+                            {% endif %}
+                        </li>
+
+                        <li>
+                            <i class="{% if tier.apply_watermark %}bi bi-droplet text-warning{% else %}bi bi-droplet-fill text-success{% endif %}"></i>
+                            <strong>Watermark:</strong>
+                            {% if tier.apply_watermark %}
+                            Applied
+                            {% else %}
+                            None
+                            {% endif %}
+                        </li>
+
+                        {% if tier.can_schedule_tasks %}
+                        <li>
+                            <i class="bi bi-calendar-event text-success"></i>
+                            <strong>Task Scheduling</strong>
+                            {% if tier.max_schedules_per_user %}
+                            ({{ tier.max_schedules_per_user }} max)
+                            {% endif %}
+                        </li>
+                        {% endif %}
+
+                        {% if tier.max_teams_owned %}
+                        <li>
+                            <i class="bi bi-people text-success"></i>
+                            <strong>Teams:</strong> {{ tier.max_teams_owned }}
+                            {% if tier.max_team_members %}
+                            ({{ tier.max_team_members }} members)
+                            {% endif %}
+                        </li>
+                        {% endif %}
+                    </ul>
+
+                    <!-- Action Button -->
+                    {% if current_user.is_authenticated %}
+                        {% if current_tier and current_tier.id == tier.id %}
+                            <button class="btn btn-outline-primary w-100" disabled>
+                                <i class="bi bi-check-circle"></i> Current Plan
+                            </button>
+                        {% else %}
+                            {% set tier_index = tiers.index(tier) %}
+                            {% set current_index = tiers.index(current_tier) if current_tier else -1 %}
+
+                            {% if tier.monthly_price_cents is none %}
+                                <a href="mailto:support@clippy.example.com?subject=Custom%20Tier%20Inquiry" class="btn btn-outline-primary w-100">
+                                    <i class="bi bi-envelope"></i> Contact Sales
+                                </a>
+                            {% elif tier_index > current_index %}
+                                <form method="POST" action="{{ url_for('main.upgrade_tier', tier_id=tier.id) }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="btn btn-primary w-100">
+                                        <i class="bi bi-arrow-up-circle"></i> Upgrade
+                                    </button>
+                                </form>
+                            {% else %}
+                                <form method="POST" action="{{ url_for('main.upgrade_tier', tier_id=tier.id) }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="btn btn-outline-secondary w-100">
+                                        <i class="bi bi-arrow-down-circle"></i> Downgrade
+                                    </button>
+                                </form>
+                            {% endif %}
+                        {% endif %}
+                    {% else %}
+                        <a href="{{ url_for('auth_bp.login') }}" class="btn btn-primary w-100">
+                            <i class="bi bi-box-arrow-in-right"></i> Sign In to Choose
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+            </div>
+
+        <!-- Comparison Matrix -->
+        <div class="comparison-section">
+            <h3 class="text-center">
+                <i class="bi bi-table"></i>
+                Detailed Feature Comparison
+            </h3>
+            <div class="table-responsive">
+                <table class="table table-dark table-hover">
+                    <thead>
+                        <tr>
+                            <th scope="col">Feature</th>
+                            {% for tier in tiers %}
+                            <th scope="col" class="text-center {% if current_tier and current_tier.id == tier.id %}current-tier{% endif %}">
+                                {{ tier.name }}
+                                {% if current_tier and current_tier.id == tier.id %}
+                                <br><small class="badge bg-primary">Current</small>
+                                {% endif %}
+                            </th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Monthly Price</strong></td>
+                            {% for tier in tiers %}
+                            <td class="text-center {% if current_tier and current_tier.id == tier.id %}current-tier{% endif %}">
+                                {% if tier.monthly_price_cents is none %}
+                                Custom
+                                {% elif tier.monthly_price_cents == 0 %}
+                                Free
+                                {% else %}
+                                {{ currency_symbol }}{{ "%.2f"|format(tier.monthly_price_cents / 100) }}
+                                {% endif %}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        <tr>
+                            <td><strong>Storage Limit</strong></td>
+                            {% for tier in tiers %}
+                            <td class="text-center {% if current_tier and current_tier.id == tier.id %}current-tier{% endif %}">
+                                {% if tier.is_unlimited or tier.storage_limit_bytes is none %}
+                                <i class="bi bi-infinity text-success"></i>
+                                {% else %}
+                                {{ "%.0f"|format(tier.storage_limit_bytes / 1024 / 1024 / 1024) }} GB
+                                {% endif %}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        <tr>
+                            <td><strong>Monthly Render Time</strong></td>
+                            {% for tier in tiers %}
+                            <td class="text-center {% if current_tier and current_tier.id == tier.id %}current-tier{% endif %}">
+                                {% if tier.is_unlimited or tier.render_time_limit_seconds is none %}
+                                <i class="bi bi-infinity text-success"></i>
+                                {% else %}
+                                {{ (tier.render_time_limit_seconds / 60)|round(0)|int }} min
+                                {% endif %}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        <tr>
+                            <td><strong>Max Resolution</strong></td>
+                            {% for tier in tiers %}
+                            <td class="text-center {% if current_tier and current_tier.id == tier.id %}current-tier{% endif %}">
+                                {% if tier.max_output_resolution %}
+                                {{ tier.max_output_resolution }}
+                                {% else %}
+                                <i class="bi bi-infinity text-success"></i>
+                                {% endif %}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        <tr>
+                            <td><strong>Clips per Project</strong></td>
+                            {% for tier in tiers %}
+                            <td class="text-center {% if current_tier and current_tier.id == tier.id %}current-tier{% endif %}">
+                                {% if tier.max_clips_per_project %}
+                                {{ tier.max_clips_per_project }}
+                                {% else %}
+                                <i class="bi bi-infinity text-success"></i>
+                                {% endif %}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        <tr>
+                            <td><strong>Watermark</strong></td>
+                            {% for tier in tiers %}
+                            <td class="text-center {% if current_tier and current_tier.id == tier.id %}current-tier{% endif %}">
+                                {% if tier.apply_watermark %}
+                                <i class="bi bi-check-circle text-warning"></i>
+                                {% else %}
+                                <i class="bi bi-x-circle text-success"></i>
+                                {% endif %}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        <tr>
+                            <td><strong>Task Scheduling</strong></td>
+                            {% for tier in tiers %}
+                            <td class="text-center {% if current_tier and current_tier.id == tier.id %}current-tier{% endif %}">
+                                {% if tier.can_schedule_tasks %}
+                                <i class="bi bi-check-circle text-success"></i>
+                                {% else %}
+                                <i class="bi bi-x-circle text-muted"></i>
+                                {% endif %}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        <tr>
+                            <td><strong>Team Collaboration</strong></td>
+                            {% for tier in tiers %}
+                            <td class="text-center {% if current_tier and current_tier.id == tier.id %}current-tier{% endif %}">
+                                {% if tier.max_teams_owned %}
+                                <i class="bi bi-check-circle text-success"></i>
+                                {% elif tier.max_teams_owned is none %}
+                                <i class="bi bi-infinity text-success"></i>
+                                {% else %}
+                                <i class="bi bi-x-circle text-muted"></i>
+                                {% endif %}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="pricing-footer">
+            <p>
+                Need a custom plan? <a href="mailto:support@clippy.example.com">Contact us</a> for enterprise pricing.
+            </p>
+            <p>
+                <small>
+                    <i class="bi bi-info-circle"></i>
+                    All prices are in {{ currency }}. Payment processing via PayPal (integration coming soon).
+                </small>
+            </p>
+        </div>
+    </div>
+</section>
+{% endblock %}

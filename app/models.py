@@ -1031,6 +1031,14 @@ class Tier(db.Model):
     name = db.Column(db.String(100), unique=True, nullable=False, index=True)
     description = db.Column(db.Text)
 
+    # Pricing
+    monthly_price_cents = db.Column(
+        db.Integer,
+        nullable=True,
+        default=0,
+        doc="Monthly price in cents (USD). 0 for free tier, None for custom pricing",
+    )
+
     # Quotas
     storage_limit_bytes = db.Column(db.BigInteger, nullable=True)
     render_time_limit_seconds = db.Column(db.BigInteger, nullable=True)

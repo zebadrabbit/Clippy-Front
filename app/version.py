@@ -2,11 +2,12 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "1.2.1"
-__version_info__ = (1, 2, 1)
+__version__ = "1.3.0"
+__version_info__ = (1, 3, 0)
 
 # Version history tracking
 VERSION_HISTORY = {
+    "1.3.0": "Pricing system, account settings refactor, tier pricing UI, currency/location/timezone config, profile image centering",
     "1.2.1": "Portrait zoom expansion (100-180%), preview mode zoom support, toast auto-dismiss (10s)",
     "1.2.0": "Duration-based clip fetching, ingest code removal, bug fixes",
     "0.1.0": "Initial Flask setup with Celery and basic API",

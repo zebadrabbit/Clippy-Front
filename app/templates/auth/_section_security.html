@@ -1,0 +1,35 @@
+<div class="card mb-4" id="security">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-shield-check"></i>
+                        Security
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Password</h6>
+                            <p class="text-muted small">
+                                Last changed:
+                                {% if current_user.password_changed_at %}
+                                    {{ current_user.password_changed_at.strftime('%B %d, %Y') }}
+                                {% else %}
+                                    Never
+                                {% endif %}
+                            </p>
+                            <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#changePasswordModal">
+                                <i class="bi bi-key"></i> Change Password
+                            </button>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Two-Factor Authentication</h6>
+                            <p class="text-muted small">
+                                <i class="bi bi-x-circle text-danger"></i> Not enabled
+                            </p>
+                            <button class="btn btn-outline-secondary btn-sm" disabled>
+                                <i class="bi bi-shield-plus"></i> Enable 2FA (Coming Soon)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>

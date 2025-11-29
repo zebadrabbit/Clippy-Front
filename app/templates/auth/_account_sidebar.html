@@ -32,8 +32,11 @@
     <a href="{{ url_for('main.profile') }}" class="list-group-item list-group-item-action {% if active=='profile' %}active{% endif %}">
       <i class="bi bi-info-circle"></i> Personal Info
     </a>
-    <a href="{{ url_for('main.account_settings') }}#account" class="list-group-item list-group-item-action {% if active=='account' %}active{% endif %}">
+    <a href="{{ url_for('main.account_info') }}" class="list-group-item list-group-item-action {% if active=='account' %}active{% endif %}">
       <i class="bi bi-envelope"></i> Email & Username
+    </a>
+    <a href="{{ url_for('main.account_tier') }}" class="list-group-item list-group-item-action {% if active=='tier' %}active{% endif %}">
+      <i class="bi bi-star"></i> Subscription Tier
     </a>
   </div>
 </div>
@@ -47,10 +50,7 @@
     </h6>
   </div>
   <div class="list-group list-group-flush">
-    <a href="{{ url_for('main.account_settings') }}" class="list-group-item list-group-item-action {% if active=='settings' %}active{% endif %}">
-      <i class="bi bi-sliders"></i> Preferences
-    </a>
-    <a href="{{ url_for('main.account_settings') }}#notifications" class="list-group-item list-group-item-action {% if active=='notifications' %}active{% endif %}">
+    <a href="{{ url_for('main.account_notifications') }}" class="list-group-item list-group-item-action {% if active=='notifications' %}active{% endif %}">
       <i class="bi bi-bell"></i> Notifications
     </a>
   </div>
@@ -65,13 +65,13 @@
     </h6>
   </div>
   <div class="list-group list-group-flush">
-    <a href="{{ url_for('main.account_settings') }}#security" class="list-group-item list-group-item-action {% if active=='security' %}active{% endif %}">
+    <a href="{{ url_for('main.account_security') }}" class="list-group-item list-group-item-action {% if active=='security' %}active{% endif %}">
       <i class="bi bi-key"></i> Password & Auth
     </a>
-    <a href="{{ url_for('main.account_settings') }}#privacy" class="list-group-item list-group-item-action {% if active=='privacy' %}active{% endif %}">
+    <a href="{{ url_for('main.account_privacy') }}" class="list-group-item list-group-item-action {% if active=='privacy' %}active{% endif %}">
       <i class="bi bi-eye-slash"></i> Privacy
     </a>
-    <a href="{{ url_for('main.account_settings') }}#sessions" class="list-group-item list-group-item-action {% if active=='sessions' %}active{% endif %}">
+    <a href="{{ url_for('main.account_sessions') }}" class="list-group-item list-group-item-action {% if active=='sessions' %}active{% endif %}">
       <i class="bi bi-clock-history"></i> Active Sessions
     </a>
   </div>
@@ -86,7 +86,7 @@
     </h6>
   </div>
   <div class="list-group list-group-flush">
-    <a href="{{ url_for('main.account_settings') }}#integrations" class="list-group-item list-group-item-action {% if active=='integrations' %}active{% endif %}">
+    <a href="{{ url_for('main.account_integrations') }}" class="list-group-item list-group-item-action {% if active=='integrations' %}active{% endif %}">
       <i class="bi bi-plug"></i> Connected Services
     </a>
   </div>
@@ -102,8 +102,8 @@
     </h6>
   </div>
   <div class="list-group list-group-flush">
-    <a href="/admin" class="list-group-item list-group-item-action">
-      <i class="bi bi-person-badge"></i> Admin Panel
+    <a href="{{ url_for('main.teams_list') }}" class="list-group-item list-group-item-action">
+      <i class="bi bi-people"></i> My Teams
     </a>
   </div>
 </div>
@@ -118,7 +118,7 @@
     </h6>
   </div>
   <div class="list-group list-group-flush">
-    <a href="{{ url_for('main.account_settings') }}#danger" class="list-group-item list-group-item-action text-danger {% if active=='danger' %}active{% endif %}">
+    <a href="{{ url_for('main.account_danger') }}" class="list-group-item list-group-item-action text-danger {% if active=='danger' %}active{% endif %}">
       <i class="bi bi-trash"></i> Delete Account
     </a>
   </div>

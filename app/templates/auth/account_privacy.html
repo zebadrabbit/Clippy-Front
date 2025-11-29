@@ -1,0 +1,12 @@
+{% extends "auth/_account_base.html" %}
+
+{% set active = 'privacy' %}
+
+{% block account_content %}
+<h3 class="mb-4">
+    <i class="bi bi-eye-slash"></i>
+    Privacy
+</h3>
+
+{% include 'auth/_section_privacy.html' %}
+{% endblock %}

@@ -1,0 +1,13 @@
+{%extends "auth/_account_base.html" %}
+
+{% set active = 'sessions' %}
+
+{% block account_content %}
+<h3 class="mb-4">
+    <i class="bi bi-clock-history"></i>
+    Active Sessions
+</h3>
+
+{% include 'auth/_section_sessions.html' %}
+
+{% endblock %}

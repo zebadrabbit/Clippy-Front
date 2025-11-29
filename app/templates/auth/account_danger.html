@@ -1,0 +1,22 @@
+{%extends "auth/_account_base.html" %}
+
+{% set active = 'danger' %}
+
+{% block account_content %}
+<h3 class="mb-4">
+    <i class="bi bi-exclamation-triangle"></i>
+    Danger Zone
+</h3>
+
+{% include 'auth/_section_danger.html' %}
+
+
+{% include 'auth/_modal_delete_account.html' %}
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="{{ url_for('static', filename='js/utils.js') }}"></script>
+<script id="account-settings-config" type="application/json">{ "expectedUsername": "{{ current_user.username }}" }</script>
+<script src="{{ url_for('static', filename='js/account_settings.js') }}"></script>
+{% endblock %}

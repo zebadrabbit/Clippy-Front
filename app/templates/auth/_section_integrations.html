@@ -1,0 +1,110 @@
+<div class="card mb-4" id="integrations">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-link-45deg"></i>
+                        Connected Services
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('main.profile') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6 class="border-bottom pb-2 mb-3">
+                                    <i class="bi bi-discord"></i> Discord Integration
+                                </h6>
+
+                                <!-- Discord User ID -->
+                                <div class="mb-3">
+                                    <label class="form-label" for="discord_user_id">Discord User ID</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="bi bi-discord"></i>
+                                        </span>
+                                        <input type="text" name="discord_user_id" id="discord_user_id" class="form-control" value="{{ current_user.discord_user_id or '' }}">
+                                    </div>
+                                    {% if current_user.discord_user_id %}
+                                        <div class="form-text text-success">
+                                            <i class="bi bi-check-circle"></i> Discord account linked
+                                        </div>
+                                    {% else %}
+                                        <div class="form-text">
+                                            Link your Discord account to enable bot integration
+                                        </div>
+                                    {% endif %}
+                                </div>
+
+                                <!-- Discord Channel ID -->
+                                <div class="mb-3">
+                                    <label class="form-label" for="discord_channel_id">Discord Channel ID</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="bi bi-hash"></i>
+                                        </span>
+                                        <input type="text" name="discord_channel_id" id="discord_channel_id" class="form-control" value="{{ current_user.discord_channel_id or '' }}" placeholder="Your Discord channel ID">
+                                    </div>
+                                    {% if current_user.discord_channel_id %}
+                                        <div class="form-text text-success">
+                                            <i class="bi bi-link-45deg"></i> Channel configured
+                                        </div>
+                                    {% else %}
+                                        <div class="form-text text-warning">
+                                            <i class="bi bi-link-45deg-broken"></i> No channel configured yet
+                                        </div>
+                                    {% endif %}
+                                    <div class="form-text mt-2">
+                                        <strong><i class="bi bi-1-circle"></i> First, add the bot to your server:</strong>
+                                        <div class="mt-1">
+                                            <a href="https://discord.com/oauth2/authorize?client_id=837480234043179058&permissions=65536&scope=bot" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary">
+                                                <i class="bi bi-discord me-1"></i>Invite Bot to Discord
+                                                <i class="bi bi-box-arrow-up-right ms-1"></i>
+                                            </a>
+                                            <small class="text-muted d-block mt-1">Grant "Read Message History" permission</small>
+                                        </div>
+                                    </div>
+                                    <div class="form-text mt-2">
+                                        <strong><i class="bi bi-2-circle"></i> Then get your Channel ID:</strong>
+                                        <ol class="mb-0 mt-1">
+                                            <li>Enable Developer Mode in Discord (User Settings → Advanced → Developer Mode)</li>
+                                            <li>Right-click on your channel and select "Copy Channel ID"</li>
+                                            <li>Paste it here</li>
+                                        </ol>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <h6 class="border-bottom pb-2 mb-3">
+                                    <i class="bi bi-twitch"></i> Twitch Integration
+                                </h6>
+
+                                <!-- Twitch Username -->
+                                <div class="mb-3">
+                                    <label class="form-label" for="twitch_username">Twitch Username</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="bi bi-twitch"></i>
+                                        </span>
+                                        <input type="text" name="twitch_username" id="twitch_username" class="form-control" value="{{ current_user.twitch_username or '' }}">
+                                    </div>
+                                    {% if current_user.twitch_username %}
+                                        <div class="form-text text-success">
+                                            <i class="bi bi-check-circle"></i> Twitch account linked
+                                        </div>
+                                    {% else %}
+                                        <div class="form-text">
+                                            Link your Twitch account to enable clip collection
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <div class="d-flex justify-content-end mt-3">
+                            <button type="submit" class="btn btn-primary">Update Integrations</button>
+                        </div>
+                    </form>
+                </div>
+            </div>

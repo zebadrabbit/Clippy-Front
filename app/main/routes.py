@@ -334,6 +334,13 @@ def project_details_by_public(public_id):
         .first()
     )
 
+    # Get all compilation history (newest first)
+    all_compilations = (
+        project.media_files.filter_by(media_type=MediaType.COMPILATION)
+        .order_by(MediaFile.uploaded_at.desc())
+        .all()
+    )
+
     # If we have a recent successful compile job with a used clip subset, prefer showing only those clips
     try:
         last_job = (
@@ -384,6 +391,7 @@ def project_details_by_public(public_id):
         transitions=transitions,
         download_url=download_url,
         compiled_media=compiled_media,
+        all_compilations=all_compilations,
     )
 
 
@@ -459,6 +467,12 @@ def project_details(project_id):
         .order_by(MediaFile.uploaded_at.desc())
         .first()
     )
+    # Get all compilation history (newest first)
+    all_compilations = (
+        project.media_files.filter_by(media_type=MediaType.COMPILATION)
+        .order_by(MediaFile.uploaded_at.desc())
+        .all()
+    )
     # Prefer showing only the clips used in the latest successful compile, if available
     try:
         last_job = (
@@ -498,6 +512,7 @@ def project_details(project_id):
         transitions=transitions,
         download_url=download_url,
         compiled_media=compiled_media,
+        all_compilations=all_compilations,
     )
 
 
@@ -2620,16 +2635,139 @@ def delete_account():
 @main_bp.route("/account-settings")
 @login_required
 def account_settings():
-    """
-    Display account settings page.
+    """Redirect to account info (default account settings page)."""
+    return redirect(url_for("main.account_info"))
 
-    Shows various account management options including password change,
-    external service connections, and account deletion.
 
-    Returns:
-        Response: Rendered account settings template
-    """
-    return render_template("auth/account_settings.html", title="Account Settings")
+@main_bp.route("/account/info")
+@login_required
+def account_info():
+    """Display account information (email, username)."""
+    return render_template("auth/account_info.html", title="Account Information")
+
+
+@main_bp.route("/account/tier")
+@login_required
+def account_tier():
+    """Display subscription tier and limits."""
+    return render_template("auth/account_tier.html", title="Subscription Tier")
+
+
+@main_bp.route("/account/security")
+@login_required
+def account_security():
+    """Display security settings (password, 2FA, etc)."""
+    return render_template("auth/account_security.html", title="Security")
+
+
+@main_bp.route("/account/privacy")
+@login_required
+def account_privacy():
+    """Display privacy settings."""
+    return render_template("auth/account_privacy.html", title="Privacy")
+
+
+@main_bp.route("/account/sessions")
+@login_required
+def account_sessions():
+    """Display active sessions."""
+    return render_template("auth/account_sessions.html", title="Active Sessions")
+
+
+@main_bp.route("/account/integrations")
+@login_required
+def account_integrations():
+    """Display connected services and integrations."""
+    return render_template("auth/account_integrations.html", title="Integrations")
+
+
+@main_bp.route("/account/notifications")
+@login_required
+def account_notifications():
+    """Display notification preferences."""
+    return render_template(
+        "auth/account_notifications.html", title="Notification Settings"
+    )
+
+
+@main_bp.route("/account/danger")
+@login_required
+def account_danger():
+    """Display danger zone (account deletion)."""
+    return render_template("auth/account_danger.html", title="Danger Zone")
+
+
+@main_bp.route("/pricing")
+def pricing():
+    """Display tier pricing and comparison."""
+    from sqlalchemy import select
+
+    from app.models import Tier
+
+    # Get all active tiers ordered by price
+    tiers = (
+        db.session.execute(
+            select(Tier)
+            .where(Tier.is_active.is_(True))
+            .order_by(Tier.monthly_price_cents.asc().nulls_last())
+        )
+        .scalars()
+        .all()
+    )
+
+    current_tier = current_user.tier if current_user.is_authenticated else None
+
+    # Get currency from system settings
+    currency = current_app.config.get("CURRENCY", "USD")
+    currency_symbol = {"USD": "$", "EUR": "€", "GBP": "£"}.get(currency, "$")
+
+    return render_template(
+        "main/pricing.html",
+        title="Pricing",
+        tiers=tiers,
+        current_tier=current_tier,
+        currency=currency,
+        currency_symbol=currency_symbol,
+    )
+
+
+@main_bp.route("/upgrade-tier/<int:tier_id>", methods=["POST"])
+@login_required
+def upgrade_tier(tier_id):
+    """Handle tier upgrade request (payment stub)."""
+    from sqlalchemy import select
+
+    from app.models import Tier
+
+    new_tier = db.session.execute(
+        select(Tier).where(Tier.id == tier_id)
+    ).scalar_one_or_none()
+
+    if not new_tier:
+        flash("Invalid tier selected.", "danger")
+        return redirect(url_for("main.pricing"))
+
+    if not new_tier.is_active:
+        flash("This tier is not currently available.", "danger")
+        return redirect(url_for("main.pricing"))
+
+    # Payment stub - in production, integrate with PayPal/Stripe here
+    # For now, just update the tier directly
+    flash(
+        f"Payment processing stub: Would charge ${new_tier.monthly_price_cents / 100:.2f}/month for {new_tier.name} tier.",
+        "info",
+    )
+    flash(
+        "In production, this would redirect to PayPal/Stripe payment page.",
+        "warning",
+    )
+
+    # Simulate successful payment - update user tier
+    current_user.tier_id = tier_id
+    db.session.commit()
+
+    flash(f"Successfully upgraded to {new_tier.name} tier!", "success")
+    return redirect(url_for("main.account_tier"))
 
 
 @main_bp.route("/change-password", methods=["POST"])
@@ -2643,13 +2781,13 @@ def change_password():
     # Basic validations
     if not current_user.check_password(current_pw):
         flash("Current password is incorrect.", "danger")
-        return redirect(url_for("main.account_settings"))
+        return redirect(url_for("main.account_security"))
     if not new_pw or len(new_pw) < 8:
         flash("New password must be at least 8 characters.", "warning")
-        return redirect(url_for("main.account_settings"))
+        return redirect(url_for("main.account_security"))
     if new_pw != confirm_pw:
         flash("New password and confirmation do not match.", "warning")
-        return redirect(url_for("main.account_settings"))
+        return redirect(url_for("main.account_security"))
 
     try:
         current_user.set_password(new_pw)
@@ -2682,7 +2820,7 @@ def change_password():
         )
         flash("Failed to change password. Please try again.", "danger")
 
-    return redirect(url_for("main.account_settings"))
+    return redirect(url_for("main.account_security"))
 
 
 @main_bp.route("/connect/discord", methods=["POST"])
@@ -2696,7 +2834,7 @@ def connect_discord():
     discord_id = (request.form.get("discord_user_id") or "").strip()
     if not discord_id:
         flash("Please provide a Discord User ID.", "warning")
-        return redirect(url_for("main.account_settings"))
+        return redirect(url_for("main.account_integrations"))
     try:
         current_user.discord_user_id = discord_id
         db.session.commit()
@@ -2707,7 +2845,7 @@ def connect_discord():
             f"Discord connect failed for user {current_user.id}: {e}"
         )
         flash("Failed to connect Discord.", "danger")
-    return redirect(url_for("main.account_settings"))
+    return redirect(url_for("main.account_integrations"))
 
 
 @main_bp.route("/disconnect/discord", methods=["POST"])
@@ -2724,7 +2862,7 @@ def disconnect_discord():
             f"Discord disconnect failed for user {current_user.id}: {e}"
         )
         flash("Failed to disconnect Discord.", "danger")
-    return redirect(url_for("main.account_settings"))
+    return redirect(url_for("main.account_integrations"))
 
 
 @main_bp.route("/connect/twitch", methods=["POST"])
@@ -2737,7 +2875,7 @@ def connect_twitch():
     twitch_name = (request.form.get("twitch_username") or "").strip()
     if not twitch_name:
         flash("Please provide a Twitch username.", "warning")
-        return redirect(url_for("main.account_settings"))
+        return redirect(url_for("main.account_integrations"))
     try:
         current_user.twitch_username = twitch_name
         db.session.commit()
@@ -2748,7 +2886,7 @@ def connect_twitch():
             f"Twitch connect failed for user {current_user.id}: {e}"
         )
         flash("Failed to connect Twitch.", "danger")
-    return redirect(url_for("main.account_settings"))
+    return redirect(url_for("main.account_integrations"))
 
 
 @main_bp.route("/disconnect/twitch", methods=["POST"])
@@ -2765,7 +2903,7 @@ def disconnect_twitch():
             f"Twitch disconnect failed for user {current_user.id}: {e}"
         )
         flash("Failed to disconnect Twitch.", "danger")
-    return redirect(url_for("main.account_settings"))
+    return redirect(url_for("main.account_integrations"))
 
 
 @main_bp.route("/profile/image", methods=["GET"])

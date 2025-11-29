@@ -1244,6 +1244,74 @@ def worker_upload_preview(project_id: int):
         return jsonify({"error": str(e)}), 500
 
 
+def _cleanup_old_compilations(
+    output_dir: str, keep_count: int = 3, project_id: int | None = None
+) -> None:
+    """Remove old compilation files, keeping only the most recent ones.
+
+    Args:
+        output_dir: Directory containing compilation files
+        keep_count: Number of most recent compilations to keep (default 3)
+        project_id: Optional project ID to also clean up database records
+    """
+    try:
+        # Get all video files in compilations directory
+        video_files = []
+        for filename in os.listdir(output_dir):
+            file_path = os.path.join(output_dir, filename)
+            if os.path.isfile(file_path) and filename.endswith(
+                (".mp4", ".webm", ".mov")
+            ):
+                mtime = os.path.getmtime(file_path)
+                video_files.append((mtime, file_path, filename))
+
+        # Sort by modification time (newest first)
+        video_files.sort(reverse=True, key=lambda x: x[0])
+
+        # Collect stems of videos we're keeping
+        kept_stems = set()
+        for _, _, filename in video_files[:keep_count]:
+            stem = os.path.splitext(filename)[0]
+            kept_stems.add(stem)
+
+        # Delete old compilations beyond keep_count
+        for _, file_path, filename in video_files[keep_count:]:
+            try:
+                os.remove(file_path)
+                current_app.logger.info(f"Deleted old compilation: {filename}")
+
+                # Also delete associated thumbnail if it exists
+                stem = os.path.splitext(filename)[0]
+                thumb_path = os.path.join(output_dir, f"{stem}.jpg")
+                if os.path.exists(thumb_path):
+                    os.remove(thumb_path)
+                    current_app.logger.info(f"Deleted old thumbnail: {stem}.jpg")
+            except Exception as e:
+                current_app.logger.warning(
+                    f"Failed to delete old compilation {filename}: {e}"
+                )
+
+        # Clean up orphaned thumbnails (thumbnails without corresponding videos)
+        for filename in os.listdir(output_dir):
+            if filename.endswith(".jpg"):
+                stem = os.path.splitext(filename)[0]
+                if stem not in kept_stems:
+                    orphan_path = os.path.join(output_dir, filename)
+                    try:
+                        os.remove(orphan_path)
+                        current_app.logger.info(
+                            f"Deleted orphaned thumbnail: {filename}"
+                        )
+                    except Exception as e:
+                        current_app.logger.warning(
+                            f"Failed to delete orphaned thumbnail {filename}: {e}"
+                        )
+
+    except Exception as e:
+        # Don't fail compilation if cleanup fails
+        current_app.logger.warning(f"Compilation cleanup failed: {e}")
+
+
 @api_bp.route("/worker/projects/<int:project_id>/compilation/upload", methods=["POST"])
 @require_worker_key
 def worker_upload_compilation(project_id: int):
@@ -1290,6 +1358,9 @@ def worker_upload_compilation(project_id: int):
 
         compilations_dir = get_compilations_dir(project.owner, project.name)
         os.makedirs(compilations_dir, exist_ok=True)
+
+        # Clean up old compilations (keep most recent 3)
+        _cleanup_old_compilations(compilations_dir, keep_count=3, project_id=project.id)
 
         # Use filename from metadata or generate one
         video_filename = metadata.get("filename") or f"compilation_{project_id}.mp4"

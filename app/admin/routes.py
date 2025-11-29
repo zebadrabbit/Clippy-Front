@@ -387,9 +387,19 @@ def tier_create():
                 except Exception:
                     return None
 
+            # Handle pricing (dollars to cents)
+            monthly_price = request.form.get("monthly_price")
+            monthly_price_cents = None
+            if monthly_price is not None and str(monthly_price).strip() != "":
+                try:
+                    monthly_price_cents = int(float(monthly_price) * 100)
+                except Exception:
+                    monthly_price_cents = None
+
             tier = Tier(
                 name=name,
                 description=desc,
+                monthly_price_cents=monthly_price_cents,
                 max_output_resolution=max_res_label,
                 max_fps=_to_int_or_none(max_fps),
                 max_clips_per_project=_to_int_or_none(max_clips),
@@ -478,6 +488,16 @@ def tier_edit(tier_id: int):
             tier.max_clips_per_project = _to_int_or_none(
                 request.form.get("max_clips_per_project")
             )
+
+            # Handle pricing (dollars to cents)
+            monthly_price = request.form.get("monthly_price")
+            if monthly_price is not None and str(monthly_price).strip() != "":
+                try:
+                    tier.monthly_price_cents = int(float(monthly_price) * 100)
+                except Exception:
+                    pass  # Keep existing value on error
+            elif monthly_price == "":
+                tier.monthly_price_cents = None
 
             # Update storage from MB if present; fallback to legacy bytes field
             def _mb_to_bytes(v):
@@ -1050,6 +1070,18 @@ def system_config():
     section = (request.args.get("section") or "").strip().lower()
     base_groups = {
         "General": [
+            {"key": "SITE_NAME", "type": "str", "label": "Site Name"},
+            {
+                "key": "CURRENCY",
+                "type": "str",
+                "label": "Currency Code (USD, EUR, GBP, etc.)",
+            },
+            {"key": "LOCATION", "type": "str", "label": "Default Location/Region"},
+            {
+                "key": "TIMEZONE",
+                "type": "str",
+                "label": "Server Timezone (e.g., America/New_York)",
+            },
             {"key": "OUTPUT_VIDEO_QUALITY", "type": "str", "label": "Output Quality"},
             {"key": "USE_GPU_QUEUE", "type": "bool", "label": "Prefer GPU Queue"},
             {

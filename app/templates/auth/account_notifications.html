@@ -1,0 +1,20 @@
+{%extends "auth/_account_base.html" %}
+
+{% set active = 'notifications' %}
+
+{% block account_content %}
+<h3 class="mb-4">
+    <i class="bi bi-bell"></i>
+    Notification Settings
+</h3>
+
+{% include 'auth/_section_notifications.html' %}
+{% include 'auth/_section_preferences.html' %}
+
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="{{ url_for('static', filename='js/utils.js') }}"></script>
+<script src="{{ url_for('static', filename='js/account_settings.js') }}"></script>
+{% endblock %}

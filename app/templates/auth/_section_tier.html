@@ -1,0 +1,172 @@
+<div class="card mb-4" id="tier">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-star"></i>
+                        Subscription Tier
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if current_user.tier %}
+                        <div class="row mb-3">
+                            <div class="col-md-12">
+                                <h4 class="mb-1">
+                                    {{ current_user.tier.name }}
+                                    {% if current_user.tier.is_unlimited %}
+                                        <span class="badge bg-success">Unlimited</span>
+                                    {% endif %}
+                                </h4>
+                                {% if current_user.tier.description %}
+                                    <p class="text-muted">{{ current_user.tier.description }}</p>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <hr>
+
+                        <h6 class="mb-3">Tier Benefits & Limits</h6>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <div class="d-flex align-items-start">
+                                    <i class="bi bi-hdd text-primary me-2 mt-1"></i>
+                                    <div>
+                                        <strong>Storage Limit</strong>
+                                        <p class="mb-0 text-muted">
+                                            {% if current_user.tier.is_unlimited or current_user.tier.storage_limit_bytes is none %}
+                                                Unlimited
+                                            {% else %}
+                                                {{ (current_user.tier.storage_limit_bytes / 1024 / 1024 / 1024) | round(2) }} GB
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <div class="d-flex align-items-start">
+                                    <i class="bi bi-clock-history text-primary me-2 mt-1"></i>
+                                    <div>
+                                        <strong>Monthly Render Time</strong>
+                                        <p class="mb-0 text-muted">
+                                            {% if current_user.tier.is_unlimited or current_user.tier.render_time_limit_seconds is none %}
+                                                Unlimited
+                                            {% else %}
+                                                {{ (current_user.tier.render_time_limit_seconds / 60) | round(0) | int }} minutes
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <div class="d-flex align-items-start">
+                                    <i class="bi bi-display text-primary me-2 mt-1"></i>
+                                    <div>
+                                        <strong>Max Output Resolution</strong>
+                                        <p class="mb-0 text-muted">
+                                            {% if current_user.tier.max_output_resolution %}
+                                                {{ current_user.tier.max_output_resolution }}
+                                            {% else %}
+                                                Unlimited
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <div class="d-flex align-items-start">
+                                    <i class="bi bi-camera-reels text-primary me-2 mt-1"></i>
+                                    <div>
+                                        <strong>Max FPS</strong>
+                                        <p class="mb-0 text-muted">
+                                            {% if current_user.tier.max_fps %}
+                                                {{ current_user.tier.max_fps }} fps
+                                            {% else %}
+                                                Unlimited
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <div class="d-flex align-items-start">
+                                    <i class="bi bi-film text-primary me-2 mt-1"></i>
+                                    <div>
+                                        <strong>Max Clips Per Project</strong>
+                                        <p class="mb-0 text-muted">
+                                            {% if current_user.tier.max_clips_per_project %}
+                                                {{ current_user.tier.max_clips_per_project }} clips
+                                            {% else %}
+                                                Unlimited
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <div class="d-flex align-items-start">
+                                    <i class="bi bi-droplet text-primary me-2 mt-1"></i>
+                                    <div>
+                                        <strong>Watermark</strong>
+                                        <p class="mb-0 text-muted">
+                                            {% if current_user.watermark_disabled %}
+                                                <span class="badge bg-success">Disabled</span>
+                                            {% elif current_user.tier.apply_watermark %}
+                                                <span class="badge bg-warning">Applied</span>
+                                            {% else %}
+                                                <span class="badge bg-success">Not Applied</span>
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {% if current_user.tier.can_schedule_tasks %}
+                            <div class="col-md-6 mb-3">
+                                <div class="d-flex align-items-start">
+                                    <i class="bi bi-calendar-event text-primary me-2 mt-1"></i>
+                                    <div>
+                                        <strong>Task Scheduling</strong>
+                                        <p class="mb-0 text-muted">
+                                            {% if current_user.tier.max_schedules_per_user %}
+                                                Up to {{ current_user.tier.max_schedules_per_user }} active schedules
+                                            {% else %}
+                                                Unlimited schedules
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endif %}
+
+                            {% if current_user.tier.max_teams_owned is not none or current_user.tier.max_team_members is not none %}
+                            <div class="col-md-6 mb-3">
+                                <div class="d-flex align-items-start">
+                                    <i class="bi bi-people text-primary me-2 mt-1"></i>
+                                    <div>
+                                        <strong>Team Collaboration</strong>
+                                        <p class="mb-0 text-muted">
+                                            {% if current_user.tier.max_teams_owned %}
+                                                {{ current_user.tier.max_teams_owned }} team(s)
+                                            {% else %}
+                                                Unlimited teams
+                                            {% endif %}
+                                            {% if current_user.tier.max_team_members %}
+                                                <br>{{ current_user.tier.max_team_members }} members per team
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    {% else %}
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i>
+                            You are not currently assigned to a tier. Default limits may apply.
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
