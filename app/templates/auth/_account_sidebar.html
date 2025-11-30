@@ -41,6 +41,21 @@
   </div>
 </div>
 
+<!-- Integrations Section -->
+<div class="card mb-3">
+  <div class="card-header">
+    <h6 class="mb-0">
+      <i class="bi bi-link-45deg"></i>
+      Integrations
+    </h6>
+  </div>
+  <div class="list-group list-group-flush">
+    <a href="{{ url_for('main.account_integrations') }}" class="list-group-item list-group-item-action {% if active=='integrations' %}active{% endif %}">
+      <i class="bi bi-plug"></i> Connected Services
+    </a>
+  </div>
+</div>
+
 <!-- Settings Section -->
 <div class="card mb-3">
   <div class="card-header">
@@ -73,21 +88,6 @@
     </a>
     <a href="{{ url_for('main.account_sessions') }}" class="list-group-item list-group-item-action {% if active=='sessions' %}active{% endif %}">
       <i class="bi bi-clock-history"></i> Active Sessions
-    </a>
-  </div>
-</div>
-
-<!-- Integrations Section -->
-<div class="card mb-3">
-  <div class="card-header">
-    <h6 class="mb-0">
-      <i class="bi bi-link-45deg"></i>
-      Integrations
-    </h6>
-  </div>
-  <div class="list-group list-group-flush">
-    <a href="{{ url_for('main.account_integrations') }}" class="list-group-item list-group-item-action {% if active=='integrations' %}active{% endif %}">
-      <i class="bi bi-plug"></i> Connected Services
     </a>
   </div>
 </div>

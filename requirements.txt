@@ -22,6 +22,8 @@ bcrypt==4.1.2
 PyJWT==2.8.0
 # cryptography pin: 41.x fails to build on some newer Pythons; allow 42.x
 cryptography>=42,<43
+pyotp==2.9.0
+qrcode[pil]==7.4.2
 
 # Media processing
 yt-dlp==2025.11.12

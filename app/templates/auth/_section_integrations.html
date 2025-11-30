@@ -98,6 +98,50 @@
 
                             <div class="col-md-6">
                                 <h6 class="border-bottom pb-2 mb-3">
+                                    <i class="bi bi-youtube"></i> YouTube Integration
+                                </h6>
+
+                                <!-- YouTube OAuth Connection -->
+                                <div class="mb-3">
+                                    <label class="form-label">YouTube Account</label>
+                                    {% if current_user.youtube_access_token %}
+                                        <div class="card" style="border-color: #FF0000;">
+                                            <div class="card-body py-2" style="background-color: #FF0000; background-image: linear-gradient(135deg, #FF0000 0%, #CC0000 100%);">
+                                                <div class="d-flex justify-content-between align-items-center">
+                                                    <div>
+                                                        <i class="bi bi-youtube" style="color: white; font-size: 1.2rem;"></i>
+                                                        <strong class="ms-2" style="color: white;">Connected</strong>
+                                                        {% if current_user.youtube_channel_id %}
+                                                        <small class="ms-2" style="color: rgba(255,255,255,0.8);">ID: {{ current_user.youtube_channel_id }}</small>
+                                                        {% endif %}
+                                                    </div>
+                                                    <button type="button" class="btn btn-sm btn-outline-light"
+                                                            onclick="if(confirm('Disconnect YouTube account?')) document.getElementById('youtube-disconnect-form').submit();">
+                                                        <i class="bi bi-x-circle"></i> Disconnect
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="form-text text-success mt-2">
+                                            <i class="bi bi-check-circle"></i> Your YouTube account is connected
+                                        </div>
+                                    {% else %}
+                                        <div class="d-grid">
+                                            <a href="{{ url_for('auth.youtube_connect') }}" class="btn" style="background-color: #FF0000; color: white;">
+                                                <i class="bi bi-youtube"></i> Connect with YouTube
+                                            </a>
+                                        </div>
+                                        <div class="form-text mt-2">
+                                            Click to securely connect your YouTube account via OAuth2
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row mt-3">
+                            <div class="col-md-6">
+                                <h6 class="border-bottom pb-2 mb-3">
                                     <i class="bi bi-twitch"></i> Twitch Integration
                                 </h6>
 
@@ -147,5 +191,10 @@
 
 <!-- Twitch Disconnect Form (separate to avoid nesting) -->
 <form id="twitch-disconnect-form" method="POST" action="{{ url_for('main.disconnect_twitch') }}" style="display: none;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+</form>
+
+<!-- YouTube Disconnect Form (separate to avoid nesting) -->
+<form id="youtube-disconnect-form" method="POST" action="{{ url_for('auth.youtube_disconnect') }}" style="display: none;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 </form>

@@ -44,10 +44,12 @@
                                 </button>
                             </div>
                             {% if not current_user.email_verified %}
-                            <div class="alert alert-warning">
+                            <div class="alert alert-warning" id="verification-alert">
                                 <i class="bi bi-exclamation-triangle"></i>
                                 Your email address is not verified. Please check your inbox for a verification email.
-                                <button class="btn btn-sm btn-outline-warning ms-2">Resend Verification Email</button>
+                                <button class="btn btn-sm btn-outline-warning ms-2" id="resendVerificationBtn">
+                                    <i class="bi bi-envelope"></i> Resend Verification Email
+                                </button>
                             </div>
                             {% endif %}
                         </div>

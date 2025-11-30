@@ -63,22 +63,34 @@
           <strong>Storage Usage</strong>
         </div>
         <div class="card-body">
-          <div class="mb-3">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <span class="fw-semibold">Total Storage</span>
-              <span class="badge bg-primary">{{ '%.1f'|format(storage_stats.total_size_mb) }} MB</span>
-            </div>
-          </div>
-          <hr>
-          <div class="row g-3">
-            {% for k, v in storage_stats.by_type.items() %}
-            <div class="col-md-6">
-              <div class="d-flex justify-content-between align-items-center">
-                <span class="text-muted">{{ k.title() }}</span>
-                <span class="badge bg-secondary">{{ '%.1f'|format(v) }} MB</span>
+          <div class="row">
+            <!-- Donut Chart Column -->
+            <div class="col-md-5 mb-3 mb-md-0">
+              <div class="d-flex justify-content-center align-items-center" style="height: 250px;">
+                <canvas id="storageChart"></canvas>
+              </div>
+              <div class="text-center mt-2">
+                <span class="fw-semibold">Total Storage</span>
+                <div class="badge bg-primary mt-1">{{ '%.1f'|format(storage_stats.total_size_mb) }} MB</div>
               </div>
             </div>
-            {% endfor %}
+
+            <!-- Storage Breakdown Column -->
+            <div class="col-md-7">
+              <div class="row g-2">
+                {% for k, v in storage_stats.by_type.items() %}
+                <div class="col-md-6">
+                  <div class="d-flex justify-content-between align-items-center py-2 px-3 rounded" style="background: #181818;">
+                    <div class="d-flex align-items-center">
+                      <div class="storage-legend-dot me-2" data-type="{{ k }}"></div>
+                      <span class="text-light">{{ k.title() }}</span>
+                    </div>
+                    <span class="badge bg-secondary">{{ '%.1f'|format(v) }} MB</span>
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -105,4 +117,89 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Storage data from template
+  const storageData = {
+    {% for k, v in storage_stats.by_type.items() %}
+    '{{ k }}': {{ v }},
+    {% endfor %}
+  };
+
+  // Color scheme for different storage types
+  const colorMap = {
+    'intro': '#0d6efd',      // Primary blue
+    'outro': '#198754',      // Success green
+    'transition': '#ffc107', // Warning yellow
+    'clip': '#0dcaf0',       // Info cyan
+    'compilation': '#dc3545',// Danger red
+    'music': '#6f42c1',      // Purple
+    'tmp': '#6c757d'         // Secondary gray
+  };
+
+  // Prepare chart data
+  const labels = [];
+  const data = [];
+  const colors = [];
+
+  Object.entries(storageData).forEach(([type, size]) => {
+    if (size > 0) {  // Only show non-zero values
+      labels.push(type.charAt(0).toUpperCase() + type.slice(1));
+      data.push(size);
+      colors.push(colorMap[type] || '#6c757d');
+    }
+  });
+
+  // Create donut chart
+  const ctx = document.getElementById('storageChart').getContext('2d');
+  new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: labels,
+      datasets: [{
+        data: data,
+        backgroundColor: colors,
+        borderWidth: 2,
+        borderColor: '#fff'
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: {
+        legend: {
+          display: false  // Hide legend, we'll show it in the breakdown column
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              const label = context.label || '';
+              const value = context.parsed || 0;
+              const total = context.dataset.data.reduce((a, b) => a + b, 0);
+              const percentage = ((value / total) * 100).toFixed(1);
+              return label + ': ' + value.toFixed(1) + ' MB (' + percentage + '%)';
+            }
+          }
+        }
+      },
+      cutout: '65%'  // Makes it a donut instead of pie
+    }
+  });
+
+  // Add colored dots to legend
+  document.querySelectorAll('.storage-legend-dot').forEach(dot => {
+    const type = dot.getAttribute('data-type');
+    dot.style.width = '12px';
+    dot.style.height = '12px';
+    dot.style.borderRadius = '50%';
+    dot.style.backgroundColor = colorMap[type] || '#6c757d';
+    dot.style.display = 'inline-block';
+  });
+});
+</script>
 {% endblock %}

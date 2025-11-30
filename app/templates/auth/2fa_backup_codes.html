@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}Two-Factor Authentication Backup Codes{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="card shadow-sm">
+                <div class="card-header bg-success text-white">
+                    <h4 class="mb-0">
+                        <i class="bi bi-shield-check"></i>
+                        {% if regenerated %}
+                            Backup Codes Regenerated
+                        {% else %}
+                            Two-Factor Authentication Enabled
+                        {% endif %}
+                    </h4>
+                </div>
+                <div class="card-body">
+                    {% if not regenerated %}
+                    <div class="alert alert-success">
+                        <i class="bi bi-check-circle"></i> <strong>Success!</strong> Two-factor authentication is now enabled for your account.
+                    </div>
+                    {% endif %}
+
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i> <strong>Important:</strong> Save these backup codes in a safe place. Each code can only be used once.
+                    </div>
+
+                    <h5 class="mb-3">Your Backup Codes</h5>
+                    <p class="text-muted">Use these codes if you lose access to your authenticator app:</p>
+
+                    <div class="card bg-light mb-3">
+                        <div class="card-body">
+                            <div class="row">
+                                {% for code in backup_codes %}
+                                <div class="col-6 mb-2">
+                                    <code class="fs-5">{{ code }}</code>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <button type="button" class="btn btn-outline-secondary" onclick="downloadCodes()">
+                            <i class="bi bi-download"></i> Download Codes
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="printCodes()">
+                            <i class="bi bi-printer"></i> Print Codes
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="copyCodes()">
+                            <i class="bi bi-clipboard"></i> Copy to Clipboard
+                        </button>
+                        <a href="{{ url_for('main.account_security') }}" class="btn btn-primary mt-3">
+                            <i class="bi bi-arrow-right"></i> Continue to Account Security
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const backupCodes = {{ backup_codes|tojson }};
+
+function downloadCodes() {
+    const content = `Clippy Two-Factor Authentication Backup Codes\n\nGenerated: ${new Date().toLocaleString()}\n\n${backupCodes.join('\n')}\n\nKeep these codes in a safe place. Each code can only be used once.`;
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'clippy-2fa-backup-codes.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function printCodes() {
+    const content = `
+        <html>
+        <head>
+            <title>Clippy 2FA Backup Codes</title>
+            <style>
+                body { font-family: monospace; padding: 40px; }
+                h1 { font-size: 18px; }
+                .code { font-size: 16px; margin: 10px 0; }
+            </style>
+        </head>
+        <body>
+            <h1>Clippy Two-Factor Authentication Backup Codes</h1>
+            <p>Generated: ${new Date().toLocaleString()}</p>
+            ${backupCodes.map(code => `<div class="code">${code}</div>`).join('')}
+            <p style="margin-top: 40px; font-size: 12px;">Keep these codes in a safe place. Each code can only be used once.</p>
+        </body>
+        </html>
+    `;
+    const win = window.open('', '_blank');
+    win.document.write(content);
+    win.document.close();
+    win.print();
+}
+
+function copyCodes() {
+    const text = backupCodes.join('\n');
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = event.target.closest('button');
+        const originalHTML = btn.innerHTML;
+        btn.innerHTML = '<i class="bi bi-check"></i> Copied!';
+        setTimeout(() => {
+            btn.innerHTML = originalHTML;
+        }, 2000);
+    });
+}
+</script>
+{% endblock %}

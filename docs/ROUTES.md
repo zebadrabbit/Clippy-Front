@@ -199,6 +199,11 @@ The main blueprint serves user-facing pages and many JSON endpoints used by the 
   - /theme/logo, /theme/favicon, /theme/watermark, /theme.css
   - /p/<public_id>/download and /p/<public_id>/preview (compiled output download/stream)
 
+- Help system routes (v1.5.1+):
+  - GET /help - Main help center with all categories
+  - GET /help/<category_slug> - Category view with sections
+  - GET /help/<category_slug>/<section_slug>/<article_slug> - Full article view with view tracking
+
 ---
 
 ## Analytics blueprint (app/analytics/routes.py) - v1.4.0+
@@ -348,8 +353,19 @@ The main blueprint serves user-facing pages and many JSON endpoints used by the 
   - Methods: POST
   - Brief: Delete the user and cascade deletion
 
-- Password & external connections:
-  - POST /auth/change-password, /auth/connect/discord, /auth/connect/twitch, /auth/disconnect/...
+- OAuth & external connections:
+  - GET /auth/login/discord - Initiate Discord OAuth for login/signup
+  - GET /auth/discord/callback - Handle Discord OAuth callback
+  - GET /auth/login/twitch - Initiate Twitch OAuth for login/signup
+  - GET /auth/twitch/callback - Handle Twitch OAuth callback
+  - GET /auth/login/youtube - Initiate YouTube/Google OAuth for login/signup
+  - GET /auth/youtube/login-callback - Handle YouTube OAuth callback for login
+  - GET /auth/youtube/connect - Connect YouTube account (requires login)
+  - GET /auth/youtube/callback - Handle YouTube OAuth callback for account linking
+  - POST /auth/youtube/disconnect - Disconnect YouTube account
+  - POST /auth/change-password - Change user password
+  - POST /auth/connect/discord, /auth/connect/twitch - Legacy connect endpoints
+  - POST /auth/disconnect/... - Disconnect various integrations
 
 ---
 

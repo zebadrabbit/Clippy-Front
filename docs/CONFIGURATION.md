@@ -71,12 +71,6 @@ The instance directory contains data, logs, and assets.
 - `TMPDIR` - Temporary directory for processing (optional)
   - Set to `/app/instance/tmp` on workers to avoid cross-device moves
 
-### Path Translation (Legacy)
-
-- `MEDIA_PATH_ALIAS_FROM` - Old path prefix to replace (optional)
-- `MEDIA_PATH_ALIAS_TO` - New path prefix (optional)
-- Used for migrating media files between storage locations
-
 ## Worker Configuration
 
 ### API Mode (v0.12.0+)
@@ -151,7 +145,28 @@ Configure via admin UI (Admin → Integrations)
 
 Configure via admin UI (Admin → Integrations)
 
+### YouTube OAuth
+
+- `YOUTUBE_CLIENT_ID` - Google OAuth 2.0 Client ID (required for YouTube integration)
+- `YOUTUBE_CLIENT_SECRET` - Google OAuth 2.0 Client Secret (required for YouTube integration)
+
+**Setup Steps:**
+1. Create OAuth 2.0 credentials at https://console.cloud.google.com/apis/credentials
+2. Add authorized redirect URIs:
+   - `http://localhost:5000/auth/youtube/callback` (for account linking)
+   - `http://localhost:5000/auth/youtube/login-callback` (for login/signup)
+3. Enable YouTube Data API v3 at https://console.cloud.google.com/apis/library/youtube.googleapis.com
+4. Add test users at https://console.cloud.google.com/apis/credentials/consent (required during testing phase)
+5. Set scopes: openid, email, profile, youtube.readonly, youtube.upload
+
 ## Security
+
+### Admin Account Protection
+
+- `RESTRICT_ADMIN_TO_LOCAL` - Restrict admin account login to local network only (default: true)
+  - Automatically disabled when `FLASK_DEBUG=true`
+  - Allowed IP ranges: 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+  - Set to `false` to allow admin login from any IP
 
 ### CORS
 

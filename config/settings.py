@@ -139,11 +139,24 @@ class Config:
     TWITCH_CLIENT_ID = os.environ.get("TWITCH_CLIENT_ID")
     TWITCH_CLIENT_SECRET = os.environ.get("TWITCH_CLIENT_SECRET")
     TWITCH_REDIRECT_URI = os.environ.get("TWITCH_REDIRECT_URI")
+    YOUTUBE_CLIENT_ID = os.environ.get("YOUTUBE_CLIENT_ID")
+    YOUTUBE_CLIENT_SECRET = os.environ.get("YOUTUBE_CLIENT_SECRET")
 
     # Worker API Configuration
     # Shared secret for workers to authenticate with the Flask app
     WORKER_API_KEY = os.environ.get("WORKER_API_KEY", "")
     FLASK_APP_URL = os.environ.get("FLASK_APP_URL", "http://localhost:5000")
+
+    # Admin Account Security
+    # Restrict admin account login to local network only (disabled in DEBUG mode)
+    RESTRICT_ADMIN_TO_LOCAL = os.environ.get(
+        "RESTRICT_ADMIN_TO_LOCAL", "true"
+    ).lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
     # Optional avatars path for overlay feature (defaults resolved at runtime if not set)
     AVATARS_PATH = os.environ.get("AVATARS_PATH")

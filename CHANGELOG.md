@@ -7,6 +7,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.1] - 2025-11-30
+
+### Fixed
+- Push notifications VAPID key format (converted PEM public key to raw base64 format for Web Push API compatibility)
+- Push notification API routes not being registered (added `import app.api.push` to app initialization)
+- VAPID key template rendering (added `tojson` filter to properly escape keys in JavaScript)
+- VAPID_EMAIL configuration (removed duplicate "mailto:" prefix in config)
+- Push notification subscribe/unsubscribe endpoints now functional
+
+### Changed
+- Updated `.github/copilot-instructions.md` with structured logging documentation
+- VAPID public key now stored in raw base64 format (87 chars) instead of PEM format
+- VAPID private key remains in PEM format for server-side use
+
+## [1.6.0] - 2025-11-30
+
+### Added
+- **Two-Factor Authentication (2FA)**
+  - TOTP-based authentication with Google Authenticator, Authy, or compatible apps
+  - Mandatory for all authenticated users (enforced via middleware)
+  - QR code setup with base64-encoded provisioning URI
+  - Manual secret key entry fallback for manual app configuration
+  - 10 single-use backup codes with hashed storage (bcrypt)
+  - Session-based rate limiting: 5 verification attempts per 15-minute lockout window
+  - Password-protected disable and backup code regeneration
+  - Low backup code warning (≤3 remaining)
+  - Persistent TOTP secret during setup (survives failed verification attempts)
+  - Database fields: `totp_secret`, `totp_enabled`, `totp_backup_codes`
+  - Routes: `/2fa/setup`, `/2fa/verify`, `/2fa/disable`, `/2fa/regenerate-backup-codes`
+  - Templates: `setup_2fa.html`, `verify_2fa.html`, `2fa_backup_codes.html`
+  - Backup code management: download as .txt, print, or copy to clipboard
+  - Valid window: ±30 seconds for clock drift tolerance
+  - Dependencies: `pyotp==2.9.0`, `qrcode[pil]==7.4.2`
+
+- **YouTube OAuth Integration**
+  - Google OAuth 2.0 authentication for login/signup and account linking
+  - YouTube channel detection and custom URL extraction for username generation
+  - Multi-channel support via email matching (multiple YouTube channels → one account)
+  - Access token and refresh token storage for API access
+  - YouTube login button on login page
+  - YouTube connect/disconnect in account integrations page
+  - Admin restriction to local network IPs (configurable via `RESTRICT_ADMIN_TO_LOCAL`)
+  - Database fields: `youtube_channel_id`, `youtube_access_token`, `youtube_refresh_token`, `youtube_token_expires_at`
+  - Routes: `/login/youtube`, `/youtube/login-callback`, `/youtube/connect`, `/youtube/callback`, `/youtube/disconnect`
+  - Configuration: `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`
+  - OAuth scopes: openid, email, profile, youtube.readonly, youtube.upload
+  - Automatic email verification for YouTube sign-ups
+
+- **Discord-style Help System**
+  - Three-tier hierarchy: Categories → Sections → Articles
+  - Featured article badges and view count tracking
+  - Breadcrumb navigation for easy browsing
+  - Database models: `HelpCategory`, `HelpSection`, `HelpArticle`
+  - Routes: `/help` (main center), `/help/<category>`, `/help/<category>/<section>/<article>`
+  - Seed script at `scripts/seed_help_content.py` with sample content
+  - System theme integration (replaces hardcoded blue theme)
+  - Markdown/HTML content support
+  - Article metadata: author, published date, summary, meta description
+  - Admin-ready structure (future: CRUD UI planned)
+
+- **Tier Upgrade Button**
+  - Displays on tier page when higher-priced tier is available
+  - Links to pricing page with `btn-glow` styling
+  - Positioned in top-right of subscription tier card header
+
+### Changed
+- 2FA enforcement middleware now exempts asset routes (theme CSS, logos, profile images) and all API endpoints
+- Moved Integrations above Settings in account sidebar navigation
+- YouTube connection UI now checks for `youtube_access_token` instead of `youtube_channel_id` (supports users without YouTube channels)
+- Email-first matching for OAuth logins (prevents duplicate accounts with multiple channels)
+- Username generation for YouTube signups prefers channel custom URL over email prefix
+
+### Fixed
+- 2FA setup secret persistence across failed verification attempts (prevents QR code regeneration)
+- YouTube OAuth redirect URI mismatch (now uses hardcoded localhost URIs)
+- Template syntax error in integrations page (removed orphaned `{% endif %}`)
+- Asset loading blocked by 2FA enforcement (theme CSS, profile images now exempt)
+
 ## [1.5.0] - 2025-11-30
 
 ### Added

@@ -5,6 +5,12 @@
 ### Authentication & Users
 
 - User registration and login
+- **Two-Factor Authentication (2FA)** with TOTP (Google Authenticator/Authy)
+  - Mandatory for all users
+  - QR code setup with manual entry fallback
+  - 10 single-use backup codes (hashed storage)
+  - Rate limiting: 5 attempts per 15 minutes
+  - Disable and regenerate backup codes with password confirmation
 - Profile management
 - Admin user management
 - Subscription tier system with quotas
@@ -92,6 +98,37 @@ See [TIERS-AND-QUOTAS.md](TIERS-AND-QUOTAS.md) for details.
 - **Per-user channel configuration** (discord_channel_id in profile)
 - **Bot setup**: Requires Message Content Intent and permission 65536
 - See [Discord Integration Guide](DISCORD_INTEGRATION.md) for setup
+
+### YouTube
+
+- **OAuth 2.0 authentication** for login/signup and account linking
+- **Google account integration** with email verification
+- **YouTube channel detection** and storage
+- **Access token management** with refresh token support
+- **Multi-channel support** - multiple YouTube channels link to same account via email
+- **YouTube Data API v3** integration for channel information
+- **Login flow**: Sign in with YouTube button on login page
+- **Account linking**: Connect YouTube account from integrations page
+- **Auto-username generation** from YouTube channel custom URL (e.g., @zebadrabbit)
+- **Requires configuration**: `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`
+- **OAuth scopes**: openid, email, profile, youtube.readonly, youtube.upload
+
+## Help System
+
+- **Discord-style help center** with category/section/article hierarchy
+- **Featured articles** with visual badges
+- **View count tracking** for popular articles
+- **Breadcrumb navigation** for easy browsing
+- **Article search** (search bar ready for future implementation)
+- **Markdown/HTML content support** for rich formatting
+- **Admin management** via database (future: admin UI planned)
+- **Categories**: Getting Started, Features, Account & Billing (extensible)
+- **Routes**:
+  - `/help` - Main help center with all categories
+  - `/help/<category>` - Category view with sections
+  - `/help/<category>/<section>/<article>` - Full article view
+- **Database models**: `HelpCategory`, `HelpSection`, `HelpArticle`
+- **Seed script**: `scripts/seed_help_content.py` for initial content
 
 ## Analytics System
 

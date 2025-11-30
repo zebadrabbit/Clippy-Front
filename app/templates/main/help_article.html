@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="bg-light py-4 mb-4">
+    <div class="container">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-0">
+                <li class="breadcrumb-item"><a href="{{ url_for('main.help_center') }}">Help Center</a></li>
+                <li class="breadcrumb-item">
+                    <a href="{{ url_for('main.help_category', category_slug=category.slug) }}">{{ category.name }}</a>
+                </li>
+                <li class="breadcrumb-item active">{{ article.title }}</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="container pb-5">
+    <div class="row">
+        <!-- Main Content -->
+        <div class="col-lg-9">
+            <article class="help-article">
+                <header class="mb-4">
+                    <h1 class="display-5 mb-3">{{ article.title }}</h1>
+
+                    <div class="d-flex align-items-center text-muted small">
+                        {% if article.published_at %}
+                            <span class="me-3">
+                                <i class="bi bi-calendar3"></i>
+                                Updated {{ article.published_at.strftime('%B %d, %Y') }}
+                            </span>
+                        {% endif %}
+                        {% if article.view_count > 0 %}
+                            <span class="me-3">
+                                <i class="bi bi-eye"></i>
+                                {{ article.view_count }} views
+                            </span>
+                        {% endif %}
+                        {% if article.author %}
+                            <span>
+                                <i class="bi bi-person"></i>
+                                {{ article.author.get_display_name() }}
+                            </span>
+                        {% endif %}
+                    </div>
+                </header>
+
+                <div class="article-content">
+                    {{ article.content|safe }}
+                </div>
+
+                <!-- Feedback Section -->
+                <div class="card bg-light border-0 mt-5">
+                    <div class="card-body text-center">
+                        <h5 class="mb-3">Was this article helpful?</h5>
+                        <div class="btn-group" role="group">
+                            <button type="button" class="btn btn-outline-success" onclick="submitFeedback(true)">
+                                <i class="bi bi-hand-thumbs-up"></i> Yes
+                            </button>
+                            <button type="button" class="btn btn-outline-danger" onclick="submitFeedback(false)">
+                                <i class="bi bi-hand-thumbs-down"></i> No
+                            </button>
+                        </div>
+                        <div id="feedbackMessage" class="mt-3" style="display: none;">
+                            <p class="text-success mb-0">Thank you for your feedback!</p>
+                        </div>
+                    </div>
+                </div>
+            </article>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="col-lg-3">
+            <!-- Section Navigation -->
+            <div class="card mb-4">
+                <div class="card-header bg-dark text-white">
+                    <h6 class="mb-0">
+                        <i class="bi bi-list-ul"></i> {{ section.name }}
+                    </h6>
+                </div>
+                <div class="list-group list-group-flush">
+                    {% set section_articles = section.articles.filter_by(is_active=True).order_by('sort_order', 'title').all() %}
+                    {% for other_article in section_articles %}
+                        <a href="{{ url_for('main.help_article',
+                                           category_slug=category.slug,
+                                           section_slug=section.slug,
+                                           article_slug=other_article.slug) }}"
+                           class="list-group-item list-group-item-action {% if other_article.id == article.id %}active{% endif %}">
+                            {{ other_article.title }}
+                        </a>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Related Articles -->
+            {% if related_articles %}
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0">
+                            <i class="bi bi-bookmark"></i> Related Articles
+                        </h6>
+                    </div>
+                    <div class="list-group list-group-flush">
+                        {% for related in related_articles %}
+                            <a href="{{ url_for('main.help_article',
+                                               category_slug=category.slug,
+                                               section_slug=section.slug,
+                                               article_slug=related.slug) }}"
+                               class="list-group-item list-group-item-action">
+                                {{ related.title }}
+                            </a>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+
+            <!-- Contact Support -->
+            <div class="card mt-4 bg-light">
+                <div class="card-body text-center">
+                    <i class="bi bi-chat-dots fs-1 mb-3"></i>
+                    <h6 class="mb-2">Still need help?</h6>
+                    <p class="small text-muted mb-3">Our support team is here to assist you</p>
+                    <a href="{{ url_for('main.support') }}" class="btn btn-secondary btn-sm">
+                        Contact Support
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.article-content {
+    font-size: 1.05rem;
+    line-height: 1.7;
+}
+
+.article-content h2 {
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #eee;
+}
+
+.article-content h3 {
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.article-content ul,
+.article-content ol {
+    margin-bottom: 1.5rem;
+}
+
+.article-content li {
+    margin-bottom: 0.5rem;
+}
+
+.article-content code {
+    background-color: #f8f9fa;
+    padding: 0.2rem 0.4rem;
+    border-radius: 0.25rem;
+    font-size: 0.9em;
+}
+
+.article-content pre {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    padding: 1rem;
+    overflow-x: auto;
+}
+
+.article-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 0.375rem;
+    margin: 1.5rem 0;
+}
+
+.article-content blockquote {
+    border-left: 4px solid var(--bs-secondary);
+    padding-left: 1rem;
+    margin-left: 0;
+    color: #6c757d;
+}
+</style>
+
+<script>
+function submitFeedback(helpful) {
+    // TODO: Send feedback to server
+    console.log('Article helpful:', helpful);
+    document.getElementById('feedbackMessage').style.display = 'block';
+
+    // Hide feedback buttons
+    document.querySelector('.btn-group').style.display = 'none';
+}
+</script>
+{% endblock %}

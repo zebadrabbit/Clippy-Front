@@ -134,50 +134,25 @@ def _get_user_tier_limits(session, user_id: int) -> dict[str, Any]:
 def _resolve_media_input_path(orig_path: str) -> str:
     """Resolve a media input path that may have been created on a different host.
 
-    Handles two strategies:
-      1) Explicit env alias: MEDIA_PATH_ALIAS_FROM + MEDIA_PATH_ALIAS_TO
-         If orig_path startswith FROM, replace with TO and use if it exists.
-      2) Automatic instance path remap: if the path contains '/instance/',
-         rebuild path under this process's app.instance_path preserving the suffix.
+    Handles automatic instance path remap: if the path contains '/instance/',
+    rebuild path under this process's app.instance_path preserving the suffix.
 
     Returns the first existing candidate, else the original path.
     """
     try:
-        debug = os.getenv("MEDIA_PATH_DEBUG", "").strip().lower() in {
-            "1",
-            "true",
-            "yes",
-            "on",
-        }
         if orig_path and os.path.exists(orig_path):
-            if debug:
-                print(f"[media-path] using original path (exists): {orig_path}")
             return orig_path
         ap = (orig_path or "").strip()
         if not ap:
             return orig_path
-        # 1) Explicit alias
-        alias_from = os.getenv("MEDIA_PATH_ALIAS_FROM")
-        alias_to = os.getenv("MEDIA_PATH_ALIAS_TO")
-        if alias_from and alias_to and ap.startswith(alias_from):
-            cand = alias_to + ap[len(alias_from) :]
-            if debug:
-                print(
-                    f"[media-path] alias candidate: FROM='{alias_from}' TO='{alias_to}' -> '{cand}' (exists={os.path.exists(cand)})"
-                )
-            if os.path.exists(cand):
-                return cand
-        # 2) Automatic '/instance/' remap
+
+        # Automatic '/instance/' remap
         marker = "/instance/"
         if marker in ap:
             try:
                 app = _get_app()
                 suffix = ap.split(marker, 1)[1]
                 cand = os.path.join(app.instance_path, suffix)
-                if debug:
-                    print(
-                        f"[media-path] instance remap candidate: base='{app.instance_path}' suffix='/{suffix}' -> '{cand}' (exists={os.path.exists(cand)})"
-                    )
                 if os.path.exists(cand):
                     return cand
                 # Heuristic: if we're running in a different host (e.g., container), prefer
@@ -200,10 +175,6 @@ def _resolve_media_input_path(orig_path: str) -> str:
                     and os.path.isdir(app.instance_path)
                     and running_in_container
                 ):
-                    if debug:
-                        print(
-                            f"[media-path] using remap path (container context) despite exists=False: '{cand}'"
-                        )
                     return cand
             except Exception:
                 pass
@@ -217,13 +188,6 @@ def _resolve_media_input_path(orig_path: str) -> str:
                 if marker2 in ap and not ap.startswith(str(app2.instance_path)):
                     suffix = ap.split(marker2, 1)[1]
                     cand2 = os.path.join(app2.instance_path, data_folder, suffix)
-                    if debug:
-                        try:
-                            print(
-                                f"[media-path] data-root remap candidate: base='{app2.instance_path}' folder='{data_folder}' suffix='/{suffix}' -> '{cand2}' (exists={os.path.exists(cand2)})"
-                            )
-                        except Exception:
-                            pass
                     if os.path.exists(cand2):
                         return cand2
                     # Container heuristic as above: if roots differ, allow remap even if exists check fails
@@ -239,13 +203,6 @@ def _resolve_media_input_path(orig_path: str) -> str:
                         and os.path.isdir(app2.instance_path)
                         and running_in_container
                     ):
-                        if debug:
-                            try:
-                                print(
-                                    f"[media-path] using data-root remap (container context) despite exists=False: '{cand2}'"
-                                )
-                            except Exception:
-                                pass
                         return cand2
         except Exception:
             pass

@@ -24,4 +24,60 @@ document.addEventListener('DOMContentLoaded', function() {
       deleteAccountBtn.disabled = (this.value !== expectedUsername);
     });
   }
+
+  // Resend verification email handler
+  const resendBtn = document.getElementById('resendVerificationBtn');
+  if (resendBtn) {
+    resendBtn.addEventListener('click', function() {
+      const btn = this;
+      const originalHTML = btn.innerHTML;
+
+      // Disable button and show loading state
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sending...';
+
+      fetch('/auth/resend-verification', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'same-origin'
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          // Show success message
+          const alert = document.getElementById('verification-alert');
+          if (alert) {
+            alert.className = 'alert alert-success';
+            alert.innerHTML = '<i class="bi bi-check-circle"></i> Verification email sent! Please check your inbox.';
+          }
+          // Update button state
+          btn.innerHTML = '<i class="bi bi-check"></i> Email Sent';
+          btn.className = 'btn btn-sm btn-success ms-2';
+
+          // Re-enable after 5 seconds
+          setTimeout(() => {
+            btn.disabled = false;
+            btn.innerHTML = originalHTML;
+            btn.className = 'btn btn-sm btn-outline-warning ms-2';
+          }, 5000);
+        } else {
+          throw new Error(data.error || 'Failed to send email');
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        // Show error in alert
+        const alert = document.getElementById('verification-alert');
+        if (alert) {
+          alert.className = 'alert alert-danger';
+          alert.innerHTML = '<i class="bi bi-exclamation-triangle"></i> Failed to send verification email. Please try again.';
+        }
+        // Reset button
+        btn.disabled = false;
+        btn.innerHTML = originalHTML;
+      });
+    });
+  }
 });

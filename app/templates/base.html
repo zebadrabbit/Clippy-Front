@@ -87,7 +87,7 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('help.index') }}">
+                        <a class="nav-link" href="{{ url_for('main.help_center') }}">
                             <i class="bi bi-question-circle me-1"></i>Help
                         </a>
                     </li>
@@ -213,8 +213,8 @@
                 <div class="col-md-4">
                     <h6>Support</h6>
                     <ul class="list-unstyled small">
-                        <li><a href="{{ url_for('help.index') }}" class="text-muted">Help Center</a></li>
-                        <li><a href="{{ url_for('help.topic', topic='getting-started') }}" class="text-muted">Getting Started</a></li>
+                        <li><a href="{{ url_for('main.help_center') }}" class="text-muted">Help Center</a></li>
+                        <li><a href="{{ url_for('main.help_category', category_slug='getting-started') }}" class="text-muted">Getting Started</a></li>
                         <li><a href="{{ url_for('main.pricing') }}" class="text-muted">Pricing</a></li>
                         <li><a href="{{ url_for('main.contact') }}" class="text-muted">Contact Us</a></li>
                     </ul>

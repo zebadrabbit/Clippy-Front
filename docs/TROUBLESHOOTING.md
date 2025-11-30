@@ -218,12 +218,6 @@ export TMPDIR=/app/instance/tmp
 python scripts/check_media_path.py
 ```
 
-**Migration**: Use path aliases for legacy paths
-```bash
-export MEDIA_PATH_ALIAS_FROM=/old/path
-export MEDIA_PATH_ALIAS_TO=/new/path
-```
-
 ### Avatar Resolution
 
 **Problem**: Avatars not appearing in compilations

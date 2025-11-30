@@ -52,7 +52,6 @@ def _rebase_instance_path(path: str | None) -> str | None:
     Supports the following patterns:
       - '/instance/…'  -> <app.instance_path>/…
       - '/app/instance/…' -> <app.instance_path>/… (common inside containers)
-      - Explicit alias via env: MEDIA_PATH_ALIAS_FROM -> MEDIA_PATH_ALIAS_TO
 
     If no mapping applies, return the input unchanged.
     """
@@ -60,22 +59,13 @@ def _rebase_instance_path(path: str | None) -> str | None:
         return path
     try:
         p = str(path)
-        # 1) Explicit alias mapping when configured
-        alias_from = os.getenv("MEDIA_PATH_ALIAS_FROM")
-        alias_to = os.getenv("MEDIA_PATH_ALIAS_TO")
-        if alias_from and alias_to and p.startswith(alias_from):
-            # Join safely to avoid missing path separators (e.g., 'instancedata')
-            suffix = p[len(alias_from) :].lstrip(os.sep)
-            base = alias_to.rstrip(os.sep)
-            cand = os.path.join(base, suffix)
-            return cand
 
-        # 2) Canonical '/instance/' prefix
+        # 1) Canonical '/instance/' prefix
         if p.startswith("/instance/"):
             suffix = p[len("/instance/") :].lstrip("/")
             return os.path.join(current_app.instance_path, suffix)
 
-        # 3) Container '/app/instance/' prefix
+        # 2) Container '/app/instance/' prefix
         prefix = "/app/instance/"
         if p.startswith(prefix):
             suffix = p[len(prefix) :].lstrip("/")
@@ -1658,9 +1648,118 @@ def project_wizard():
 # Informational and Legal pages
 
 
-@main_bp.route("/docs")
-def documentation():
-    return render_template("main/docs.html", title="Documentation")
+@main_bp.route("/help")
+def help_center():
+    """Display help center with all categories."""
+    from sqlalchemy import select
+
+    from app.models import HelpCategory
+
+    # Get all active categories with their sections and articles
+    categories = (
+        db.session.execute(
+            select(HelpCategory)
+            .where(HelpCategory.is_active.is_(True))
+            .order_by(HelpCategory.sort_order, HelpCategory.name)
+        )
+        .scalars()
+        .all()
+    )
+
+    return render_template(
+        "main/help_center.html", title="Help Center", categories=categories
+    )
+
+
+@main_bp.route("/help/<category_slug>")
+def help_category(category_slug):
+    """Display a specific help category with its sections and articles."""
+    from sqlalchemy import select
+
+    from app.models import HelpCategory
+
+    category = db.session.execute(
+        select(HelpCategory).where(
+            HelpCategory.slug == category_slug, HelpCategory.is_active.is_(True)
+        )
+    ).scalar_one_or_none()
+
+    if not category:
+        flash("Category not found.", "warning")
+        return redirect(url_for("main.help_center"))
+
+    # Get sections with their articles
+    sections = [s for s in category.sections if s.is_active]
+
+    return render_template(
+        "main/help_category.html",
+        title=f"{category.name} - Help Center",
+        category=category,
+        sections=sections,
+    )
+
+
+@main_bp.route("/help/<category_slug>/<section_slug>/<article_slug>")
+def help_article(category_slug, section_slug, article_slug):
+    """Display a specific help article."""
+    from sqlalchemy import select
+
+    from app.models import HelpArticle, HelpCategory, HelpSection
+
+    # Get category
+    category = db.session.execute(
+        select(HelpCategory).where(
+            HelpCategory.slug == category_slug, HelpCategory.is_active.is_(True)
+        )
+    ).scalar_one_or_none()
+
+    if not category:
+        flash("Category not found.", "warning")
+        return redirect(url_for("main.help_center"))
+
+    # Get section
+    section = db.session.execute(
+        select(HelpSection).where(
+            HelpSection.category_id == category.id,
+            HelpSection.slug == section_slug,
+            HelpSection.is_active.is_(True),
+        )
+    ).scalar_one_or_none()
+
+    if not section:
+        flash("Section not found.", "warning")
+        return redirect(url_for("main.help_category", category_slug=category_slug))
+
+    # Get article
+    article = db.session.execute(
+        select(HelpArticle).where(
+            HelpArticle.section_id == section.id,
+            HelpArticle.slug == article_slug,
+            HelpArticle.is_active.is_(True),
+        )
+    ).scalar_one_or_none()
+
+    if not article:
+        flash("Article not found.", "warning")
+        return redirect(url_for("main.help_category", category_slug=category_slug))
+
+    # Increment view count
+    article.view_count += 1
+    db.session.commit()
+
+    # Get other articles in this section for "See also"
+    related_articles = [
+        a for a in section.articles if a.is_active and a.id != article.id
+    ]
+
+    return render_template(
+        "main/help_article.html",
+        title=f"{article.title} - Help Center",
+        category=category,
+        section=section,
+        article=article,
+        related_articles=related_articles[:5],  # Show max 5 related
+    )
 
 
 @main_bp.route("/api-reference")
@@ -2604,7 +2703,25 @@ def account_info():
 @login_required
 def account_tier():
     """Display subscription tier and limits."""
-    return render_template("auth/account_tier.html", title="Subscription Tier")
+    from sqlalchemy import select
+
+    from app.models import Tier
+
+    # Check if there's a higher tier available for upgrade
+    next_tier = None
+    if current_user.tier and current_user.tier.monthly_price_cents is not None:
+        # Find the next tier with a higher price
+        next_tier = db.session.execute(
+            select(Tier)
+            .where(Tier.is_active.is_(True))
+            .where(Tier.monthly_price_cents > current_user.tier.monthly_price_cents)
+            .order_by(Tier.monthly_price_cents.asc())
+            .limit(1)
+        ).scalar_one_or_none()
+
+    return render_template(
+        "auth/account_tier.html", title="Subscription Tier", next_tier=next_tier
+    )
 
 
 @main_bp.route("/account/security")

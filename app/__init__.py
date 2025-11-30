@@ -774,6 +774,58 @@ def init_extensions(app):
             # If DB isn't ready or rollback isn't needed, ignore
             pass
 
+    # 2FA enforcement: redirect users to setup if they haven't enabled it
+    @app.before_request
+    def _enforce_2fa():  # pragma: no cover - security enforcement
+        from flask import redirect, request, url_for
+        from flask_login import current_user
+
+        # Skip enforcement for specific routes
+        exempt_endpoints = [
+            "auth.setup_2fa",
+            "auth.verify_2fa",
+            "auth.logout",
+            "auth.login",
+            "auth.register",
+            "static",
+            # Asset routes that need to load on all pages
+            "main.theme_css",
+            "main.theme_logo",
+            "main.theme_favicon",
+            "main.profile_image",
+        ]
+
+        # Skip for unauthenticated users
+        if not current_user.is_authenticated:
+            return None
+
+        # Skip if already on 2FA setup/verify page
+        if request.endpoint in exempt_endpoints:
+            return None
+
+        # Skip for all API routes (blueprint starts with 'api.')
+        if request.endpoint and request.endpoint.startswith("api."):
+            return None
+
+        # Skip for AJAX requests
+        if (
+            request.is_json
+            or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        ):
+            return None
+
+        # Redirect to 2FA setup if not enabled
+        if not current_user.totp_enabled:
+            from flask import flash
+
+            flash(
+                "Two-factor authentication is required. Please set it up now.",
+                "warning",
+            )
+            return redirect(url_for("auth.setup_2fa"))
+
+        return None
+
     # Extra safety: always clean up the session at the end of each request.
     # This prevents 'InFailedSqlTransaction' from leaking across requests if any view errored.
     @app.teardown_request
@@ -948,6 +1000,7 @@ def register_blueprints(flask_app):
     # Import API modules to register their routes on api_bp
     try:
         import app.api.notifications  # noqa: F401 - registers routes on api_bp
+        import app.api.push  # noqa: F401 - registers routes on api_bp
         import app.api.tags  # noqa: F401 - registers routes on api_bp (optional)
         import app.api.teams  # noqa: F401 - registers routes on api_bp
     except ImportError as e:

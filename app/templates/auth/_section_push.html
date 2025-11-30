@@ -44,7 +44,7 @@
 
         <!-- VAPID Public Key (needed by JavaScript) -->
         <script>
-            window.VAPID_PUBLIC_KEY = "{{ config.VAPID_PUBLIC_KEY }}";
+            window.VAPID_PUBLIC_KEY = {{ config.VAPID_PUBLIC_KEY|tojson }};
         </script>
         {% else %}
         <div class="alert alert-warning">

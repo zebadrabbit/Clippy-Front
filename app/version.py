@@ -2,11 +2,13 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "1.5.0"
-__version_info__ = (1, 5, 0)
+__version__ = "1.6.1"
+__version_info__ = (1, 6, 1)
 
 # Version history tracking
 VERSION_HISTORY = {
+    "1.6.1": "Push notification configuration fixes, VAPID key format corrections, API route registration",
+    "1.6.0": "Mandatory two-factor authentication (TOTP), YouTube OAuth login/signup, Discord-style help system, security enhancements",
     "1.5.0": "Admin content editor for help pages and docs, enhanced help page styling with cards and visual breaks, comprehensive privacy policy update, media library metadata editing (attribution fields), UI polish and accessibility improvements",
     "1.4.0": "Analytics system with clip engagement tracking, creator/game leaderboards, viral clips detection, engagement timeline, database pool optimization (20/30), navbar icons, profile picture display",
     "1.3.0": "Pricing system, account settings refactor, tier pricing UI, currency/location/timezone config, profile image centering",
@@ -32,7 +34,7 @@ VERSION_HISTORY = {
         "test stability fixes (Flask-Login init in TESTING, runtime schema updates disabled in tests); docs updated (README, GPU worker, WireGuard)."
     ),
     "0.5.1": (
-        "Media preview/thumbnail now resolve cross-host file paths (GPU worker → web server) via instance-path remap and MEDIA_PATH_ALIAS_FROM/TO; "
+        "Media preview/thumbnail now resolve cross-host file paths (GPU worker → web server) via instance-path remap; "
         "added docs for TMPDIR=/app/instance/tmp to avoid EXDEV on network shares; clarified Celery queues (gpu,cpu,celery) and routing (gpu>cpu>celery); "
         "minor docs refresh for WireGuard and GPU worker run examples."
     ),
@@ -81,8 +83,7 @@ VERSION_HISTORY = {
     ),
     "0.8.3": (
         "Operational console & logging: introduced a two-pane Blessed TUI with runtime file toggles, quick search, verbosity presets, adjustable refresh, and persisted preferences; "
-        "centralized rotating logs under instance/logs (app.log, worker.log, beat.log); greatly reduced default startup noise by demoting banners to DEBUG and gating duplicate reloader logs; "
-        "[media-path] traces are now DEBUG-only behind MEDIA_PATH_DEBUG. README updated with TUI usage."
+        "centralized rotating logs under instance/logs (app.log, worker.log, beat.log); greatly reduced default startup noise by demoting banners to DEBUG and gating duplicate reloader logs."
     ),
     "0.8.4": (
         "Canonical storage paths & Docker alignment: media paths stored as canonical '/instance/…' across downloads and compilations; "

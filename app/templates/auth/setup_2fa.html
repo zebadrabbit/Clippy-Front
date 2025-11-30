@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}Setup Two-Factor Authentication{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0"><i class="bi bi-shield-lock"></i> Setup Two-Factor Authentication</h4>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i> Two-factor authentication adds an extra layer of security to your account.
+                    </div>
+
+                    <h5 class="mb-3">Step 1: Scan QR Code</h5>
+                    <p class="text-muted">Scan this QR code with your authenticator app (Google Authenticator, Authy, 1Password, etc.):</p>
+
+                    <div class="text-center my-4">
+                        <img src="data:image/png;base64,{{ qr_code_base64 }}" alt="2FA QR Code" class="img-fluid" style="max-width: 300px;">
+                    </div>
+
+                    <h5 class="mb-3">Step 2: Or Enter Manually</h5>
+                    <p class="text-muted">If you can't scan the QR code, enter this secret key manually:</p>
+                    <div class="input-group mb-4">
+                        <input type="text" class="form-control font-monospace" value="{{ totp_secret }}" readonly id="totpSecret">
+                        <button class="btn btn-outline-secondary" type="button" onclick="copyToClipboard()">
+                            <i class="bi bi-clipboard"></i> Copy
+                        </button>
+                    </div>
+
+                    <div class="alert alert-secondary small">
+                        <strong>Account:</strong> {{ current_user.username }} ({{ current_user.email }})
+                    </div>
+
+                    <h5 class="mb-3">Step 3: Verify Setup</h5>
+                    <p class="text-muted">Enter the 6-digit code from your authenticator app to verify the setup:</p>
+
+                    <form method="POST">
+                        {{ csrf_token() }}
+                        <div class="mb-3">
+                            <input type="text" class="form-control form-control-lg text-center font-monospace"
+                                   name="code" id="code" placeholder="000000" maxlength="6" required
+                                   pattern="[0-9]{6}" inputmode="numeric" autocomplete="off">
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="bi bi-check-circle"></i> Enable 2FA
+                            </button>
+                            <a href="{{ url_for('main.account_security') }}" class="btn btn-outline-secondary">
+                                <i class="bi bi-x-circle"></i> Cancel
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function copyToClipboard() {
+    const secretInput = document.getElementById('totpSecret');
+    secretInput.select();
+    document.execCommand('copy');
+
+    // Visual feedback
+    const btn = event.target.closest('button');
+    const originalHTML = btn.innerHTML;
+    btn.innerHTML = '<i class="bi bi-check"></i> Copied!';
+    setTimeout(() => {
+        btn.innerHTML = originalHTML;
+    }, 2000);
+}
+
+// Auto-submit when 6 digits entered
+document.getElementById('code').addEventListener('input', function(e) {
+    if (this.value.length === 6 && /^\d{6}$/.test(this.value)) {
+        this.form.submit();
+    }
+});
+</script>
+{% endblock %}

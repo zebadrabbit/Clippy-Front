@@ -368,6 +368,15 @@ class User(UserMixin, db.Model):
     discord_user_id = db.Column(db.String(100), unique=True)
     discord_channel_id = db.Column(db.String(100))
     twitch_username = db.Column(db.String(100))
+    youtube_channel_id = db.Column(db.String(100), unique=True)
+    youtube_access_token = db.Column(db.Text)
+    youtube_refresh_token = db.Column(db.Text)
+    youtube_token_expires_at = db.Column(db.DateTime)
+
+    # Two-Factor Authentication (2FA)
+    totp_secret = db.Column(db.String(32))  # Base32 encoded secret for TOTP
+    totp_enabled = db.Column(db.Boolean, default=False, nullable=False)
+    totp_backup_codes = db.Column(db.Text)  # JSON array of hashed backup codes
 
     # Preferences
     date_format = db.Column(
@@ -2224,3 +2233,134 @@ class CreatorAnalytics(db.Model):
 
     def __repr__(self) -> str:
         return f"<CreatorAnalytics user={self.user_id} creator={self.creator_name} period={self.period_type}>"
+
+
+class HelpCategory(db.Model):
+    """Help category containing sections of help articles (like Discord's help center).
+
+    Examples: Getting Started, Features, Account & Billing, etc.
+    """
+
+    __tablename__ = f"{_TABLE_PREFIX}help_categories"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    slug = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    description = db.Column(db.Text)
+    icon = db.Column(
+        db.String(50), doc="Bootstrap icon class (e.g., 'bi-rocket-takeoff')"
+    )
+    sort_order = db.Column(db.Integer, default=0, nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    # Relationships
+    sections = db.relationship(
+        "HelpSection",
+        backref="category",
+        lazy="dynamic",
+        cascade="all, delete-orphan",
+        order_by="HelpSection.sort_order",
+    )
+
+    def __repr__(self) -> str:
+        return f"<HelpCategory {self.name}>"
+
+
+class HelpSection(db.Model):
+    """Help section within a category, containing related articles.
+
+    Examples: "Creating Projects", "Downloading Clips", etc.
+    """
+
+    __tablename__ = f"{_TABLE_PREFIX}help_sections"
+
+    id = db.Column(db.Integer, primary_key=True)
+    category_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}help_categories.id"), nullable=False
+    )
+    name = db.Column(db.String(100), nullable=False)
+    slug = db.Column(db.String(100), nullable=False, index=True)
+    description = db.Column(db.Text)
+    sort_order = db.Column(db.Integer, default=0, nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    # Relationships
+    articles = db.relationship(
+        "HelpArticle",
+        backref="section",
+        lazy="dynamic",
+        cascade="all, delete-orphan",
+        order_by="HelpArticle.sort_order",
+    )
+
+    # Unique constraint: slug unique within category
+    __table_args__ = (
+        db.UniqueConstraint(
+            category_id, slug, name=f"{_TABLE_PREFIX}uq_help_section_slug"
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"<HelpSection {self.name}>"
+
+
+class HelpArticle(db.Model):
+    """Individual help article with rich content.
+
+    Articles belong to a section and can be featured/promoted.
+    """
+
+    __tablename__ = f"{_TABLE_PREFIX}help_articles"
+
+    id = db.Column(db.Integer, primary_key=True)
+    section_id = db.Column(
+        db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}help_sections.id"), nullable=False
+    )
+    title = db.Column(db.String(200), nullable=False)
+    slug = db.Column(db.String(200), nullable=False, index=True)
+    content = db.Column(db.Text, nullable=False, doc="Markdown or HTML content")
+    summary = db.Column(
+        db.String(500), doc="Short summary for search results and previews"
+    )
+    is_featured = db.Column(
+        db.Boolean, default=False, nullable=False, doc="Featured/promoted article"
+    )
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    sort_order = db.Column(db.Integer, default=0, nullable=False)
+    view_count = db.Column(db.Integer, default=0, nullable=False)
+
+    # SEO
+    meta_description = db.Column(db.String(160))
+
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    published_at = db.Column(db.DateTime)
+
+    # Author (optional)
+    author_id = db.Column(db.Integer, db.ForeignKey(f"{_TABLE_PREFIX}users.id"))
+    author = db.relationship("User", backref="help_articles")
+
+    # Unique constraint: slug unique within section
+    __table_args__ = (
+        db.UniqueConstraint(
+            section_id, slug, name=f"{_TABLE_PREFIX}uq_help_article_slug"
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"<HelpArticle {self.title}>"

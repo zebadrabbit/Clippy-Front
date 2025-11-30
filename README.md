@@ -11,7 +11,7 @@ ClippyFront is a Flask-based web application for organizing media and assembling
 - **Theming**: Dynamic color system with per-media-type colors
 - **Admin Panel**: User management, subscription tiers, worker monitoring
 - **Background Processing**: Celery workers for downloads and compilations
-- **Security**: CSRF protection, rate limiting, strict CSP
+- **Security**: CSRF protection, rate limiting, strict CSP, mandatory two-factor authentication (TOTP)
 - **Subscription Tiers**: Quota-based rendering and storage limits
 
 ## Documentation
@@ -108,16 +108,29 @@ See [Installation Guide](docs/INSTALLATION.md) for complete setup.
 - **API endpoints** for custom integrations
 - **Per-user data isolation** with security
 
-### User Help System (v0.14.0+)
+### User Help System (v1.5.1+)
 
-- **Wiki-style documentation** accessible throughout the app
-- **Contextual help** with tooltips and popovers on key UI elements
-- **Searchable topics** covering all features
-- **Markdown-based content** for easy updates
-- **Quick-start guides** in project wizard, media library, and other pages
-- Help accessible via navigation icon or direct links
+- **Discord-style help center** with category/section/article hierarchy
+- **Featured articles** with visual badges
+- **View count tracking** for popular content
+- **Breadcrumb navigation** for easy browsing
+- **Markdown/HTML content** support for rich formatting
+- **Database-backed** with admin management capability
+- **Sample content included** via seed script
+- Help accessible via `/help` navigation link
 
 See [Help System](docs/HELP_SYSTEM.md) for implementation details.
+
+### OAuth Integration (v1.5.1+)
+
+- **Multiple OAuth providers**: Discord, Twitch, YouTube/Google
+- **Login or signup** with third-party accounts
+- **Account linking** for existing users
+- **Email-first matching** prevents duplicate accounts
+- **Automatic username generation** from provider handles
+- **Token management** with refresh token support
+- **Admin security**: Restrict admin account to local network only
+- Configuration via `.env` for client IDs and secrets
 
 ### Worker System (v0.12.0+)
 
@@ -238,7 +251,17 @@ celery -A app.tasks.celery_app worker -Q celery --loglevel=info
 
 # GPU/CPU worker (compilations)
 celery -A app.tasks.celery_app worker -Q gpu,cpu --loglevel=info
+
+# Or use the versioned worker script (recommended)
+./scripts/worker/start-celery-versioned.sh main "celery,gpu,cpu" 2
 ```
+
+**Note:** All logs are written to `instance/logs/` in structured JSON format:
+- `app.json` - Web server logs
+- `worker.json` - Celery worker logs
+- `error.json` - Errors and warnings only
+
+See [Structured Logging](docs/STRUCTURED-LOGGING.md) for details.
 
 ### Troubleshooting
 
@@ -449,7 +472,7 @@ Notes:
 
 If a format isn't supported by the browser, the UI gracefully offers a direct file open. Consider transcoding inputs with ffmpeg for maximum compatibility.
 
-Cross-host paths: Paths stored in the database are canonicalized to `/instance/<...>`. At runtime, the app transparently rebases `/instance/` to the active instance directory (native host or container). `MEDIA_PATH_ALIAS_FROM/TO` remains available as a fallback for translating legacy absolute paths during migrations.
+Cross-host paths: Paths stored in the database are canonicalized to `/instance/<...>`. At runtime, the app transparently rebases `/instance/` to the active instance directory (native host or container).
 
 ## Arrange and Compile
 

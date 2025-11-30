@@ -2,6 +2,14 @@
 
 This repo is a Flask app with Celery workers for background processing and a media-focused UI. Use these guardrails to work productively and safely in this codebase.
 
+## Logging and Debugging
+- **Structured logging**: The app uses `structlog` for all logging (not standard Python logging)
+- **Log location**: All logs are written to `instance/logs/` directory
+  - Main app logs: Check `instance/logs/` for JSON-formatted structured logs
+  - Flask terminal output also shows structured logs
+- **When debugging**: Always check `instance/logs/` for detailed error information
+- **Log format**: JSON with fields like `event`, `timestamp`, `level`, `logger`, etc.
+
 ## Repo-wide rules for AI helpers
 Keep changes safe, reproducible, and easy to review. Follow these concise rules in addition to the project-specific guidance below.
 

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}Two-Factor Authentication{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-4">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0"><i class="bi bi-shield-lock"></i> Two-Factor Authentication</h4>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted">Enter the 6-digit code from your authenticator app:</p>
+
+                    <form method="POST" id="verifyForm">
+                        {{ csrf_token() }}
+                        <input type="hidden" name="use_backup" id="useBackup" value="0">
+
+                        <div class="mb-3">
+                            <input type="text" class="form-control form-control-lg text-center font-monospace"
+                                   name="code" id="code" placeholder="000000" maxlength="8" required
+                                   autocomplete="off" autofocus>
+                            <small class="form-text text-muted" id="codeHelp">Enter code from your authenticator app</small>
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="bi bi-check-circle"></i> Verify
+                            </button>
+                            <button type="button" class="btn btn-link" onclick="toggleBackupMode()">
+                                Use backup code instead
+                            </button>
+                            <a href="{{ url_for('auth.login') }}" class="btn btn-link text-muted">
+                                <i class="bi bi-arrow-left"></i> Back to login
+                            </a>
+                        </div>
+                    </form>
+
+                    <div class="mt-4 text-center">
+                        <small class="text-muted">
+                            Lost access to your authenticator app? Contact support for account recovery.
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let backupMode = false;
+
+function toggleBackupMode() {
+    backupMode = !backupMode;
+    const codeInput = document.getElementById('code');
+    const codeHelp = document.getElementById('codeHelp');
+    const useBackupInput = document.getElementById('useBackup');
+    const btn = event.target;
+
+    if (backupMode) {
+        codeInput.placeholder = 'XXXXXXXX';
+        codeInput.maxLength = 8;
+        codeHelp.textContent = 'Enter one of your backup codes';
+        useBackupInput.value = '1';
+        btn.textContent = 'Use authenticator app instead';
+    } else {
+        codeInput.placeholder = '000000';
+        codeInput.maxLength = 6;
+        codeHelp.textContent = 'Enter code from your authenticator app';
+        useBackupInput.value = '0';
+        btn.textContent = 'Use backup code instead';
+    }
+    codeInput.value = '';
+    codeInput.focus();
+}
+
+// Auto-submit when 6 digits entered (authenticator mode only)
+document.getElementById('code').addEventListener('input', function(e) {
+    if (!backupMode && this.value.length === 6 && /^\d{6}$/.test(this.value)) {
+        this.form.submit();
+    }
+});
+</script>
+{% endblock %}

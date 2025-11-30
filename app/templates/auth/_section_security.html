@@ -23,13 +23,86 @@
                         </div>
                         <div class="col-md-6">
                             <h6>Two-Factor Authentication</h6>
+                            {% if current_user.totp_enabled %}
+                            <p class="text-muted small">
+                                <i class="bi bi-check-circle text-success"></i> Enabled
+                            </p>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#disable2FAModal">
+                                    <i class="bi bi-shield-x"></i> Disable 2FA
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#regenerateBackupCodesModal">
+                                    <i class="bi bi-arrow-clockwise"></i> New Backup Codes
+                                </button>
+                            </div>
+                            {% else %}
                             <p class="text-muted small">
                                 <i class="bi bi-x-circle text-danger"></i> Not enabled
                             </p>
-                            <button class="btn btn-outline-secondary btn-sm" disabled>
-                                <i class="bi bi-shield-plus"></i> Enable 2FA (Coming Soon)
-                            </button>
+                            <p class="text-danger small">
+                                <strong>Required:</strong> All users must enable 2FA.
+                            </p>
+                            <a href="{{ url_for('auth.setup_2fa') }}" class="btn btn-primary btn-sm">
+                                <i class="bi bi-shield-plus"></i> Enable 2FA Now
+                            </a>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
             </div>
+
+<!-- Disable 2FA Modal -->
+<div class="modal fade" id="disable2FAModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="bi bi-shield-x"></i> Disable Two-Factor Authentication</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('auth.disable_2fa') }}">
+                {{ csrf_token() }}
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i> <strong>Warning:</strong> Disabling 2FA will make your account less secure.
+                    </div>
+                    <div class="mb-3">
+                        <label for="disable2faPassword" class="form-label">Confirm your password:</label>
+                        <input type="password" class="form-control" id="disable2faPassword" name="password" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Disable 2FA</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Regenerate Backup Codes Modal -->
+<div class="modal fade" id="regenerateBackupCodesModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-arrow-clockwise"></i> Regenerate Backup Codes</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('auth.regenerate_backup_codes') }}">
+                {{ csrf_token() }}
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i> This will invalidate all existing backup codes and generate new ones.
+                    </div>
+                    <div class="mb-3">
+                        <label for="regeneratePassword" class="form-label">Confirm your password:</label>
+                        <input type="password" class="form-control" id="regeneratePassword" name="password" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Regenerate Codes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

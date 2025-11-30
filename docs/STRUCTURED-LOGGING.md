@@ -14,11 +14,34 @@ ClippyFront uses [structlog](https://www.structlog.org/) for robust, production-
 
 ## Log Files
 
-All logs are written to `instance/logs/`:
+**All logs are centralized in `instance/logs/`** for both web server and workers:
 
 - **app.json** - All application logs (structured JSON)
 - **worker.json** - Celery worker logs (structured JSON)
 - **error.json** - Errors and warnings only (structured JSON)
+
+### Important: Worker Logging
+
+**Workers MUST have `CLIPPY_INSTANCE_PATH` set** to ensure logs go to the correct location:
+
+```bash
+# In .env or environment
+CLIPPY_INSTANCE_PATH=/home/winter/work/ClippyFront/instance
+```
+
+Workers automatically configure structlog on startup via signals in `app/tasks/celery_app.py`:
+- `@after_setup_logger.connect` - Main logger setup
+- `@after_setup_task_logger.connect` - Task logger setup
+
+**Do NOT redirect worker output** with `>> worker.log` - structlog handles all file writing:
+
+```bash
+# ✅ CORRECT - logs go to instance/logs/worker.json
+nohup ./scripts/worker/start-celery-versioned.sh main "celery" 2 > /dev/null 2>&1 &
+
+# ❌ WRONG - creates duplicate plain-text logs
+nohup ./scripts/worker/start-celery-versioned.sh main "celery" 2 >> worker.log 2>&1 &
+```
 
 ## Basic Usage
 

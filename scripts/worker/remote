@@ -82,7 +82,7 @@ FLASK_APP_URL=http://10.8.0.1:5000
 MEDIA_BASE_URL=http://10.8.0.1:5000
 WORKER_API_KEY=y5qknbhck7IEzEDErjezi6-0hmiyi9f-3_0jgonBc3g
 USE_GPU_QUEUE=1
-# Local instance path for avatar/media cache
+# Instance path for structured logging (all logs go to instance/logs/)
 CLIPPY_INSTANCE_PATH=/home/winter/ClippyFront/instance
 EOF
 fi
@@ -93,10 +93,15 @@ if [[ -f .env ]] && [[ ! -f .env.dev-backup ]]; then
 fi
 cp .env.worker .env
 
+# Ensure logs directory exists
+mkdir -p instance/logs
+
 # Remote GPU workers should ONLY process the gpu queue, not celery queue
 # Pass 0 as 4th argument for dev (Redis DB 0), or 1 for production (Redis DB 1)
-nohup ./scripts/worker/start-celery-versioned.sh tundra-gpu "gpu" 2 0 >> worker.log 2>&1 &
+# Logs will go to instance/logs/worker.json via structlog
+nohup ./scripts/worker/start-celery-versioned.sh tundra-gpu "gpu" 2 0 > /dev/null 2>&1 &
 sleep 2
+echo "Worker started. Logs: ~/ClippyFront/instance/logs/worker.json"
 ps aux | grep celery | grep -v grep | head -2
 ENDSSH
     ;;
@@ -143,7 +148,7 @@ FLASK_APP_URL=http://10.8.0.1:5000
 MEDIA_BASE_URL=http://10.8.0.1:5000
 WORKER_API_KEY=y5qknbhck7IEzEDErjezi6-0hmiyi9f-3_0jgonBc3g
 USE_GPU_QUEUE=1
-# Local instance path for avatar/media cache
+# Instance path for structured logging (all logs go to instance/logs/)
 CLIPPY_INSTANCE_PATH=/home/winter/ClippyFront/instance
 EOF
 fi
@@ -151,9 +156,13 @@ fi
 # Use worker config
 cp .env.worker .env
 
+# Ensure logs directory exists
+mkdir -p instance/logs
+
 # Remote GPU workers should ONLY process the gpu queue, not celery queue
 # Pass 0 as 4th argument for dev (Redis DB 0), or 1 for production (Redis DB 1)
-bash ./scripts/worker/start-celery-versioned.sh tundra-gpu 'gpu' 2 0 >> worker.log 2>&1 &
+# Logs will go to instance/logs/worker.json via structlog
+bash ./scripts/worker/start-celery-versioned.sh tundra-gpu 'gpu' 2 0 > /dev/null 2>&1 &
 ENDSSH
 
     sleep 3
@@ -161,11 +170,27 @@ ENDSSH
     # Show status
     echo "Worker status:"
     ssh -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} "ps aux | grep 'celery.*worker' | grep -v grep || echo 'No workers running'"
+    echo "Logs: ~/ClippyFront/instance/logs/worker.json"
     ;;
   logs)
     echo "Tailing worker logs on ${REMOTE_HOST}..."
     ssh -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST} bash << 'ENDSSH'
-tail -f ~/ClippyFront/worker.log 2>/dev/null || tail -f /mnt/clippyfront/logs/worker.json 2>/dev/null || echo 'No logs found'
+# Check for structured logs first (JSON format), fall back to old locations
+if [[ -f ~/ClippyFront/instance/logs/worker.json ]]; then
+  echo "=== Structured logs (instance/logs/worker.json) ==="
+  tail -f ~/ClippyFront/instance/logs/worker.json
+elif [[ -f /mnt/clippyfront/instance/logs/worker.json ]]; then
+  echo "=== Structured logs (/mnt/clippyfront/instance/logs/worker.json) ==="
+  tail -f /mnt/clippyfront/instance/logs/worker.json
+elif [[ -f ~/ClippyFront/worker.log ]]; then
+  echo "=== Legacy logs (worker.log) ==="
+  tail -f ~/ClippyFront/worker.log
+else
+  echo 'No worker logs found. Expected locations:'
+  echo '  - ~/ClippyFront/instance/logs/worker.json (structlog)'
+  echo '  - /mnt/clippyfront/instance/logs/worker.json (container)'
+  echo '  - ~/ClippyFront/worker.log (legacy)'
+fi
 ENDSSH
     ;;
   status)

@@ -987,6 +987,8 @@ def system_info():
         MediaType.OUTRO,
         MediaType.TRANSITION,
         MediaType.CLIP,
+        MediaType.COMPILATION,
+        MediaType.MUSIC,
     ]
     for mt in media_types:
         size = (
@@ -998,6 +1000,19 @@ def system_info():
         storage_stats["by_type"][mt.value] = size / (1024 * 1024)  # Convert to MB
 
     storage_stats["total_size_mb"] = storage_stats["total_size"] / (1024 * 1024)
+
+    # Get tmp directory size
+    tmp_path = os.path.join(current_app.instance_path, "tmp")
+    tmp_size = 0
+    if os.path.exists(tmp_path):
+        for root, _dirs, files in os.walk(tmp_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                try:
+                    tmp_size += os.path.getsize(file_path)
+                except (OSError, FileNotFoundError):
+                    pass
+    storage_stats["by_type"]["tmp"] = tmp_size / (1024 * 1024)  # Convert to MB
 
     # Get processing job statistics
     job_stats = {}

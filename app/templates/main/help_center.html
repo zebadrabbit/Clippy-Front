@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="help-center-header bg-dark text-white py-5 mb-5">
+    <div class="container">
+        <div class="row justify-content-center text-center">
+            <div class="col-lg-8">
+                <h1 class="display-4 fw-bold mb-3">
+                    <i class="bi bi-question-circle"></i> Help Center
+                </h1>
+                <p class="lead mb-4">Get help with Clippy - find guides, tutorials, and answers to common questions</p>
+
+                <!-- Search Box -->
+                <div class="input-group input-group-lg shadow-sm">
+                    <span class="input-group-text bg-white border-end-0">
+                        <i class="bi bi-search"></i>
+                    </span>
+                    <input type="text" class="form-control border-start-0 ps-0"
+                           placeholder="Search for help articles..."
+                           id="helpSearch">
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="container pb-5">
+    {% if categories %}
+        {% for category in categories %}
+            <div class="help-category mb-5">
+                <div class="d-flex align-items-center mb-4">
+                    {% if category.icon %}
+                        <i class="{{ category.icon }} fs-1 me-3"></i>
+                    {% endif %}
+                    <div>
+                        <h2 class="mb-1">{{ category.name }}</h2>
+                        {% if category.description %}
+                            <p class="text-muted mb-0">{{ category.description }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {% set sections = category.sections.filter_by(is_active=True).order_by('sort_order', 'name').all() %}
+
+                {% if sections %}
+                    <div class="row g-4">
+                        {% for section in sections %}
+                            <div class="col-md-6 col-lg-4">
+                                <div class="card h-100 hover-lift">
+                                    <div class="card-body">
+                                        <h5 class="card-title mb-3">
+                                            <a href="{{ url_for('main.help_category', category_slug=category.slug) }}#{{ section.slug }}"
+                                               class="text-decoration-none text-dark">
+                                                {{ section.name }}
+                                            </a>
+                                        </h5>
+
+                                        {% set articles = section.articles.filter_by(is_active=True).order_by('sort_order', 'title').limit(5).all() %}
+
+                                        {% if articles %}
+                                            <ul class="list-unstyled mb-0">
+                                                {% for article in articles %}
+                                                    <li class="mb-2">
+                                                        {% if article.is_featured %}
+                                                            <i class="bi bi-star-fill text-warning me-1"></i>
+                                                        {% endif %}
+                                                        <a href="{{ url_for('main.help_article',
+                                                                           category_slug=category.slug,
+                                                                           section_slug=section.slug,
+                                                                           article_slug=article.slug) }}"
+                                                           class="text-decoration-none">
+                                                            {{ article.title }}
+                                                        </a>
+                                                    </li>
+                                                {% endfor %}
+                                            </ul>
+
+                                            {% set total_articles = section.articles.filter_by(is_active=True).count() %}
+                                            {% if total_articles > 5 %}
+                                                <a href="{{ url_for('main.help_category', category_slug=category.slug) }}#{{ section.slug }}"
+                                                   class="btn btn-sm btn-link text-decoration-none mt-2 p-0">
+                                                    See all {{ total_articles }} articles <i class="bi bi-arrow-right"></i>
+                                                </a>
+                                            {% endif %}
+                                        {% else %}
+                                            <p class="text-muted small mb-0">No articles available yet</p>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted">No sections available in this category yet.</p>
+                {% endif %}
+            </div>
+        {% endfor %}
+    {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-inbox fs-1 text-muted mb-3"></i>
+            <h3>No Help Articles Yet</h3>
+            <p class="text-muted">Help content is being prepared. Check back soon!</p>
+        </div>
+    {% endif %}
+
+    <!-- Additional Help -->
+    <div class="row mt-5 pt-5 border-top">
+        <div class="col-md-4 mb-4">
+            <div class="card text-center h-100">
+                <div class="card-body">
+                    <i class="bi bi-chat-dots fs-1 mb-3"></i>
+                    <h5>Contact Support</h5>
+                    <p class="text-muted">Can't find what you're looking for? Get in touch with our support team.</p>
+                    <a href="{{ url_for('main.support') }}" class="btn btn-outline-secondary">
+                        Contact Us
+                    </a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-4">
+            <div class="card text-center h-100">
+                <div class="card-body">
+                    <i class="bi bi-code-square fs-1 mb-3"></i>
+                    <h5>API Reference</h5>
+                    <p class="text-muted">Integrate Clippy into your workflow with our comprehensive API docs.</p>
+                    <a href="{{ url_for('main.api_reference') }}" class="btn btn-outline-secondary">
+                        View API Docs
+                    </a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-4">
+            <div class="card text-center h-100">
+                <div class="card-body">
+                    <i class="bi bi-people fs-1 mb-3"></i>
+                    <h5>Community</h5>
+                    <p class="text-muted">Join our Discord community to get help from other Clippy users.</p>
+                    <a href="#" class="btn btn-outline-secondary">
+                        Join Discord
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.help-center-header {
+    border-bottom: 4px solid rgba(255,255,255,0.2);
+}
+
+.hover-lift {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.hover-lift:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.15) !important;
+}
+
+.card {
+    border: 1px solid rgba(0,0,0,0.08);
+}
+</style>
+
+<script>
+document.getElementById('helpSearch').addEventListener('input', function(e) {
+    const query = e.target.value.toLowerCase();
+    // TODO: Implement search functionality
+    console.log('Searching for:', query);
+});
+</script>
+{% endblock %}
