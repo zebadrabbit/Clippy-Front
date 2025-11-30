@@ -478,3 +478,219 @@ def verify_email_change(token):
         flash("An error occurred. Please try again.", "danger")
 
     return redirect(url_for("main.account_settings"))
+
+
+@auth_bp.route("/login/discord")
+def login_discord():
+    """Initiate Discord OAuth2 flow for login/signup.
+
+    Redirects user to Discord's authorization page. After authorization,
+    Discord redirects back to /discord/callback where we handle login/signup.
+
+    Uses a state parameter to distinguish between login and account linking flows.
+    """
+    client_id = current_app.config.get("DISCORD_CLIENT_ID")
+    redirect_uri = current_app.config.get("DISCORD_REDIRECT_URI")
+
+    if not client_id or not redirect_uri:
+        flash("Discord OAuth is not configured.", "danger")
+        return redirect(url_for("auth.login"))
+
+    # Build Discord OAuth URL with email scope for account creation
+    # Add state=login to distinguish from account linking
+    discord_oauth_url = (
+        f"https://discord.com/api/oauth2/authorize"
+        f"?client_id={client_id}"
+        f"&redirect_uri={redirect_uri}"
+        f"&response_type=code"
+        f"&scope=identify+email"
+        f"&state=login"
+    )
+
+    return redirect(discord_oauth_url)
+
+
+@auth_bp.route("/login/twitch")
+def login_twitch():
+    """Initiate Twitch OAuth2 flow for login/signup.
+
+    Redirects user to Twitch's authorization page. After authorization,
+    Twitch redirects back to /twitch/callback where we handle login/signup.
+
+    Uses a state parameter to distinguish between login and account linking flows.
+    """
+    client_id = current_app.config.get("TWITCH_CLIENT_ID")
+    redirect_uri = current_app.config.get("TWITCH_REDIRECT_URI")
+
+    if not client_id or not redirect_uri:
+        flash("Twitch OAuth is not configured.", "danger")
+        return redirect(url_for("auth.login"))
+
+    # Build Twitch OAuth URL with user:read:email scope
+    # Add state=login to distinguish from account linking
+    twitch_oauth_url = (
+        f"https://id.twitch.tv/oauth2/authorize"
+        f"?client_id={client_id}"
+        f"&redirect_uri={redirect_uri}"
+        f"&response_type=code"
+        f"&scope=user:read:email"
+        f"&state=login"
+    )
+
+    return redirect(twitch_oauth_url)
+
+
+@auth_bp.route("/discord/callback")
+def discord_callback():
+    """Handle Discord OAuth2 callback for login/signup.
+
+    Exchanges authorization code for access token, fetches Discord user info,
+    and either logs in existing user or creates new account.
+    """
+    code = request.args.get("code")
+    error = request.args.get("error")
+
+    if error:
+        current_app.logger.warning(f"Discord OAuth error: {error}")
+        flash("Discord authorization was denied or failed.", "warning")
+        return redirect(url_for("auth.login"))
+
+    if not code:
+        flash("No authorization code received from Discord.", "warning")
+        return redirect(url_for("auth.login"))
+
+    client_id = current_app.config.get("DISCORD_CLIENT_ID")
+    client_secret = current_app.config.get("DISCORD_CLIENT_SECRET")
+    redirect_uri = current_app.config.get("DISCORD_REDIRECT_URI", "").replace(
+        "/discord/callback", "/auth/discord/callback"
+    )
+
+    if not all([client_id, client_secret, redirect_uri]):
+        flash("Discord OAuth is not properly configured.", "danger")
+        return redirect(url_for("auth.login"))
+
+    try:
+        import requests
+
+        # Exchange code for access token
+        token_response = requests.post(
+            "https://discord.com/api/oauth2/token",
+            data={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+
+        if token_response.status_code != 200:
+            current_app.logger.error(
+                f"Discord token exchange failed: {token_response.status_code} - {token_response.text}"
+            )
+            flash("Failed to authenticate with Discord.", "danger")
+            return redirect(url_for("auth.login"))
+
+        token_data = token_response.json()
+        access_token = token_data.get("access_token")
+
+        if not access_token:
+            flash("No access token received from Discord.", "danger")
+            return redirect(url_for("auth.login"))
+
+        # Fetch user info from Discord
+        user_response = requests.get(
+            "https://discord.com/api/users/@me",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+        if user_response.status_code != 200:
+            current_app.logger.error(
+                f"Discord user fetch failed: {user_response.status_code} - {user_response.text}"
+            )
+            flash("Failed to fetch Discord user information.", "danger")
+            return redirect(url_for("auth.login"))
+
+        user_data = user_response.json()
+        discord_user_id = user_data.get("id")
+        discord_username = user_data.get("username")
+        discord_email = user_data.get("email")
+
+        if not discord_user_id:
+            flash("Failed to get Discord User ID.", "danger")
+            return redirect(url_for("auth.login"))
+
+        # Check if user exists with this Discord ID
+        user = User.query.filter_by(discord_user_id=discord_user_id).first()
+
+        if user:
+            # Existing user - log them in
+            login_user(user, remember=True)
+            user.last_login = datetime.utcnow()
+            db.session.commit()
+
+            flash(f"Welcome back, {user.username}!", "success")
+            current_app.logger.info(f"User {user.username} logged in via Discord OAuth")
+
+            # Redirect to requested page or dashboard
+            next_page = request.args.get("next")
+            if next_page and urlparse(next_page).netloc == "":
+                return redirect(next_page)
+            return redirect(url_for("main.dashboard"))
+
+        else:
+            # New user - create account
+            # Generate username from Discord username (ensure uniqueness)
+            base_username = discord_username.lower().replace(" ", "_")
+            username = base_username
+            counter = 1
+            while User.query.filter_by(username=username).first():
+                username = f"{base_username}{counter}"
+                counter += 1
+
+            # Get default tier
+            from app.models import Tier
+
+            default_tier = Tier.query.filter_by(name="Free").first()
+            if not default_tier:
+                flash("System error: Default tier not found.", "danger")
+                return redirect(url_for("auth.login"))
+
+            # Create new user
+            new_user = User(
+                username=username,
+                email=discord_email
+                or f"{discord_user_id}@discord.user",  # Fallback if no email
+                discord_user_id=discord_user_id,
+                tier_id=default_tier.id,
+                email_verified=bool(discord_email),  # Verify if Discord provided email
+            )
+            # No password needed for OAuth-only accounts
+            new_user.password_hash = None
+
+            db.session.add(new_user)
+            db.session.commit()
+
+            # Log them in
+            login_user(new_user, remember=True)
+
+            flash(
+                f"Welcome to ClippyFront, {username}! Your account has been created.",
+                "success",
+            )
+            current_app.logger.info(
+                f"New user registered via Discord OAuth: {username} (discord_id={discord_user_id})"
+            )
+
+            return redirect(url_for("main.dashboard"))
+
+    except Exception as e:
+        db.session.rollback()
+        safe_log_error(
+            current_app.logger,
+            "Discord OAuth login/signup error",
+            exc_info=e,
+        )
+        flash("An error occurred during Discord login.", "danger")
+        return redirect(url_for("auth.login"))

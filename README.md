@@ -7,6 +7,7 @@ ClippyFront is a Flask-based web application for organizing media and assembling
 
 - **Media Library**: Drag-and-drop uploads, video previews, tag management
 - **Project Wizard**: Fetch clips from Twitch/Discord, arrange with drag-and-drop timeline, compile with GPU rendering
+- **Analytics Dashboard**: Track clip engagement, creator activity, game performance, viral clips detection
 - **Theming**: Dynamic color system with per-media-type colors
 - **Admin Panel**: User management, subscription tiers, worker monitoring
 - **Background Processing**: Celery workers for downloads and compilations
@@ -38,6 +39,7 @@ ClippyFront is a Flask-based web application for organizing media and assembling
 ### Reference
 
 - **[API Routes](docs/ROUTES.md)** - Endpoint documentation
+- **[Analytics System](docs/ANALYTICS.md)** - Engagement tracking and insights (v1.4.0+)
 - **[Tiers & Quotas](docs/TIERS-AND-QUOTAS.md)** - Subscription system
 - **[Worker Versioning](docs/WORKER-VERSION-CHECKING.md)** - Version compatibility
 - **[Error Handling Audit](docs/ERROR_HANDLING_AUDIT.md)** - Error handling analysis (v0.13.0+)
@@ -93,6 +95,19 @@ See [Installation Guide](docs/INSTALLATION.md) for complete setup.
 - **Progress tracking** with live logs
 - **Direct project navigation** - compiles redirect to project details page
 
+### Analytics Dashboard (v1.4.0+)
+
+- **Engagement tracking** for clips from Twitch and Discord
+- **Creator leaderboards** with clip counts, views, and engagement metrics
+- **Game performance** analysis with viral potential indicators
+- **Viral clips detection** for content repurposing opportunities
+- **Timeline views** showing daily/weekly trends and growth
+- **Peak activity** detection for stream schedule optimization
+- **Period filtering** (day/week/month/all-time)
+- **Background aggregation** for fast dashboard loading
+- **API endpoints** for custom integrations
+- **Per-user data isolation** with security
+
 ### User Help System (v0.14.0+)
 
 - **Wiki-style documentation** accessible throughout the app
@@ -114,6 +129,21 @@ Workers operate via HTTP API - **no database credentials needed**:
 - Queue routing: `gpu`, `cpu`, `celery`
 
 See [Worker Setup](docs/WORKER_SETUP.md) for details.
+
+### Notification System
+
+**Multi-channel delivery**:
+- **In-app** with Server-Sent Events (SSE) for real-time updates
+- **Email** with SMTP integration and per-event-type preferences
+- **Browser push** with Web Push API for offline/background alerts
+
+**Management features**:
+- Dedicated notifications page with filtering, pagination, bulk actions
+- Actionable buttons ("View Project", "Go to Team", etc.)
+- Automatic retention policy (30-day cleanup of read notifications)
+- Multi-device push subscription support
+
+**Event types**: compilation complete/failed, team member added, project shared, invitation received
 
 ### Subscription Tiers
 

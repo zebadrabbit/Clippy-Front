@@ -2135,6 +2135,96 @@ def theme_activate(theme_id: int):
         return jsonify({"error": "Failed to activate theme"}), 500
 
 
+@admin_bp.route("/themes/<int:theme_id>/export")
+@login_required
+@admin_required
+def theme_export(theme_id: int):
+    """Export theme colors as a JSON string for easy copy/paste."""
+    theme = db.session.get(Theme, theme_id)
+    if not theme:
+        return jsonify({"error": "Theme not found"}), 404
+
+    # Export all color-related fields
+    export_data = {
+        "name": theme.name,
+        "description": theme.description,
+        "mode": theme.mode,
+        "color_primary": theme.color_primary,
+        "color_secondary": theme.color_secondary,
+        "color_accent": theme.color_accent,
+        "color_background": theme.color_background,
+        "color_surface": theme.color_surface,
+        "color_text": theme.color_text,
+        "color_muted": theme.color_muted,
+        "navbar_bg": theme.navbar_bg,
+        "navbar_text": theme.navbar_text,
+        "media_color_intro": theme.media_color_intro,
+        "media_color_clip": theme.media_color_clip,
+        "media_color_outro": theme.media_color_outro,
+        "media_color_transition": theme.media_color_transition,
+        "media_color_compilation": theme.media_color_compilation,
+        "outline_color": theme.outline_color,
+        "watermark_opacity": theme.watermark_opacity,
+        "watermark_position": theme.watermark_position,
+    }
+
+    return jsonify(export_data)
+
+
+@admin_bp.route("/themes/import", methods=["POST"])
+@login_required
+@admin_required
+def theme_import():
+    """Import theme colors from JSON data."""
+    try:
+        import_data = request.get_json()
+        if not import_data:
+            return jsonify({"error": "No data provided"}), 400
+
+        name = import_data.get("name", "Imported Theme").strip()
+
+        # Create new theme with imported data
+        theme = Theme(
+            name=name,
+            description=import_data.get("description"),
+            mode=import_data.get("mode", "auto"),
+            color_primary=import_data.get("color_primary", "#0d6efd"),
+            color_secondary=import_data.get("color_secondary", "#6c757d"),
+            color_accent=import_data.get("color_accent", "#6610f2"),
+            color_background=import_data.get("color_background", "#121212"),
+            color_surface=import_data.get("color_surface", "#1e1e1e"),
+            color_text=import_data.get("color_text", "#e9ecef"),
+            color_muted=import_data.get("color_muted", "#adb5bd"),
+            navbar_bg=import_data.get("navbar_bg", "#212529"),
+            navbar_text=import_data.get("navbar_text", "#ffffff"),
+            media_color_intro=import_data.get("media_color_intro", "#0ea5e9"),
+            media_color_clip=import_data.get("media_color_clip"),
+            media_color_outro=import_data.get("media_color_outro", "#f59e0b"),
+            media_color_transition=import_data.get("media_color_transition", "#22c55e"),
+            media_color_compilation=import_data.get("media_color_compilation"),
+            outline_color=import_data.get("outline_color"),
+            watermark_opacity=import_data.get("watermark_opacity", 0.1),
+            watermark_position=import_data.get("watermark_position", "bottom-right"),
+            updated_by=current_user.id,
+        )
+
+        db.session.add(theme)
+        db.session.commit()
+
+        return jsonify(
+            {
+                "success": True,
+                "theme_id": theme.id,
+                "name": theme.name,
+                "redirect": url_for("admin.themes_list"),
+            }
+        )
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Theme import failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 def _handle_theme_uploads(theme: Theme) -> None:
     """Handle logo, favicon, watermark file uploads for a theme."""
     base_upload = os.path.join(
@@ -2696,3 +2786,177 @@ def public_library_delete(media_id):
         flash("Failed to delete media file.", "danger")
 
     return redirect(url_for("admin.public_library"))
+
+
+# ============================================================================
+# Content Editor
+# ============================================================================
+
+
+@admin_bp.route("/content-editor")
+@login_required
+@admin_required
+def content_editor():
+    """List editable content files."""
+    # Define editable content areas
+    content_areas = {
+        "Help Pages": {
+            "path": os.path.join(current_app.root_path, "help", "content"),
+            "extensions": [".md"],
+            "type": "markdown",
+            "icon": "bi-question-circle",
+        },
+        "Documentation": {
+            "path": os.path.join(current_app.root_path.replace("/app", ""), "docs"),
+            "extensions": [".md"],
+            "type": "markdown",
+            "icon": "bi-file-text",
+        },
+    }
+
+    files_by_area = {}
+
+    for area_name, config in content_areas.items():
+        files = []
+        base_path = config["path"]
+
+        if os.path.exists(base_path):
+            for root, _dirs, filenames in os.walk(base_path):
+                for filename in filenames:
+                    if any(filename.endswith(ext) for ext in config["extensions"]):
+                        full_path = os.path.join(root, filename)
+                        rel_path = os.path.relpath(full_path, base_path)
+
+                        # Get file stats
+                        try:
+                            stats = os.stat(full_path)
+                            modified = datetime.fromtimestamp(stats.st_mtime)
+                            size = stats.st_size
+                        except Exception:
+                            modified = None
+                            size = 0
+
+                        files.append(
+                            {
+                                "name": filename,
+                                "path": rel_path,
+                                "full_path": full_path,
+                                "modified": modified,
+                                "size": size,
+                            }
+                        )
+
+            files.sort(key=lambda x: x["name"])
+            files_by_area[area_name] = {
+                "files": files,
+                "icon": config["icon"],
+                "type": config["type"],
+            }
+
+    return render_template("admin/content_editor.html", files_by_area=files_by_area)
+
+
+@admin_bp.route("/content-editor/edit")
+@login_required
+@admin_required
+def edit_file():
+    """Edit a specific file."""
+    file_path = request.args.get("file")
+    if not file_path:
+        flash("No file specified.", "danger")
+        return redirect(url_for("admin.content_editor"))
+
+    # Security: Only allow editing files in specific directories
+    allowed_dirs = [
+        os.path.join(current_app.root_path, "help", "content"),
+        os.path.join(current_app.root_path.replace("/app", ""), "docs"),
+    ]
+
+    # Resolve to absolute path
+    abs_path = os.path.abspath(file_path)
+
+    # Check if file is in allowed directory
+    if not any(abs_path.startswith(d) for d in allowed_dirs):
+        flash("Access denied to this file.", "danger")
+        return redirect(url_for("admin.content_editor"))
+
+    if not os.path.exists(abs_path):
+        flash("File not found.", "danger")
+        return redirect(url_for("admin.content_editor"))
+
+    # Read file content
+    try:
+        with open(abs_path, encoding="utf-8") as f:
+            content = f.read()
+    except Exception as e:
+        flash(f"Error reading file: {e}", "danger")
+        return redirect(url_for("admin.content_editor"))
+
+    # Determine file type
+    file_ext = os.path.splitext(abs_path)[1].lower()
+    file_type = "markdown" if file_ext == ".md" else "text"
+
+    # Get relative path for display
+    for allowed_dir in allowed_dirs:
+        if abs_path.startswith(allowed_dir):
+            rel_path = os.path.relpath(abs_path, allowed_dir)
+            break
+    else:
+        rel_path = os.path.basename(abs_path)
+
+    return render_template(
+        "admin/file_editor.html",
+        file_path=abs_path,
+        rel_path=rel_path,
+        content=content,
+        file_type=file_type,
+    )
+
+
+@admin_bp.route("/content-editor/save", methods=["POST"])
+@login_required
+@admin_required
+def save_file():
+    """Save file content."""
+    file_path = request.form.get("file_path")
+    content = request.form.get("content", "")
+
+    if not file_path:
+        flash("No file specified.", "danger")
+        return redirect(url_for("admin.content_editor"))
+
+    # Security: Only allow editing files in specific directories
+    allowed_dirs = [
+        os.path.join(current_app.root_path, "help", "content"),
+        os.path.join(current_app.root_path.replace("/app", ""), "docs"),
+    ]
+
+    abs_path = os.path.abspath(file_path)
+
+    if not any(abs_path.startswith(d) for d in allowed_dirs):
+        flash("Access denied to this file.", "danger")
+        return redirect(url_for("admin.content_editor"))
+
+    # Create backup
+    try:
+        backup_path = abs_path + ".backup"
+        if os.path.exists(abs_path):
+            with open(abs_path, encoding="utf-8") as f:
+                backup_content = f.read()
+            with open(backup_path, "w", encoding="utf-8") as f:
+                f.write(backup_content)
+    except Exception as e:
+        current_app.logger.warning(f"Failed to create backup: {e}")
+
+    # Save file
+    try:
+        with open(abs_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+        flash("File saved successfully.", "success")
+
+    except Exception as e:
+        flash(f"Error saving file: {e}", "danger")
+        current_app.logger.error(f"Error saving file: {e}", exc_info=True)
+
+    return redirect(url_for("admin.edit_file", file=abs_path))

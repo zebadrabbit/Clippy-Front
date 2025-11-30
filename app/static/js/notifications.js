@@ -196,6 +196,20 @@
             actorName = notif.actor.username;
         }
 
+        // Get action button if applicable
+        let actionButton = '';
+        if (notif.type === 'COMPILATION_COMPLETED' || notif.type === 'COMPILATION_FAILED') {
+            if (notif.project) {
+                actionButton = `<a href="/projects/${notif.project.id}" class="btn btn-sm btn-primary mt-2 w-100" onclick="event.stopPropagation()"><i class="bi bi-folder-open"></i> View Project</a>`;
+            }
+        } else if (notif.type === 'PROJECT_SHARED' && notif.project) {
+            actionButton = `<a href="/projects/${notif.project.id}" class="btn btn-sm btn-primary mt-2 w-100" onclick="event.stopPropagation()"><i class="bi bi-eye"></i> See Details</a>`;
+        } else if (notif.type === 'MEMBER_ADDED' && notif.team) {
+            actionButton = `<a href="/teams/${notif.team.id}" class="btn btn-sm btn-primary mt-2 w-100" onclick="event.stopPropagation()"><i class="bi bi-people"></i> Go to Team</a>`;
+        } else if (notif.type === 'INVITATION_RECEIVED') {
+            actionButton = `<a href="/invitations" class="btn btn-sm btn-success mt-2 w-100" onclick="event.stopPropagation()"><i class="bi bi-envelope-check"></i> View Invitation</a>`;
+        }
+
         return `
             <li>
                 <a class="dropdown-item ${bgClass} py-2 px-3" href="#" id="notif-${notif.id}" style="cursor: pointer;">
@@ -209,6 +223,7 @@
                                 ${time}
                                 ${actorName ? ` &middot; by ${escapeHtml(actorName)}` : ''}
                             </div>
+                            ${actionButton}
                         </div>
                         ${!isRead ? '<span class="badge bg-primary rounded-circle" style="width: 8px; height: 8px; padding: 0;"></span>' : ''}
                     </div>

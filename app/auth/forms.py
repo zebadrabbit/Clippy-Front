@@ -231,18 +231,12 @@ class ProfileForm(FlaskForm):
         "Last Name",
         validators=[Optional(), Length(max=100)],
     )
-    discord_user_id = StringField(
-        "Discord User ID",
-        validators=[Optional(), Length(max=100)],
-    )
+    # discord_user_id is now set via OAuth, not through this form
     discord_channel_id = StringField(
         "Discord Channel ID",
         validators=[Optional(), Length(max=100)],
     )
-    twitch_username = StringField(
-        "Twitch Username",
-        validators=[Optional(), Length(max=100)],
-    )
+    # twitch_username is now set via OAuth, not through this form
     date_format = SelectField(
         "Date Format",
         choices=[
@@ -270,23 +264,3 @@ class ProfileForm(FlaskForm):
         """
         super().__init__(*args, **kwargs)
         self.current_user = current_user
-
-    def validate_discord_user_id(self, discord_user_id):
-        """
-        Validate Discord User ID uniqueness excluding current user.
-
-        Args:
-            discord_user_id: Discord User ID field from form
-
-        Raises:
-            ValidationError: If Discord User ID already exists for another user
-        """
-        if (
-            discord_user_id.data
-            and discord_user_id.data != self.current_user.discord_user_id
-        ):
-            user = User.query.filter_by(discord_user_id=discord_user_id.data).first()
-            if user:
-                raise ValidationError(
-                    "Discord User ID already linked to another account."
-                )

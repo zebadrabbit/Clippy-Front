@@ -6,6 +6,11 @@
                     </h5>
                 </div>
                 <div class="card-body">
+                    <!-- Discord Disconnect Form (outside main form to avoid nesting) -->
+                    <form id="discord-disconnect-form" method="POST" action="{{ url_for('main.disconnect_discord') }}" style="display: none;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    </form>
+
                     <form method="POST" action="{{ url_for('main.profile') }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
@@ -17,20 +22,33 @@
 
                                 <!-- Discord User ID -->
                                 <div class="mb-3">
-                                    <label class="form-label" for="discord_user_id">Discord User ID</label>
-                                    <div class="input-group">
-                                        <span class="input-group-text">
-                                            <i class="bi bi-discord"></i>
-                                        </span>
-                                        <input type="text" name="discord_user_id" id="discord_user_id" class="form-control" value="{{ current_user.discord_user_id or '' }}">
-                                    </div>
+                                    <label class="form-label">Discord Account</label>
                                     {% if current_user.discord_user_id %}
-                                        <div class="form-text text-success">
-                                            <i class="bi bi-check-circle"></i> Discord account linked
+                                        <div class="card" style="border-color: #5865F2;">
+                                            <div class="card-body py-2" style="background-color: #5865F2; background-image: linear-gradient(135deg, #5865F2 0%, #4752C4 100%);">
+                                                <div class="d-flex justify-content-between align-items-center">
+                                                    <div>
+                                                        <i class="bi bi-discord" style="color: white; font-size: 1.2rem;"></i>
+                                                        <strong class="ms-2" style="color: white;">Connected</strong>
+                                                        <small class="ms-2" style="color: rgba(255,255,255,0.8);">ID: {{ current_user.discord_user_id }}</small>
+                                                    </div>
+                                                    <button type="button" class="btn btn-sm btn-outline-light" onclick="if(confirm('Are you sure you want to disconnect Discord?')) document.getElementById('discord-disconnect-form').submit();">
+                                                        <i class="bi bi-x-circle"></i> Disconnect
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="form-text text-success mt-2">
+                                            <i class="bi bi-check-circle"></i> Your Discord account is verified and connected
                                         </div>
                                     {% else %}
-                                        <div class="form-text">
-                                            Link your Discord account to enable bot integration
+                                        <div class="d-grid">
+                                            <a href="{{ url_for('main.connect_discord') }}" class="btn" style="background-color: #5865F2; color: white;">
+                                                <i class="bi bi-discord"></i> Connect with Discord
+                                            </a>
+                                        </div>
+                                        <div class="form-text mt-2">
+                                            Click to securely connect your Discord account via OAuth2
                                         </div>
                                     {% endif %}
                                 </div>
@@ -42,9 +60,13 @@
                                         <span class="input-group-text">
                                             <i class="bi bi-hash"></i>
                                         </span>
-                                        <input type="text" name="discord_channel_id" id="discord_channel_id" class="form-control" value="{{ current_user.discord_channel_id or '' }}" placeholder="Your Discord channel ID">
+                                        <input type="text" name="discord_channel_id" id="discord_channel_id" class="form-control" value="{{ current_user.discord_channel_id or '' }}" placeholder="Your Discord channel ID" {% if not current_user.discord_user_id %}disabled{% endif %}>
                                     </div>
-                                    {% if current_user.discord_channel_id %}
+                                    {% if not current_user.discord_user_id %}
+                                        <div class="form-text text-warning">
+                                            <i class="bi bi-exclamation-triangle"></i> Connect your Discord account first to enable channel configuration
+                                        </div>
+                                    {% elif current_user.discord_channel_id %}
                                         <div class="form-text text-success">
                                             <i class="bi bi-link-45deg"></i> Channel configured
                                         </div>
@@ -79,22 +101,36 @@
                                     <i class="bi bi-twitch"></i> Twitch Integration
                                 </h6>
 
-                                <!-- Twitch Username -->
+                                <!-- Twitch OAuth Connection -->
                                 <div class="mb-3">
-                                    <label class="form-label" for="twitch_username">Twitch Username</label>
-                                    <div class="input-group">
-                                        <span class="input-group-text">
-                                            <i class="bi bi-twitch"></i>
-                                        </span>
-                                        <input type="text" name="twitch_username" id="twitch_username" class="form-control" value="{{ current_user.twitch_username or '' }}">
-                                    </div>
+                                    <label class="form-label">Twitch Account</label>
                                     {% if current_user.twitch_username %}
-                                        <div class="form-text text-success">
-                                            <i class="bi bi-check-circle"></i> Twitch account linked
+                                        <div class="card" style="border-color: #9146FF;">
+                                            <div class="card-body py-2" style="background-color: #9146FF; background-image: linear-gradient(135deg, #9146FF 0%, #772CE8 100%);">
+                                                <div class="d-flex justify-content-between align-items-center">
+                                                    <div>
+                                                        <i class="bi bi-twitch" style="color: white; font-size: 1.2rem;"></i>
+                                                        <strong class="ms-2" style="color: white;">Connected</strong>
+                                                        <small class="ms-2" style="color: rgba(255,255,255,0.8);">@{{ current_user.twitch_username }}</small>
+                                                    </div>
+                                                    <button type="button" class="btn btn-sm btn-outline-light"
+                                                            onclick="if(confirm('Disconnect Twitch account @{{ current_user.twitch_username }}?')) document.getElementById('twitch-disconnect-form').submit();">
+                                                        <i class="bi bi-x-circle"></i> Disconnect
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="form-text text-success mt-2">
+                                            <i class="bi bi-check-circle"></i> Your Twitch account is verified and connected
                                         </div>
                                     {% else %}
-                                        <div class="form-text">
-                                            Link your Twitch account to enable clip collection
+                                        <div class="d-grid">
+                                            <a href="{{ url_for('main.connect_twitch') }}" class="btn" style="background-color: #9146FF; color: white;">
+                                                <i class="bi bi-twitch"></i> Connect with Twitch
+                                            </a>
+                                        </div>
+                                        <div class="form-text mt-2">
+                                            Click to securely connect your Twitch account via OAuth2
                                         </div>
                                     {% endif %}
                                 </div>
@@ -108,3 +144,8 @@
                     </form>
                 </div>
             </div>
+
+<!-- Twitch Disconnect Form (separate to avoid nesting) -->
+<form id="twitch-disconnect-form" method="POST" action="{{ url_for('main.disconnect_twitch') }}" style="display: none;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+</form>

@@ -127,7 +127,7 @@
   <div id="media-grid" class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-5 g-3">
     {% for m in media_files %}
     <div class="col">
-      <div class="card h-100 position-relative media-card" data-id="{{ m.id }}" data-mime="{{ m.mime_type }}" data-type="{{ m.media_type.value if m.media_type else '' }}" data-name="{{ m.original_filename }}" data-tags="{{ m.tags or '' }}">
+      <div class="card h-100 position-relative media-card" data-id="{{ m.id }}" data-mime="{{ m.mime_type }}" data-type="{{ m.media_type.value if m.media_type else '' }}" data-name="{{ m.original_filename }}" data-tags="{{ m.tags or '' }}" data-artist="{{ m.artist or '' }}" data-album="{{ m.album or '' }}" data-title="{{ m.title or '' }}" data-license="{{ m.license or '' }}" data-attribution-url="{{ m.attribution_url or '' }}" data-attribution-text="{{ m.attribution_text or '' }}">
         <div class="position-absolute top-0 start-0 p-2" style="z-index: 10;">
           <input class="form-check-input media-select" type="checkbox" value="{{ m.id }}">
         </div>

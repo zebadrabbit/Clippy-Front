@@ -41,8 +41,8 @@ class Config:
     SQLALCHEMY_ENGINE_OPTIONS = {
         "pool_pre_ping": True,
         "pool_recycle": int(os.environ.get("DB_POOL_RECYCLE", 300)),
-        "pool_size": int(os.environ.get("DB_POOL_SIZE", 5)),
-        "max_overflow": int(os.environ.get("DB_MAX_OVERFLOW", 10)),
+        "pool_size": int(os.environ.get("DB_POOL_SIZE", 20)),
+        "max_overflow": int(os.environ.get("DB_MAX_OVERFLOW", 30)),
         # Optional: how long to wait for a connection from the pool
         **(
             {"pool_timeout": int(os.environ.get("DB_POOL_TIMEOUT", 30))}
@@ -133,8 +133,12 @@ class Config:
     # External API Configuration
     DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN")
     DISCORD_CHANNEL_ID = os.environ.get("DISCORD_CHANNEL_ID")
+    DISCORD_CLIENT_ID = os.environ.get("DISCORD_CLIENT_ID")
+    DISCORD_CLIENT_SECRET = os.environ.get("DISCORD_CLIENT_SECRET")
+    DISCORD_REDIRECT_URI = os.environ.get("DISCORD_REDIRECT_URI")
     TWITCH_CLIENT_ID = os.environ.get("TWITCH_CLIENT_ID")
     TWITCH_CLIENT_SECRET = os.environ.get("TWITCH_CLIENT_SECRET")
+    TWITCH_REDIRECT_URI = os.environ.get("TWITCH_REDIRECT_URI")
 
     # Worker API Configuration
     # Shared secret for workers to authenticate with the Flask app
@@ -188,6 +192,20 @@ class Config:
         "yes",
     }
     SCHEDULER_TICK_SECONDS = int(os.environ.get("SCHEDULER_TICK_SECONDS", 60))
+
+    # Notification Retention Policy
+    # Number of days to retain read notifications (unread are never deleted)
+    NOTIFICATION_RETENTION_DAYS = int(os.environ.get("NOTIFICATION_RETENTION_DAYS", 30))
+
+    # Web Push Notifications (VAPID)
+    # Generate keys with: python -c "from py_vapid import Vapid; vapid = Vapid(); vapid.generate_keys(); print('Public:', vapid.public_key.decode()); print('Private:', vapid.private_key.decode())"
+    VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY")
+    VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY")
+    VAPID_CLAIMS = (
+        {"sub": f"mailto:{os.environ.get('VAPID_EMAIL', 'admin@localhost')}"}
+        if os.environ.get("VAPID_PRIVATE_KEY")
+        else None
+    )
 
     # Security Headers (Talisman)
     FORCE_HTTPS = False  # Set to True in production

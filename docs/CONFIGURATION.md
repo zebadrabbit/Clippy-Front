@@ -101,6 +101,31 @@ Workers no longer need database access:
 
 ## Features
 
+### Notifications
+
+- `NOTIFICATION_RETENTION_DAYS` - Auto-delete read notifications after N days (default: 30)
+- `VAPID_PUBLIC_KEY` - VAPID public key for Web Push API (required for browser push)
+- `VAPID_PRIVATE_KEY` - VAPID private key for Web Push API (required for browser push)
+- `VAPID_EMAIL` - Contact email for push notifications (e.g., mailto:admin@example.com)
+
+Generate VAPID keys with:
+```bash
+python -c "from py_vapid import Vapid; vapid = Vapid(); vapid.generate_keys(); print('Public:', vapid.public_key.decode()); print('Private:', vapid.private_key.decode())"
+```
+
+### Email
+
+- `SMTP_HOST` - SMTP server hostname (required for email notifications)
+- `SMTP_PORT` - SMTP server port (default: 587)
+- `SMTP_USERNAME` - SMTP authentication username
+- `SMTP_PASSWORD` - SMTP authentication password
+- `SMTP_FROM_EMAIL` - From address for notification emails
+- `MAIL_SERVER` - Fallback to SMTP_HOST for Flask-Mail
+- `MAIL_PORT` - Fallback to SMTP_PORT
+- `MAIL_USERNAME` - Fallback to SMTP_USERNAME
+- `MAIL_PASSWORD` - Fallback to SMTP_PASSWORD
+- `MAIL_DEFAULT_SENDER` - Fallback to SMTP_FROM_EMAIL
+
 ### Overlays
 
 - `OVERLAY_DEBUG` - Enable avatar resolution logging (default: false)

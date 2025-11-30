@@ -5,6 +5,8 @@ Revises: 8d275967a8cb
 Create Date: 2025-11-29 06:20:34.119372
 
 """
+import os
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -16,15 +18,23 @@ depends_on = None
 
 
 def upgrade():
-    # Drop scheduling-related columns from dev_tiers table
-    with op.batch_alter_table("dev_tiers", schema=None) as batch_op:
+    # Get table prefix from environment
+    table_prefix = os.environ.get("TABLE_PREFIX", "")
+    tiers_table = f"{table_prefix}tiers"
+
+    # Drop scheduling-related columns from tiers table
+    with op.batch_alter_table(tiers_table, schema=None) as batch_op:
         batch_op.drop_column("max_schedules_per_user")
         batch_op.drop_column("can_schedule_tasks")
 
 
 def downgrade():
+    # Get table prefix from environment
+    table_prefix = os.environ.get("TABLE_PREFIX", "")
+    tiers_table = f"{table_prefix}tiers"
+
     # Restore scheduling columns if needed
-    with op.batch_alter_table("dev_tiers", schema=None) as batch_op:
+    with op.batch_alter_table(tiers_table, schema=None) as batch_op:
         batch_op.add_column(
             sa.Column(
                 "can_schedule_tasks", sa.Boolean(), nullable=False, server_default="0"

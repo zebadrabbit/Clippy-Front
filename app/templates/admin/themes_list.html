@@ -14,9 +14,14 @@
     </div>
     <div class="col-12 col-lg-9 admin-content">
       <div class="d-flex justify-content-between align-items-center mb-3">
-        <a class="btn btn-primary" href="{{ url_for('admin.theme_create') }}">
-          <i class="bi bi-plus"></i> New Theme
-        </a>
+        <div>
+          <a class="btn btn-primary" href="{{ url_for('admin.theme_create') }}">
+            <i class="bi bi-plus"></i> New Theme
+          </a>
+          <button class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#importModal">
+            <i class="bi bi-upload"></i> Import Theme
+          </button>
+        </div>
       </div>
 
       <div class="row">
@@ -42,6 +47,9 @@
             <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.theme_edit', theme_id=t.id) }}">
               <i class="bi bi-pencil"></i> Edit
             </a>
+            <button class="btn btn-sm btn-outline-info export-theme" data-theme-id="{{ t.id }}" title="Export colors">
+              <i class="bi bi-download"></i> Export
+            </button>
             {% if not t.is_active %}
             <form method="POST" action="{{ url_for('admin.theme_activate', theme_id=t.id) }}" class="d-inline">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -65,6 +73,49 @@
     </div>
   </div>
 </div>
+
+<!-- Import Theme Modal -->
+<div class="modal fade" id="importModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Import Theme</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>Paste the exported theme JSON data below:</p>
+        <textarea id="importData" class="form-control" rows="10" placeholder='{"name": "My Theme", "color_primary": "#0d6efd", ...}'></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="importThemeBtn">Import</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Export Theme Modal -->
+<div class="modal fade" id="exportModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Export Theme</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>Copy the theme data below:</p>
+        <textarea id="exportData" class="form-control" rows="15" readonly></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-primary" id="copyExportBtn">
+          <i class="bi bi-clipboard"></i> Copy to Clipboard
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -77,6 +128,79 @@
         if (c) { el.style.backgroundColor = c; }
       });
     } catch (e) { /* no-op */ }
+
+    // Export theme functionality
+    document.querySelectorAll('.export-theme').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        const themeId = this.getAttribute('data-theme-id');
+        fetch(`/admin/themes/${themeId}/export`)
+          .then(res => res.json())
+          .then(data => {
+            document.getElementById('exportData').value = JSON.stringify(data, null, 2);
+            const exportModal = new bootstrap.Modal(document.getElementById('exportModal'));
+            exportModal.show();
+          })
+          .catch(err => {
+            console.error('Export failed:', err);
+            alert('Failed to export theme');
+          });
+      });
+    });
+
+    // Copy to clipboard
+    document.getElementById('copyExportBtn')?.addEventListener('click', function() {
+      const textarea = document.getElementById('exportData');
+      textarea.select();
+      navigator.clipboard.writeText(textarea.value)
+        .then(() => {
+          const btn = this;
+          const originalHTML = btn.innerHTML;
+          btn.innerHTML = '<i class="bi bi-check"></i> Copied!';
+          setTimeout(() => {
+            btn.innerHTML = originalHTML;
+          }, 2000);
+        })
+        .catch(err => {
+          console.error('Copy failed:', err);
+          alert('Failed to copy to clipboard');
+        });
+    });
+
+    // Import theme functionality
+    document.getElementById('importThemeBtn')?.addEventListener('click', function() {
+      const importData = document.getElementById('importData').value.trim();
+      if (!importData) {
+        alert('Please paste theme data to import');
+        return;
+      }
+
+      try {
+        const data = JSON.parse(importData);
+        fetch('/admin/themes/import', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': '{{ csrf_token() }}'
+          },
+          body: JSON.stringify(data)
+        })
+        .then(res => res.json())
+        .then(result => {
+          if (result.success) {
+            alert(`Theme "${result.name}" imported successfully!`);
+            window.location.reload();
+          } else {
+            alert('Import failed: ' + (result.error || 'Unknown error'));
+          }
+        })
+        .catch(err => {
+          console.error('Import failed:', err);
+          alert('Failed to import theme');
+        });
+      } catch (e) {
+        alert('Invalid JSON data. Please check the format and try again.');
+      }
+    });
   })();
   </script>
 {% endblock %}

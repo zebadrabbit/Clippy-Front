@@ -393,6 +393,7 @@ async function queueDownloads(wizard, urls) {
       creator_name: c.creator_name,
       game_name: c.game_name,
       created_at: c.created_at,
+      view_count: c.view_count || 0,
     }));
     if (clips.length) payload = { clips, limit };
   }

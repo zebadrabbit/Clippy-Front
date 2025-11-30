@@ -5,6 +5,8 @@ Revises: 643de2b99af0
 Create Date: 2025-11-26 00:51:49.579142
 
 """
+import os
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -16,10 +18,14 @@ depends_on = None
 
 
 def upgrade():
-    # Add tags column to dev_projects table
-    op.add_column("dev_projects", sa.Column("tags", sa.Text(), nullable=True))
+    # Add tags column to projects table
+    table_prefix = os.environ.get("TABLE_PREFIX", "")
+    projects_table = f"{table_prefix}projects"
+    op.add_column(projects_table, sa.Column("tags", sa.Text(), nullable=True))
 
 
 def downgrade():
-    # Remove tags column from dev_projects table
-    op.drop_column("dev_projects", "tags")
+    # Remove tags column from projects table
+    table_prefix = os.environ.get("TABLE_PREFIX", "")
+    projects_table = f"{table_prefix}projects"
+    op.drop_column(projects_table, "tags")

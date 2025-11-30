@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block styles %}
+<style>
+  .notification-item {
+    transition: all 0.2s ease;
+    border-left: 3px solid transparent;
+  }
+  .notification-item:hover {
+    background-color: var(--bs-light);
+  }
+  .notification-item.unread {
+    background-color: rgba(13, 110, 253, 0.05);
+    border-left-color: var(--bs-primary);
+  }
+  .notification-checkbox {
+    cursor: pointer;
+  }
+  .filter-chip {
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .filter-chip:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+  .filter-chip.active {
+    background-color: var(--bs-primary) !important;
+    color: white !important;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="row">
+    <div class="col-12">
+      <!-- Header -->
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-bell"></i> Notifications</h2>
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-primary btn-sm" id="selectAllBtn">
+            <i class="bi bi-check2-square"></i> Select All
+          </button>
+          <button class="btn btn-outline-secondary btn-sm" id="bulkMarkReadBtn" disabled>
+            <i class="bi bi-eye"></i> Mark Read
+          </button>
+          <button class="btn btn-outline-danger btn-sm" id="bulkDeleteBtn" disabled>
+            <i class="bi bi-trash"></i> Delete
+          </button>
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div class="card mb-4">
+        <div class="card-body">
+          <div class="row g-3">
+            <!-- Type Filter -->
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Filter by Type</label>
+              <div class="d-flex flex-wrap gap-2" id="typeFilters">
+                <span class="badge filter-chip bg-secondary active" data-type="all">All</span>
+                <span class="badge filter-chip bg-secondary" data-type="COMPILATION_COMPLETED">
+                  <i class="bi bi-check-circle"></i> Completed
+                </span>
+                <span class="badge filter-chip bg-secondary" data-type="COMPILATION_FAILED">
+                  <i class="bi bi-x-circle"></i> Failed
+                </span>
+                <span class="badge filter-chip bg-secondary" data-type="MEMBER_ADDED">
+                  <i class="bi bi-person-plus"></i> Team
+                </span>
+                <span class="badge filter-chip bg-secondary" data-type="PROJECT_SHARED">
+                  <i class="bi bi-share"></i> Shared
+                </span>
+                <span class="badge filter-chip bg-secondary" data-type="INVITATION_RECEIVED">
+                  <i class="bi bi-envelope"></i> Invites
+                </span>
+              </div>
+            </div>
+
+            <!-- Status Filter -->
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Status</label>
+              <div class="d-flex flex-wrap gap-2" id="statusFilters">
+                <span class="badge filter-chip bg-secondary active" data-status="all">All</span>
+                <span class="badge filter-chip bg-secondary" data-status="unread">Unread</span>
+                <span class="badge filter-chip bg-secondary" data-status="read">Read</span>
+              </div>
+            </div>
+
+            <!-- Date Range -->
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Time Period</label>
+              <select class="form-select form-select-sm" id="dateRange">
+                <option value="all">All Time</option>
+                <option value="today">Today</option>
+                <option value="week" selected>Past Week</option>
+                <option value="month">Past Month</option>
+                <option value="3months">Past 3 Months</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Notifications List -->
+      <div class="card">
+        <div class="card-body p-0">
+          <!-- Loading State -->
+          <div id="loadingState" class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-3 text-muted">Loading notifications...</p>
+          </div>
+
+          <!-- Empty State -->
+          <div id="emptyState" class="text-center py-5 d-none">
+            <i class="bi bi-inbox display-1 text-muted"></i>
+            <p class="mt-3 text-muted">No notifications found</p>
+          </div>
+
+          <!-- Notifications List -->
+          <div id="notificationsList" class="d-none">
+            <!-- Populated by JavaScript -->
+          </div>
+        </div>
+
+        <!-- Pagination -->
+        <div class="card-footer bg-light" id="paginationContainer" style="display: none;">
+          <div class="d-flex justify-content-between align-items-center">
+            <div class="text-muted small" id="paginationInfo"></div>
+            <nav>
+              <ul class="pagination pagination-sm mb-0" id="pagination">
+                <!-- Populated by JavaScript -->
+              </ul>
+            </nav>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/notifications-page.js') }}"></script>
+{% endblock %}

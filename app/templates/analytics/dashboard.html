@@ -1,0 +1,507 @@
+{% extends "base.html" %}
+
+{% block title %}Analytics Dashboard{% endblock %}
+
+{% block styles %}
+<style>
+  .stat-card {
+    text-align: center;
+    transition: transform 0.2s;
+  }
+
+  .stat-card:hover {
+    transform: translateY(-2px);
+  }
+
+  .stat-card .card-body {
+    padding: 1.5rem;
+  }
+
+  .stat-value {
+    font-size: 2.5rem;
+    font-weight: bold;
+    margin: 0;
+    color: var(--bs-primary);
+  }
+
+  .stat-label {
+    font-size: 0.9rem;
+    opacity: 0.75;
+    margin-top: 0.5rem;
+  }
+
+  .leaderboard-item {
+    background: var(--bs-card-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 6px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: all 0.2s;
+  }
+
+  .leaderboard-item:hover {
+    border-color: var(--bs-primary);
+    transform: translateX(4px);
+    box-shadow: 0 2px 8px rgba(var(--bs-primary-rgb), 0.2);
+  }
+
+  .rank-badge {
+    background: var(--bs-primary);
+    color: white;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    margin-right: 1rem;
+    flex-shrink: 0;
+  }
+
+  .rank-1 .rank-badge { background: gold; color: #000; }
+  .rank-2 .rank-badge { background: silver; color: #000; }
+  .rank-3 .rank-badge { background: #cd7f32; color: #fff; }
+
+  .metric-badge {
+    background: rgba(var(--bs-primary-rgb), 0.15);
+    color: var(--bs-primary);
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    margin-left: 0.5rem;
+    white-space: nowrap;
+  }
+
+  .period-selector {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .period-btn {
+    background: var(--bs-card-bg);
+    border: 1px solid var(--bs-border-color);
+    color: var(--bs-body-color);
+    padding: 0.375rem 0.75rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 0.875rem;
+  }
+
+  .period-btn:hover {
+    border-color: var(--bs-primary);
+    color: var(--bs-primary);
+  }
+
+  .period-btn.active {
+    background: var(--bs-primary);
+    border-color: var(--bs-primary);
+    color: white;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--bs-secondary-color);
+  }
+
+  .empty-state i {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="mb-0"><i class="bi bi-graph-up me-2"></i>Analytics Dashboard</h2>
+    <button class="btn btn-outline-primary" id="refresh-btn">
+      <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+    </button>
+  </div>
+
+  <!-- Overview Stats -->
+  <div class="row g-3 mb-4">
+    <div class="col-md-3">
+      <div class="card stat-card">
+        <div class="card-body">
+          <i class="bi bi-collection-play display-4 text-primary"></i>
+          <h3 class="stat-value mt-2" id="total-clips">-</h3>
+          <p class="stat-label text-muted mb-0">Total Clips</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card stat-card">
+        <div class="card-body">
+          <i class="bi bi-eye display-4" style="color: #9146FF;"></i>
+          <h3 class="stat-value mt-2" id="total-views">-</h3>
+          <p class="stat-label text-muted mb-0">Total Views</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card stat-card">
+        <div class="card-body">
+          <i class="bi bi-people-fill display-4" style="color: #5865F2;"></i>
+          <h3 class="stat-value mt-2" id="unique-creators">-</h3>
+          <p class="stat-label text-muted mb-0">Unique Creators</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card stat-card">
+        <div class="card-body">
+          <i class="bi bi-controller display-4 text-success"></i>
+          <h3 class="stat-value mt-2" id="unique-games">-</h3>
+          <p class="stat-label text-muted mb-0">Games Played</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4 mb-4">
+    <!-- Top Creators -->
+    <div class="col-lg-6">
+      <div class="card h-100">
+        <div class="card-header card-header--primary d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <h5 class="mb-0"><i class="bi bi-people-fill me-2"></i>Top Clip Creators</h5>
+          <div class="period-selector" id="creators-period">
+            <button class="period-btn active" data-period="all_time">All Time</button>
+            <button class="period-btn" data-period="month">Month</button>
+            <button class="period-btn" data-period="week">Week</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="creators-list">
+            <div class="text-center text-muted py-4">
+              <div class="spinner-border spinner-border-sm" role="status"></div>
+              <span class="ms-2">Loading...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top Games -->
+    <div class="col-lg-6">
+      <div class="card h-100">
+        <div class="card-header card-header--primary d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <h5 class="mb-0"><i class="bi bi-controller me-2"></i>Top Games</h5>
+          <div class="period-selector" id="games-period">
+            <button class="period-btn active" data-period="all_time">All Time</button>
+            <button class="period-btn" data-period="month">Month</button>
+            <button class="period-btn" data-period="week">Week</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="games-list">
+            <div class="text-center text-muted py-4">
+              <div class="spinner-border spinner-border-sm" role="status"></div>
+              <span class="ms-2">Loading...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Engagement Timeline -->
+  <div class="row g-4 mb-4">
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header card-header--primary d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <h5 class="mb-0"><i class="bi bi-graph-up-arrow me-2"></i>Engagement Timeline</h5>
+          <div class="period-selector" id="timeline-period">
+            <button class="period-btn active" data-period="day" data-days="30">30 Days</button>
+            <button class="period-btn" data-period="day" data-days="90">90 Days</button>
+            <button class="period-btn" data-period="week" data-days="180">6 Months</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="timeline-chart">
+            <div class="text-center text-muted py-5">
+              <div class="spinner-border" role="status"></div>
+              <p class="mt-2">Loading timeline data...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Viral Clips -->
+  <div class="row g-4">
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header card-header--primary d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <h5 class="mb-0"><i class="bi bi-fire me-2"></i>Viral Clips</h5>
+          <div class="period-selector" id="viral-period">
+            <button class="period-btn" data-period="all_time">All Time</button>
+            <button class="period-btn active" data-period="month">Month</button>
+            <button class="period-btn" data-period="week">Week</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="viral-clips-list">
+            <div class="text-center text-muted py-4">
+              <div class="spinner-border spinner-border-sm" role="status"></div>
+              <span class="ms-2">Loading...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Analytics Dashboard JS
+let currentData = {
+  creators: { period: 'all_time', data: [] },
+  games: { period: 'all_time', data: [] },
+  timeline: { period: 'day', days: 30, data: [] },
+  viral: { period: 'month', data: [] }
+};
+
+async function loadOverview() {
+  try {
+    const res = await fetch('/analytics/api/overview');
+    const data = await res.json();
+
+    document.getElementById('total-clips').textContent = data.total_clips.toLocaleString();
+    document.getElementById('total-views').textContent = data.total_views.toLocaleString();
+    document.getElementById('unique-creators').textContent = data.unique_creators;
+    document.getElementById('unique-games').textContent = data.unique_games;
+  } catch (err) {
+    console.error('Failed to load overview:', err);
+  }
+}
+
+async function loadTopCreators(period = 'all_time') {
+  const list = document.getElementById('creators-list');
+  list.innerHTML = '<div class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm"></div> Loading...</div>';
+
+  try {
+    const res = await fetch(`/analytics/api/top-creators?period=${period}&limit=10`);
+    const data = await res.json();
+    currentData.creators = { period, data: data.creators };
+
+    if (data.creators.length === 0) {
+      list.innerHTML = '<div class="empty-state"><i class="bi bi-inbox"></i><p>No creators yet. Start adding clips!</p></div>';
+      return;
+    }
+
+    list.innerHTML = data.creators.map((c, i) => `
+      <div class="leaderboard-item rank-${i + 1}">
+        <div class="d-flex align-items-center">
+          <div class="rank-badge">${i + 1}</div>
+          <div>
+            <strong>${c.creator_name || 'Unknown'}</strong>
+            <div class="small text-muted">${c.unique_games} game${c.unique_games !== 1 ? 's' : ''}</div>
+          </div>
+        </div>
+        <div class="text-end">
+          <span class="metric-badge">${c.clip_count} clip${c.clip_count !== 1 ? 's' : ''}</span>
+          <span class="metric-badge">${c.total_views.toLocaleString()} views</span>
+          ${c.discord_reactions > 0 ? `<span class="metric-badge">${c.discord_reactions} 🔥</span>` : ''}
+        </div>
+      </div>
+    `).join('');
+  } catch (err) {
+    console.error('Failed to load top creators:', err);
+    list.innerHTML = '<div class="text-danger p-3">Error loading data</div>';
+  }
+}
+
+async function loadTopGames(period = 'all_time') {
+  const list = document.getElementById('games-list');
+  list.innerHTML = '<div class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm"></div> Loading...</div>';
+
+  try {
+    const res = await fetch(`/analytics/api/top-games?period=${period}&limit=10`);
+    const data = await res.json();
+    currentData.games = { period, data: data.games };
+
+    if (data.games.length === 0) {
+      list.innerHTML = '<div class="empty-state"><i class="bi bi-inbox"></i><p>No games yet. Start adding clips!</p></div>';
+      return;
+    }
+
+    list.innerHTML = data.games.map((g, i) => `
+      <div class="leaderboard-item rank-${i + 1}">
+        <div class="d-flex align-items-center">
+          <div class="rank-badge">${i + 1}</div>
+          <div>
+            <strong>${g.game_name || 'Unknown'}</strong>
+            <div class="small text-muted">${g.unique_creators} creator${g.unique_creators !== 1 ? 's' : ''}</div>
+          </div>
+        </div>
+        <div class="text-end">
+          <span class="metric-badge">${g.clip_count} clip${g.clip_count !== 1 ? 's' : ''}</span>
+          <span class="metric-badge">${g.total_views.toLocaleString()} views</span>
+          ${g.avg_views > 0 ? `<span class="metric-badge">avg ${Math.round(g.avg_views)}</span>` : ''}
+        </div>
+      </div>
+    `).join('');
+  } catch (err) {
+    console.error('Failed to load top games:', err);
+    list.innerHTML = '<div class="text-danger p-3">Error loading data</div>';
+  }
+}
+
+async function loadEngagementTimeline(period = 'day', days = 30) {
+  const chart = document.getElementById('timeline-chart');
+  chart.innerHTML = '<div class="text-center text-muted py-5"><div class="spinner-border"></div><p class="mt-2">Loading timeline data...</p></div>';
+
+  try {
+    const res = await fetch(`/analytics/api/engagement-timeline?period=${period}&days=${days}`);
+    const data = await res.json();
+    currentData.timeline = { period, days, data: data.timeline };
+
+    if (data.timeline.length === 0) {
+      chart.innerHTML = '<div class="empty-state"><i class="bi bi-graph-down"></i><p>No activity data available</p></div>';
+      return;
+    }
+
+    // Simple text-based timeline for now (replace with Chart.js later)
+    const maxClips = Math.max(...data.timeline.map(d => d.clip_count), 1);
+    const maxViews = Math.max(...data.timeline.map(d => d.total_views), 1);
+
+    chart.innerHTML = `
+      <div class="table-responsive">
+        <table class="table table-dark table-striped">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Clips</th>
+              <th>Views</th>
+              <th>Discord Shares</th>
+              <th>Reactions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.timeline.map(d => `
+              <tr>
+                <td>${d.date}</td>
+                <td>${d.clip_count}</td>
+                <td>${d.total_views.toLocaleString()}</td>
+                <td>${d.discord_shares}</td>
+                <td>${d.discord_reactions}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (err) {
+    console.error('Failed to load timeline:', err);
+    chart.innerHTML = '<div class="text-danger p-3">Error loading timeline</div>';
+  }
+}
+
+async function loadViralClips(period = 'month') {
+  const list = document.getElementById('viral-clips-list');
+  list.innerHTML = '<div class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm"></div> Loading...</div>';
+
+  try {
+    const res = await fetch(`/analytics/api/viral-clips?period=${period}&limit=20&min_views=100`);
+    const data = await res.json();
+    currentData.viral = { period, data: data.clips };
+
+    if (data.clips.length === 0) {
+      list.innerHTML = '<div class="empty-state"><i class="bi bi-fire"></i><p>No viral clips yet. Keep creating!</p></div>';
+      return;
+    }
+
+    list.innerHTML = `
+      <div class="table-responsive">
+        <table class="table table-dark table-striped">
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Creator</th>
+              <th>Game</th>
+              <th>Views</th>
+              <th>Engagement</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.clips.map(c => `
+              <tr>
+                <td><a href="${c.source_url}" target="_blank" class="text-primary">${c.title}</a></td>
+                <td>${c.creator_name || '-'}</td>
+                <td>${c.game_name || '-'}</td>
+                <td><strong>${c.view_count.toLocaleString()}</strong></td>
+                <td>
+                  ${c.discord_shares > 0 ? `📤 ${c.discord_shares}` : ''}
+                  ${c.discord_reactions > 0 ? `🔥 ${c.discord_reactions}` : ''}
+                </td>
+                <td>${c.clip_created_at ? new Date(c.clip_created_at).toLocaleDateString() : '-'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (err) {
+    console.error('Failed to load viral clips:', err);
+    list.innerHTML = '<div class="text-danger p-3">Error loading data</div>';
+  }
+}
+
+// Period selector handling
+function setupPeriodSelectors() {
+  document.querySelectorAll('.period-selector').forEach(selector => {
+    selector.addEventListener('click', (e) => {
+      if (!e.target.classList.contains('period-btn')) return;
+
+      // Update active state
+      selector.querySelectorAll('.period-btn').forEach(btn => btn.classList.remove('active'));
+      e.target.classList.add('active');
+
+      const period = e.target.dataset.period;
+      const days = e.target.dataset.days;
+
+      // Reload data based on which selector
+      if (selector.id === 'creators-period') {
+        loadTopCreators(period);
+      } else if (selector.id === 'games-period') {
+        loadTopGames(period);
+      } else if (selector.id === 'timeline-period') {
+        loadEngagementTimeline(period, parseInt(days));
+      } else if (selector.id === 'viral-period') {
+        loadViralClips(period);
+      }
+    });
+  });
+}
+
+// Refresh button
+document.getElementById('refresh-btn').addEventListener('click', () => {
+  loadOverview();
+  loadTopCreators(currentData.creators.period);
+  loadTopGames(currentData.games.period);
+  loadEngagementTimeline(currentData.timeline.period, currentData.timeline.days);
+  loadViralClips(currentData.viral.period);
+});
+
+// Initial load
+document.addEventListener('DOMContentLoaded', () => {
+  setupPeriodSelectors();
+  loadOverview();
+  loadTopCreators('all_time');
+  loadTopGames('all_time');
+  loadEngagementTimeline('day', 30);
+  loadViralClips('month');
+});
+</script>
+{% endblock %}

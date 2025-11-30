@@ -18,6 +18,7 @@ export async function onEnter(wizard) {
   initPlatformPresets();
   initVerticalVideoControls();
   initTaskButton(); // Check tier permissions for save-as-task button
+  initProjectNameValidation(); // Emphasize project name field
 
   // Setup form submission
   setupFormHandlers(wizard);
@@ -45,6 +46,56 @@ function prefillForm(projectData) {
   if (tagsInput && projectData.tags) tagsInput.value = projectData.tags;
 
   console.log('[step-setup] Pre-filled form with existing project data');
+}
+
+/**
+ * Initialize project name validation and emphasis
+ */
+function initProjectNameValidation() {
+  const nameInput = document.querySelector('input[name="name"]');
+  if (!nameInput) return;
+
+  // Add visual emphasis to the name field
+  const formGroup = nameInput.closest('.mb-3');
+  if (formGroup) {
+    const label = formGroup.querySelector('label');
+    if (label) {
+      label.innerHTML = '<i class="bi bi-star-fill text-warning me-1"></i>' + label.textContent;
+      label.classList.add('fw-bold');
+    }
+  }
+
+  // Add placeholder with example
+  if (!nameInput.placeholder) {
+    nameInput.placeholder = 'e.g., Epic Moments Compilation';
+  }
+
+  // Create warning element for empty name
+  const warningDiv = document.createElement('div');
+  warningDiv.className = 'form-text text-warning d-none mt-1';
+  warningDiv.id = 'name-warning';
+  warningDiv.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>No project name entered - a random slug name will be generated (e.g., "AmazingProject123")';
+
+  // Insert warning right after the input field
+  nameInput.parentNode.insertBefore(warningDiv, nameInput.nextSibling);
+
+  // Show/hide warning based on input
+  function updateNameWarning() {
+    const isEmpty = !nameInput.value.trim();
+    warningDiv.classList.toggle('d-none', !isEmpty);
+
+    if (isEmpty) {
+      nameInput.classList.add('border-warning');
+    } else {
+      nameInput.classList.remove('border-warning');
+    }
+  }
+
+  nameInput.addEventListener('input', updateNameWarning);
+  nameInput.addEventListener('blur', updateNameWarning);
+
+  // Check on load
+  updateNameWarning();
 }
 
 /**

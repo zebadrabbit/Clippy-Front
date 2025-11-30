@@ -5,6 +5,8 @@ Revises: f59cc7227fbe
 Create Date: 2025-11-26 05:48:03.826228
 
 """
+import os
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -16,18 +18,26 @@ depends_on = None
 
 
 def upgrade():
-    # Add is_public column to dev_media_files
-    with op.batch_alter_table("dev_media_files", schema=None) as batch_op:
+    # Get table prefix from environment
+    table_prefix = os.environ.get("TABLE_PREFIX", "")
+    media_files_table = f"{table_prefix}media_files"
+
+    # Add is_public column to media_files
+    with op.batch_alter_table(media_files_table, schema=None) as batch_op:
         batch_op.add_column(
             sa.Column("is_public", sa.Boolean(), nullable=False, server_default="false")
         )
         batch_op.create_index(
-            batch_op.f("ix_dev_media_files_is_public"), ["is_public"], unique=False
+            f"ix_{media_files_table}_is_public", ["is_public"], unique=False
         )
 
 
 def downgrade():
-    # Remove is_public column from dev_media_files
-    with op.batch_alter_table("dev_media_files", schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f("ix_dev_media_files_is_public"))
+    # Get table prefix from environment
+    table_prefix = os.environ.get("TABLE_PREFIX", "")
+    media_files_table = f"{table_prefix}media_files"
+
+    # Remove is_public column from media_files
+    with op.batch_alter_table(media_files_table, schema=None) as batch_op:
+        batch_op.drop_index(f"ix_{media_files_table}_is_public")
         batch_op.drop_column("is_public")

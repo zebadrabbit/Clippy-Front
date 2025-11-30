@@ -8,6 +8,7 @@
     Notification Settings
 </h3>
 
+{% include 'auth/_section_push.html' %}
 {% include 'auth/_section_notifications.html' %}
 {% include 'auth/_section_preferences.html' %}
 
@@ -16,5 +17,6 @@
 {% block scripts %}
 {{ super() }}
 <script src="{{ url_for('static', filename='js/utils.js') }}"></script>
+<script src="{{ url_for('static', filename='js/push-notifications.js') }}"></script>
 <script src="{{ url_for('static', filename='js/account_settings.js') }}"></script>
 {% endblock %}

@@ -1,0 +1,56 @@
+<!-- Push Notifications Section -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="card-title mb-0">
+            <i class="bi bi-phone"></i>
+            Browser Push Notifications
+        </h5>
+    </div>
+    <div class="card-body">
+        <p class="text-muted mb-3">
+            Receive instant notifications even when ClippyFront is not open in your browser.
+        </p>
+
+        {% if config.VAPID_PUBLIC_KEY %}
+        <div class="alert alert-info" id="push-support-check" style="display: none;">
+            <i class="bi bi-info-circle"></i>
+            Checking browser support...
+        </div>
+
+        <div class="alert alert-warning" id="push-unsupported" style="display: none;">
+            <i class="bi bi-exclamation-triangle"></i>
+            Your browser doesn't support push notifications. Try using Chrome, Firefox, or Edge.
+        </div>
+
+        <div id="push-controls">
+            <div class="mb-3">
+                <strong>Status:</strong>
+                <span class="badge bg-secondary" id="push-status">Checking...</span>
+            </div>
+
+            <button class="btn btn-primary" id="enable-push-notifications" style="display: none;">
+                <i class="bi bi-bell"></i> Enable Push Notifications
+            </button>
+
+            <button class="btn btn-outline-danger" id="disable-push-notifications" style="display: none;">
+                <i class="bi bi-bell-slash"></i> Disable Push Notifications
+            </button>
+
+            <div class="mt-3 small text-muted">
+                <i class="bi bi-info-circle"></i>
+                Push notifications work on desktop Chrome, Firefox, Edge, and mobile browsers that support the Web Push API.
+            </div>
+        </div>
+
+        <!-- VAPID Public Key (needed by JavaScript) -->
+        <script>
+            window.VAPID_PUBLIC_KEY = "{{ config.VAPID_PUBLIC_KEY }}";
+        </script>
+        {% else %}
+        <div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle"></i>
+            Push notifications are not configured on this server. Contact your administrator to enable this feature.
+        </div>
+        {% endif %}
+    </div>
+</div>

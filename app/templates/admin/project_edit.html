@@ -23,7 +23,7 @@
           <!-- Project Status Summary -->
           <div class="mb-4 pb-3 border-bottom">
             <div class="d-flex align-items-center gap-2">
-              <span class="badge bg-{{ 'success' if project.status.value == 'completed' else 'primary' if project.status.value == 'in_progress' else 'secondary' }}">
+              <span class="badge bg-{{ 'success' if project.status.value == 'COMPLETED' else 'primary' if project.status.value == 'PROCESSING' else 'secondary' }}">
                 {{ project.status.name.replace('_', ' ').title() }}
               </span>
               <span class="text-muted">Owner: <strong>{{ project.owner.username }}</strong></span>

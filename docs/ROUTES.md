@@ -201,6 +201,131 @@ The main blueprint serves user-facing pages and many JSON endpoints used by the 
 
 ---
 
+## Analytics blueprint (app/analytics/routes.py) - v1.4.0+
+
+- Path: GET /analytics
+  - Methods: GET
+  - Brief: Analytics dashboard showing clip engagement metrics
+  - Parameters: none
+  - Returns: HTML page with period selectors and data tables
+
+- Path: GET /analytics/api/overview
+  - Methods: GET
+  - Brief: High-level analytics summary
+  - Parameters: ?period=day|week|month|all_time (default: all_time)
+  - Example response:
+    {
+      "total_clips": 1234,
+      "total_views": 456789,
+      "unique_creators": 89,
+      "unique_games": 23,
+      "date_range": {"start": "2025-01-01", "end": "2025-11-30"},
+      "top_game": {"name": "Elden Ring", "clip_count": 145},
+      "top_creator": {"name": "xXClipperXx", "clip_count": 67}
+    }
+
+- Path: GET /analytics/api/top-creators
+  - Methods: GET
+  - Brief: Creator leaderboard with engagement metrics
+  - Parameters: ?period=day|week|month|all_time, ?limit=10 (default)
+  - Example response:
+    {
+      "period": "all_time",
+      "creators": [
+        {
+          "creator_name": "xXClipperXx",
+          "creator_id": "12345",
+          "clip_count": 67,
+          "total_views": 123456,
+          "avg_views": 1841.7,
+          "discord_shares": 12,
+          "discord_reactions": 89,
+          "unique_games": 8
+        }
+      ]
+    }
+
+- Path: GET /analytics/api/top-games
+  - Methods: GET
+  - Brief: Game performance metrics and viral potential
+  - Parameters: ?period=day|week|month|all_time, ?limit=10
+  - Example response:
+    {
+      "period": "week",
+      "games": [
+        {
+          "game_name": "Elden Ring",
+          "game_id": "512953",
+          "clip_count": 145,
+          "total_views": 234567,
+          "avg_views": 1617.7,
+          "unique_creators": 23,
+          "discord_shares": 34,
+          "discord_reactions": 156
+        }
+      ]
+    }
+
+- Path: GET /analytics/api/viral-clips
+  - Methods: GET
+  - Brief: High-performing clips for content repurposing
+  - Parameters: ?period=day|week|month|all_time, ?limit=20, ?min_views=1000
+  - Example response:
+    {
+      "period": "month",
+      "min_views": 1000,
+      "clips": [
+        {
+          "clip_id": 456,
+          "title": "Epic Moment",
+          "creator_name": "ProGamer",
+          "game_name": "Elden Ring",
+          "view_count": 15234,
+          "discord_shares": 8,
+          "discord_reactions": 45,
+          "created_at": "2025-11-15T14:23:00Z",
+          "url": "https://clips.twitch.tv/..."
+        }
+      ]
+    }
+
+- Path: GET /analytics/api/engagement-timeline
+  - Methods: GET
+  - Brief: Time-series data for trend analysis
+  - Parameters: ?period=day|week|month (default: week), ?days=30 (lookback)
+  - Example response:
+    {
+      "period": "day",
+      "timeline": [
+        {
+          "date": "2025-11-30",
+          "clip_count": 12,
+          "total_views": 5678,
+          "discord_shares": 4,
+          "discord_reactions": 23
+        }
+      ]
+    }
+
+- Path: GET /analytics/api/peak-times
+  - Methods: GET
+  - Brief: Hourly and daily distribution of clip creation
+  - Parameters: ?period=day|week|month|all_time
+  - Example response:
+    {
+      "hourly": [
+        {"hour": 0, "clip_count": 12},
+        {"hour": 1, "clip_count": 8},
+        ...
+      ],
+      "daily": [
+        {"day_of_week": 0, "day_name": "Monday", "clip_count": 145},
+        ...
+      ]
+    }
+
+---
+
 ## Auth blueprint (app/auth/routes.py)
 
 - Path: GET,POST /auth/login

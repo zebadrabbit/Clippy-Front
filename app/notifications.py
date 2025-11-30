@@ -111,6 +111,33 @@ def create_notification(
     db.session.add(notification)
     db.session.commit()
 
+    # Send push notification if configured
+    try:
+        from flask import current_app
+
+        if hasattr(current_app.config, "VAPID_PRIVATE_KEY") and hasattr(
+            current_app.config, "VAPID_CLAIMS"
+        ):
+            user = db.session.get(User, user_id)
+            if user:
+                from app.push import send_push_notification
+
+                send_push_notification(
+                    user=user,
+                    title="ClippyFront Notification",
+                    body=message,
+                    notification_type=notification_type.value,
+                    project_id=project_id,
+                    team_id=team_id,
+                    vapid_private_key=current_app.config.VAPID_PRIVATE_KEY,
+                    vapid_claims=current_app.config.VAPID_CLAIMS,
+                )
+    except Exception as e:
+        # Don't fail notification creation if push fails
+        import logging
+
+        logging.warning(f"Failed to send push notification: {e}")
+
 
 def notify_team_members(
     team_id: int,
@@ -390,28 +417,115 @@ def get_unread_count(user_id: int) -> int:
 
 
 def get_user_notifications(
-    user_id: int, limit: int = 20, offset: int = 0, unread_only: bool = False
+    user_id: int,
+    limit: int = 20,
+    offset: int = 0,
+    unread_only: bool = False,
+    notification_type: str | None = None,
+    date_range: str | None = None,
 ):
     """
-    Get notifications for a user with pagination.
+    Get notifications for a user with pagination and filtering.
 
     Args:
         user_id: User ID
         limit: Maximum number of notifications to return
         offset: Offset for pagination
         unread_only: Only return unread notifications
+        notification_type: Filter by notification type (optional)
+        date_range: Filter by date range: today, week, month, 3months (optional)
 
     Returns:
         List of Notification objects
     """
+    from datetime import datetime, timedelta
+
     query = select(Notification).where(Notification.user_id == user_id)
 
     if unread_only:
         query = query.where(Notification.is_read.is_(False))
 
+    if notification_type:
+        from app.models import ActivityType
+
+        try:
+            activity_type = ActivityType[notification_type]
+            query = query.where(Notification.type == activity_type)
+        except KeyError:
+            pass  # Invalid type, ignore filter
+
+    if date_range:
+        now = datetime.utcnow()
+        cutoff = None
+        if date_range == "today":
+            cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        elif date_range == "week":
+            cutoff = now - timedelta(days=7)
+        elif date_range == "month":
+            cutoff = now - timedelta(days=30)
+        elif date_range == "3months":
+            cutoff = now - timedelta(days=90)
+
+        if cutoff:
+            query = query.where(Notification.created_at >= cutoff)
+
     query = query.order_by(Notification.created_at.desc()).limit(limit).offset(offset)
 
     return list(db.session.execute(query).scalars())
+
+
+def get_user_notifications_count(
+    user_id: int,
+    unread_only: bool = False,
+    notification_type: str | None = None,
+    date_range: str | None = None,
+):
+    """
+    Get total count of notifications for a user with filtering.
+
+    Args:
+        user_id: User ID
+        unread_only: Only count unread notifications
+        notification_type: Filter by notification type (optional)
+        date_range: Filter by date range (optional)
+
+    Returns:
+        Count of notifications matching filters
+    """
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import func
+
+    query = select(func.count(Notification.id)).where(Notification.user_id == user_id)
+
+    if unread_only:
+        query = query.where(Notification.is_read.is_(False))
+
+    if notification_type:
+        from app.models import ActivityType
+
+        try:
+            activity_type = ActivityType[notification_type]
+            query = query.where(Notification.type == activity_type)
+        except KeyError:
+            pass
+
+    if date_range:
+        now = datetime.utcnow()
+        cutoff = None
+        if date_range == "today":
+            cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        elif date_range == "week":
+            cutoff = now - timedelta(days=7)
+        elif date_range == "month":
+            cutoff = now - timedelta(days=30)
+        elif date_range == "3months":
+            cutoff = now - timedelta(days=90)
+
+        if cutoff:
+            query = query.where(Notification.created_at >= cutoff)
+
+    return db.session.execute(query).scalar() or 0
 
 
 def mark_all_as_read(user_id: int):

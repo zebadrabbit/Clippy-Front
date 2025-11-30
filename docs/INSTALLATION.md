@@ -23,7 +23,17 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3. Configure Environment
+### 3. Generate VAPID Keys (for Push Notifications)
+
+Browser push notifications require VAPID keys for secure delivery:
+
+```bash
+python -c "from py_vapid import Vapid; vapid = Vapid(); vapid.generate_keys(); print('Public:', vapid.public_key.decode()); print('Private:', vapid.private_key.decode())"
+```
+
+Copy the output keys and add them to your `.env` file in step 4.
+
+### 4. Configure Environment
 
 ```bash
 cp .env.example .env
@@ -33,8 +43,11 @@ Edit `.env` to set:
 - `SECRET_KEY` - Generate a secure random key
 - `DATABASE_URL` - PostgreSQL connection string
 - `REDIS_URL` - Redis connection string
+- `VAPID_PUBLIC_KEY` - From step 3 output (for push notifications)
+- `VAPID_PRIVATE_KEY` - From step 3 output (for push notifications)
+- `VAPID_EMAIL` - Contact email for push notifications (e.g., mailto:admin@example.com)
 
-### 4. Fetch Frontend Vendor Assets
+### 5. Fetch Frontend Vendor Assets
 
 Fetch local frontend vendor assets (Dropzone + Video.js):
 
@@ -42,7 +55,7 @@ Fetch local frontend vendor assets (Dropzone + Video.js):
 bash scripts/fetch_vendor_assets.sh
 ```
 
-### 5. (Optional) Install Local Binaries
+### 6. (Optional) Install Local Binaries
 
 Install local ffmpeg and yt-dlp binaries to `./bin`:
 
@@ -57,7 +70,7 @@ export FFMPEG_BINARY="$(pwd)/bin/ffmpeg"
 export YT_DLP_BINARY="$(pwd)/bin/yt-dlp"
 ```
 
-### 6. Initialize Database
+### 7. Initialize Database
 
 Create the database if it doesn't exist:
 
@@ -76,7 +89,7 @@ python init_db.py --drop
 python init_db.py --admin --password admin123
 ```
 
-### 7. Apply Migrations
+### 8. Apply Migrations
 
 ```bash
 flask db upgrade
@@ -86,7 +99,7 @@ Notes:
 - Migrations are idempotent on PostgreSQL; duplicate columns/indexes are guarded
 - The app requires PostgreSQL; SQLite is only used in tests
 
-### 8. Start Services
+### 9. Start Services
 
 Start Redis:
 

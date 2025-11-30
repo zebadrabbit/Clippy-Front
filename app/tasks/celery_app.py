@@ -27,6 +27,7 @@ def make_celery(app_name=__name__):
         "app.tasks.preview_video",  # Preview video generation
         "app.tasks.enrich_clip_metadata",  # Server-side Twitch metadata enrichment
         "app.tasks.media_maintenance",
+        "app.tasks.notification_cleanup",  # Notification retention cleanup
         "app.tasks.video_processing",  # Utility functions only (no DB-based tasks)
     ]
 
@@ -59,10 +60,15 @@ def make_celery(app_name=__name__):
         ),
     )
 
-    # Optional beat schedules (currently none configured)
-    # beat_schedule = {}
-    # if beat_schedule:
-    #     celery_app.conf.beat_schedule = beat_schedule
+    # Beat schedule for periodic tasks
+    beat_schedule = {
+        "cleanup-old-notifications": {
+            "task": "app.tasks.notification_cleanup.cleanup_old_notifications_task",
+            "schedule": 86400.0,  # Run daily (24 hours in seconds)
+            "args": (config.NOTIFICATION_RETENTION_DAYS,),
+        },
+    }
+    celery_app.conf.beat_schedule = beat_schedule
 
     return celery_app
 

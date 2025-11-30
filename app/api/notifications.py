@@ -8,7 +8,12 @@ from flask_login import current_user, login_required
 # Import the shared blueprint instance
 from app.api import api_bp
 from app.models import Notification, db
-from app.notifications import get_unread_count, get_user_notifications, mark_all_as_read
+from app.notifications import (
+    get_unread_count,
+    get_user_notifications,
+    get_user_notifications_count,
+    mark_all_as_read,
+)
 
 
 @api_bp.route("/notifications", methods=["GET"])
@@ -21,6 +26,8 @@ def list_notifications():
         limit: Maximum number of notifications (default: 20, max: 100)
         offset: Pagination offset (default: 0)
         unread_only: Only return unread notifications (default: false)
+        type: Filter by notification type (optional)
+        date_range: Filter by date: today, week, month, 3months (optional)
 
     Returns:
         {
@@ -39,15 +46,31 @@ def list_notifications():
                 }
             ],
             "unread_count": int,
-            "total": int
+            "total": int,
+            "filtered_count": int
         }
     """
     limit = min(int(request.args.get("limit", 20)), 100)
     offset = int(request.args.get("offset", 0))
     unread_only = request.args.get("unread_only", "false").lower() == "true"
+    notification_type = request.args.get("type")
+    date_range = request.args.get("date_range")
 
     notifications = get_user_notifications(
-        user_id=current_user.id, limit=limit, offset=offset, unread_only=unread_only
+        user_id=current_user.id,
+        limit=limit,
+        offset=offset,
+        unread_only=unread_only,
+        notification_type=notification_type,
+        date_range=date_range,
+    )
+
+    # Get total count with same filters
+    filtered_count = get_user_notifications_count(
+        user_id=current_user.id,
+        unread_only=unread_only,
+        notification_type=notification_type,
+        date_range=date_range,
     )
 
     return jsonify(
@@ -55,6 +78,7 @@ def list_notifications():
             "notifications": [n.to_dict() for n in notifications],
             "unread_count": get_unread_count(current_user.id),
             "total": len(notifications),
+            "filtered_count": filtered_count,
         }
     )
 
@@ -105,6 +129,82 @@ def mark_all_notifications_read():
     mark_all_as_read(current_user.id)
 
     return jsonify({"message": "All notifications marked as read"})
+
+
+@api_bp.route("/notifications/bulk-mark-read", methods=["POST"])
+@login_required
+def bulk_mark_read():
+    """
+    Mark multiple notifications as read.
+
+    Request body:
+        {"ids": [1, 2, 3, ...]}
+
+    Returns:
+        {"message": "X notifications marked as read", "count": int}
+    """
+    data = request.get_json()
+    if not data or "ids" not in data:
+        return jsonify({"error": "Missing 'ids' in request body"}), 400
+
+    notification_ids = data["ids"]
+    if not isinstance(notification_ids, list):
+        return jsonify({"error": "'ids' must be a list"}), 400
+
+    # Verify ownership and mark as read
+    count = 0
+    for notif_id in notification_ids:
+        notification = db.session.get(Notification, notif_id)
+        if notification and notification.user_id == current_user.id:
+            notification.mark_as_read()
+            count += 1
+
+    db.session.commit()
+
+    return jsonify(
+        {
+            "message": f"{count} notification{'s' if count != 1 else ''} marked as read",
+            "count": count,
+        }
+    )
+
+
+@api_bp.route("/notifications/bulk-delete", methods=["POST"])
+@login_required
+def bulk_delete():
+    """
+    Delete multiple notifications.
+
+    Request body:
+        {"ids": [1, 2, 3, ...]}
+
+    Returns:
+        {"message": "X notifications deleted", "count": int}
+    """
+    data = request.get_json()
+    if not data or "ids" not in data:
+        return jsonify({"error": "Missing 'ids' in request body"}), 400
+
+    notification_ids = data["ids"]
+    if not isinstance(notification_ids, list):
+        return jsonify({"error": "'ids' must be a list"}), 400
+
+    # Verify ownership and delete
+    count = 0
+    for notif_id in notification_ids:
+        notification = db.session.get(Notification, notif_id)
+        if notification and notification.user_id == current_user.id:
+            db.session.delete(notification)
+            count += 1
+
+    db.session.commit()
+
+    return jsonify(
+        {
+            "message": f"{count} notification{'s' if count != 1 else ''} deleted",
+            "count": count,
+        }
+    )
 
 
 @api_bp.route("/notifications/stream", methods=["GET"])

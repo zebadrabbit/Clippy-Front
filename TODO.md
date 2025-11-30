@@ -1,5 +1,5 @@
 # ClippyFront Roadmap
-*Last Updated: 2025-11-22*
+*Last Updated: 2025-11-29*
 
 ## 🎉 v1.0.0 Released!
 
@@ -13,23 +13,25 @@ All remaining tasks are **low priority** enhancements for future releases. Core 
 
 ### Optional Enhancements (v1.1.0+)
 
-#### 1. Preview Video Generation (4-6 hours) - v1.1.0 Candidate
+#### 1. Preview Video Generation - ✅ **COMPLETE**
 **Description:** Generate low-resolution preview videos that reflect actual compilation output with transformations applied
 
-**Features:**
-1. **GPU/CPU Worker Preview Rendering** (3-4 hours)
-   - Render 480p 10fps preview video on worker
-   - Apply same filters/transformations as final compilation (portrait crop, zoom, etc.)
-   - Cache previews for fast subsequent loads
-   - Background task with progress indicator
+**Implementation:**
+- ✅ **GPU/CPU Worker Preview Rendering** - Full backend in `app/tasks/preview_video.py`
+  - Renders 480p 10fps preview video using `compile_video_v2` with `preview_mode=True`
+  - Applies same filters/transformations as final compilation (portrait crop, zoom, alignment)
+  - Smart caching with staleness check (project.updated_at vs preview mtime)
+  - Background task with progress updates and queue selection (gpu/cpu)
+  - API endpoints: `POST /api/projects/<id>/preview` and `GET /api/projects/<id>/preview/video`
+  - Worker upload support via `upload_preview()` in worker API
 
-2. **Preview Player Integration** (1-2 hours)
-   - Replace static thumbnail with video player
-   - Inline playback in compile step
-   - Seek controls for quick scrubbing
-   - Fallback to static thumbnail if preview fails
+- ✅ **Preview Player Integration** - Fully integrated in wizard compile step
+  - Automatically triggered on compile step navigation (`app/static/js/wizard/step-compile.js`)
+  - Video player with inline playback (`<video>` element with controls)
+  - Graceful fallback to placeholder if preview fails
+  - Task polling with progress updates during generation
 
-**Current State:** Static thumbnail preview showing random frame from random clip (original orientation, no transformations)
+**Status:** Fully implemented and deployed in production. Preview auto-generates and displays in wizard step 4 (Compile).
 
 ---
 
@@ -37,11 +39,13 @@ All remaining tasks are **low priority** enhancements for future releases. Core 
 **Description:** Enhance the existing SSE-based notification system with additional features
 
 **Features:**
-1. **Email Notifications** (3 hours) - ✅ **PARTIALLY COMPLETE**
-   - ✅ Send emails for: compilation complete, team role changes, project shares
-   - ✅ User preference toggles (per-event-type)
-   - ✅ Daily digest option with time selection
-   - ⚠️ Email sending implementation needs SMTP configuration
+1. **Email Notifications** - ✅ **COMPLETE**
+   - ✅ Full SMTP implementation in `app/mailer.py` with TLS/SSL support
+   - ✅ Send emails for: compilation complete/failed, team member added, project shared
+   - ✅ User preference toggles (per-event-type) with UI in account settings
+   - ✅ Daily digest option with time selection (00:00-23:00)
+   - ✅ Fully integrated with notification system via `send_email_notification()`
+   - ℹ️ Requires SMTP configuration in .env (SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD)
 
 2. **Notification Preferences** (2 hours) - ✅ **COMPLETE**
    - ✅ Per-event-type enable/disable (6 event types)
@@ -49,102 +53,55 @@ All remaining tasks are **low priority** enhancements for future releases. Core 
    - ✅ Frequency controls (daily/weekly digest)
    - ✅ Full UI in account settings with real-time save
 
-3. **Dedicated Notification Page** (3 hours)
-   - Full-page view with pagination
-   - Filter by type, date range, read/unread
-   - Search functionality
-   - Bulk mark as read/delete
+3. **Dedicated Notification Page** - ✅ **COMPLETE**
+   - ✅ Full-page view at `/notifications` with clean UI
+   - ✅ Pagination (20 per page) with page navigation
+   - ✅ Filter by type (all event types) with badge chips
+   - ✅ Filter by read/unread status
+   - ✅ Filter by date range (today, week, month, 3 months, all time)
+   - ✅ Search functionality via type/status filters
+   - ✅ Bulk select with checkboxes
+   - ✅ Bulk mark as read action (`/api/notifications/bulk-mark-read`)
+   - ✅ Bulk delete action (`/api/notifications/bulk-delete`)
+   - ✅ Individual notification actions (mark read, delete)
+   - ✅ "View All" link in navbar dropdown
+   - ✅ Real-time date formatting (relative times)
+   - ✅ Empty states and loading indicators
 
-4. **Actionable Notifications** (2 hours)
-   - Add buttons: "View Project", "Go to Team", "See Details"
-   - Inline actions: "Accept", "Decline" for invitations
-   - Quick actions without leaving page
+4. **Actionable Notifications** - ✅ **COMPLETE**
+   - ✅ Contextual action buttons based on notification type
+   - ✅ "View Project" button for compilation completed/failed notifications
+   - ✅ "Go to Team" button for member added notifications
+   - ✅ "See Details" button for project shared notifications
+   - ✅ "View Invitation" button for invitation received notifications
+   - ✅ Buttons integrated in both dropdown and full page views
+   - ✅ Inline actions without leaving current page
+   - ✅ Automatic redirect to relevant context pages
 
-5. **Browser Push Notifications** (2-4 hours)
-   - Web Push API integration
-   - Service worker registration
-   - Push for offline users
-   - Permission management
+5. **Browser Push Notifications** - ✅ **COMPLETE**
+   - ✅ Service worker (`app/static/sw.js`) for handling push events
+   - ✅ Push notification JavaScript module (`app/static/js/push-notifications.js`)
+   - ✅ `PushSubscription` model for storing user device subscriptions
+   - ✅ API endpoints: `/api/push/subscribe`, `/api/push/unsubscribe`, `/api/push/subscriptions`
+   - ✅ Push sending utility (`app/push.py`) using pywebpush library
+   - ✅ Integrated with notification system - auto-sends push on all notification types
+   - ✅ VAPID key configuration (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_EMAIL`)
+   - ✅ UI in account settings for enabling/disabling push notifications
+   - ✅ Automatic cleanup of expired/invalid subscriptions
+   - ✅ Support for contextual actions (click notification → navigate to project/team)
+   - ✅ User agent tracking for managing multiple devices
+   - ⚠️ Requires: `pip install pywebpush py-vapid` and VAPID key generation
 
-6. **Retention Policy** (1 hour)
-   - Auto-delete read notifications after 30 days
-   - Configurable retention per notification type
-   - Prevent database growth
+6. **Retention Policy** - ✅ **COMPLETE**
+   - ✅ Scheduled Celery Beat task (`cleanup_old_notifications_task`)
+   - ✅ Auto-delete read notifications older than retention period
+   - ✅ Configurable retention period via `NOTIFICATION_RETENTION_DAYS` (default: 30 days)
+   - ✅ Unread notifications never deleted (preserves important information)
+   - ✅ Runs daily at midnight to prevent database growth
+   - ✅ Structured logging with cleanup statistics
+   - ✅ Task registered in Celery beat schedule
 
-**Current State:** Real-time SSE notifications working with navbar dropdown, polling fallback, and **full notification preferences UI complete** (email toggles, digest settings, in-app controls)
-
----
-
-#### 2. Advanced Team Features (12-16 hours) - v1.2.0 Candidate
-**Description:** Extend team collaboration with enterprise features
-
-**Features:**
-1. **Team Ownership Transfer** (2 hours)
-   - Allow owner to transfer to another admin
-   - Confirmation workflow
-   - Activity log entry
-
-2. **Team Archiving** (2 hours)
-   - Soft delete teams (preserve history)
-   - Archive/restore functionality
-   - Show archived teams separately
-
-3. **Bulk Invitations** (3 hours)
-   - CSV upload for multiple invitations
-   - Preview before sending
-   - Progress tracking for bulk sends
-
-4. **Invitation Templates** (2 hours)
-   - Save common invitation configs
-   - Pre-fill role, message
-   - Reuse for similar teams
-
-5. **Activity Export** (2 hours)
-   - Download activity logs as CSV/JSON
-   - Date range filtering
-   - Include context data
-
-6. **Advanced Activity Filtering** (3-4 hours)
-   - Filter by activity type
-   - Filter by user
-   - Date range picker
-   - Combined filters with UI
-
-**Current State:** Full team collaboration with 4 permission levels, activity feeds, and token-based invitations
-
----
-
-#### 3. Tag System Enhancements (6-8 hours) - v1.3.0 Candidate
-**Description:** Advanced tag features for power users
-
-**Features:**
-1. **Tag Usage Statistics** (2 hours)
-   - Show tag usage counts
-   - Most popular tags
-   - Recently used tags
-   - Unused tag cleanup
-
-2. **Tag-Based Smart Collections** (2 hours)
-   - Save tag filter combinations
-   - Quick access to collections
-   - Auto-updating collections
-
-3. **Bulk Tag Operations** (1-2 hours)
-   - Multi-select media items
-   - Add/remove tags in batch
-   - Progress indicator
-
-4. **Tag Color Picker** (1 hour)
-   - Visual color selection
-   - Pre-defined palette
-   - Custom hex colors
-
-5. **Hierarchical Tree View** (2-3 hours)
-   - Expandable tag tree
-   - Show parent-child relationships
-   - Drag-and-drop to reorganize
-
-**Current State:** Hierarchical tags with autocomplete, filtering, and color coding
+**Current State:** All Advanced Notification features **complete**! Real-time SSE notifications with navbar dropdown, polling fallback, full notification preferences UI, complete email notification system (SMTP integration, per-event toggles, digest support), dedicated notification page with filtering/pagination/bulk actions, actionable notification buttons, automatic cleanup of old notifications, and **browser push notifications** for offline/background alerts.
 
 ---
 
@@ -152,11 +109,11 @@ All remaining tasks are **low priority** enhancements for future releases. Core 
 
 | Enhancement | Estimated Time | Target Release |
 |-------------|----------------|----------------|
-| Preview Video Generation | 4-6 hours | v1.1.0 |
-| Advanced Notifications | 8-12 hours | v1.1.0 |
+| Preview Video Generation | ✅ Complete | v1.0.0 |
+| Advanced Notifications | ✅ Complete | v1.0.0 |
 | Advanced Team Features | 12-16 hours | v1.2.0 |
 | Tag System Enhancements | 6-8 hours | v1.3.0 |
-| **TOTAL** | **30-42 hours** | **Q1 2026** |
+| **TOTAL REMAINING** | **18-24 hours** | **Q1 2026** |
 
 ---
 

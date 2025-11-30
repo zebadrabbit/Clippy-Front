@@ -289,12 +289,27 @@
     });
   }
 
-  function onEditClick(e){ const id = e.currentTarget.getAttribute('data-id'); const card = document.querySelector('.media-card[data-id="' + id + '"]'); openEditModal({ id: id, name: (card && card.dataset.name)||'', type: (card && card.dataset.type)||'', tags: (card && card.dataset.tags)||'' }); }
+  function onEditClick(e){
+    const id = e.currentTarget.getAttribute('data-id');
+    const card = document.querySelector('.media-card[data-id="' + id + '"]');
+    openEditModal({
+      id: id,
+      name: (card && card.dataset.name)||'',
+      type: (card && card.dataset.type)||'',
+      tags: (card && card.dataset.tags)||'',
+      artist: (card && card.dataset.artist)||'',
+      album: (card && card.dataset.album)||'',
+      title: (card && card.dataset.title)||'',
+      license: (card && card.dataset.license)||'',
+      attributionUrl: (card && card.dataset.attributionUrl)||'',
+      attributionText: (card && card.dataset.attributionText)||''
+    });
+  }
   async function onDeleteClick(e){ const id = e.currentTarget.getAttribute('data-id'); if (!confirm('Delete this media item?')) return; const resp = await apiPost(DELETE_URL_TPL.replace('0', id), {}); if (resp && resp.success){ const el = document.querySelector('.media-card[data-id="' + id + '"]'); el && el.closest('.col').remove(); updateBulkBar(); showToast('Item deleted.'); } else alert((resp && resp.error) || 'Delete failed'); }
 
   // Edit modal
   const editModalEl = document.createElement('div'); editModalEl.className = 'modal fade'; editModalEl.tabIndex = -1; editModalEl.innerHTML = `
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title">Edit Media</h5>
@@ -303,24 +318,66 @@
         <div class="modal-body">
           <form id="media-edit-form">
             <input type="hidden" name="media_id" />
-            <div class="mb-3">
-              <label class="form-label">Name</label>
-              <input type="text" class="form-control" name="original_filename" />
+
+            <div class="row">
+              <div class="col-md-6 mb-3">
+                <label class="form-label">Name</label>
+                <input type="text" class="form-control" name="original_filename" />
+              </div>
+              <div class="col-md-6 mb-3">
+                <label class="form-label">Type</label>
+                <select class="form-select" name="media_type">
+                  ${(function(){
+                    const sel = document.getElementById('bulk-type');
+                    if (!sel) return '';
+                    return Array.from(sel.options).filter(o => o.value).map(o => `<option value="${o.value}">${o.textContent}</option>`).join('');
+                  })()}
+                </select>
+              </div>
             </div>
+
             <div class="mb-3">
-              <label class="form-label">Type</label>
-              <select class="form-select" name="media_type">
-                ${(function(){
-                  const sel = document.getElementById('bulk-type');
-                  if (!sel) return '';
-                  return Array.from(sel.options).filter(o => o.value).map(o => `<option value="${o.value}">${o.textContent}</option>`).join('');
-                })()}
-              </select>
-            </div>
-            <div class="mb-1">
               <label class="form-label">Tags</label>
               <input type="text" class="form-control" name="tags" placeholder="comma,separated,tags" />
               <div class="form-text">Use commas to separate tags.</div>
+            </div>
+
+            <hr class="my-4">
+            <h6 class="mb-3">Attribution & Metadata <small class="text-muted">(for music/audio)</small></h6>
+
+            <div class="row">
+              <div class="col-md-6 mb-3">
+                <label class="form-label">Artist</label>
+                <input type="text" class="form-control" name="artist" placeholder="Artist or performer name" />
+              </div>
+              <div class="col-md-6 mb-3">
+                <label class="form-label">Title</label>
+                <input type="text" class="form-control" name="title" placeholder="Track or media title" />
+              </div>
+            </div>
+
+            <div class="row">
+              <div class="col-md-6 mb-3">
+                <label class="form-label">Album</label>
+                <input type="text" class="form-control" name="album" placeholder="Album name" />
+              </div>
+              <div class="col-md-6 mb-3">
+                <label class="form-label">License</label>
+                <input type="text" class="form-control" name="license" placeholder="CC-BY, CC0, etc." />
+                <div class="form-text">E.g., "CC-BY 4.0", "CC0", "Public Domain"</div>
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Attribution URL</label>
+              <input type="url" class="form-control" name="attribution_url" placeholder="https://..." />
+              <div class="form-text">Link to original source or artist page</div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Attribution Text</label>
+              <textarea class="form-control" name="attribution_text" rows="2" placeholder="Required attribution or copyright notice"></textarea>
+              <div class="form-text">Exact text required for attribution (if any)</div>
             </div>
           </form>
         </div>
@@ -332,7 +389,20 @@
     </div>`;
   document.body.appendChild(editModalEl);
   let bsModal; function ensureBsModal(){ if (!bsModal) bsModal = new bootstrap.Modal(editModalEl); return bsModal; }
-  function openEditModal(opts){ const form = editModalEl.querySelector('#media-edit-form'); form.media_id.value = opts.id; form.original_filename.value = opts.name || ''; form.media_type.value = opts.type || ''; form.tags.value = opts.tags || ''; ensureBsModal().show(); }
+  function openEditModal(opts){
+    const form = editModalEl.querySelector('#media-edit-form');
+    form.media_id.value = opts.id;
+    form.original_filename.value = opts.name || '';
+    form.media_type.value = opts.type || '';
+    form.tags.value = opts.tags || '';
+    form.artist.value = opts.artist || '';
+    form.album.value = opts.album || '';
+    form.title.value = opts.title || '';
+    form.license.value = opts.license || '';
+    form.attribution_url.value = opts.attributionUrl || '';
+    form.attribution_text.value = opts.attributionText || '';
+    ensureBsModal().show();
+  }
   document.getElementById('media-edit-save').addEventListener('click', async function(){ const form = editModalEl.querySelector('#media-edit-form'); const id = form.media_id.value; form.tags.value = normalizeTags(form.tags.value); const fd = new FormData(form); const resp = await apiPost(UPDATE_URL_TPL.replace('0', id), fd); if (resp && resp.success){ const card = document.querySelector('.media-card[data-id="' + id + '"]'); if (card){ card.dataset.name = form.original_filename.value; const newType = form.media_type.value; const oldType = (card.dataset.type || '').toLowerCase(); card.dataset.type = newType; card.dataset.tags = form.tags.value; const titleEl = card.querySelector('.card-body .fw-semibold'); if (titleEl) titleEl.textContent = form.original_filename.value; const badge = card.querySelector('.card-body [data-role="type-badge"], .card-body .badge[class*="text-bg-"]'); if (badge){ const tVal = (newType||'').toLowerCase(); badge.textContent = tVal ? (tVal.charAt(0).toUpperCase() + tVal.slice(1)) : ''; if (oldType) badge.classList.remove('text-bg-' + oldType); if (tVal) badge.classList.add('text-bg-' + tVal); } const body = card.querySelector('.card-body'); if (body){ let tagsWrap = body.querySelector('.mt-1.small'); const html = (form.tags.value||'').split(',').map(function(s){ s=s.trim(); return s? '<span class=\"badge bg-secondary me-1\">'+s+'</span>':''; }).join(''); if (tagsWrap) tagsWrap.innerHTML = html; else if (html){ const div = document.createElement('div'); div.className = 'mt-1 small'; div.innerHTML = html; body.appendChild(div);} } } ensureBsModal().hide(); if (typeof showToast === 'function') { showToast('Media updated.'); } } else alert((resp && resp.error) || 'Update failed'); });
   document.getElementById('media-edit-delete').addEventListener('click', async function(){ const form = editModalEl.querySelector('#media-edit-form'); const id = form.media_id.value; if (!confirm('Delete this media item?')) return; const resp = await apiPost(DELETE_URL_TPL.replace('0', id), {}); if (resp && resp.success){ const el = document.querySelector('.media-card[data-id="' + id + '"]'); el && el.closest('.col').remove(); ensureBsModal().hide(); updateBulkBar(); } else alert((resp && resp.error) || 'Delete failed'); });
 

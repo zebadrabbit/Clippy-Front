@@ -719,8 +719,8 @@ def worker_update_project_status(project_id: int):
         if "status" in data:
             from app.models import ProjectStatus
 
-            # Normalize status to lowercase to match enum values
-            status_value = str(data["status"]).lower()
+            # Normalize status to uppercase to match enum values
+            status_value = str(data["status"]).upper()
             project.status = ProjectStatus(status_value)
 
         if "output_filename" in data:
@@ -731,7 +731,7 @@ def worker_update_project_status(project_id: int):
 
         if "completed_at" in data:
             project.completed_at = datetime.fromisoformat(data["completed_at"])
-        elif data.get("status") == "completed":
+        elif data.get("status", "").upper() == "COMPLETED":
             project.completed_at = datetime.utcnow()
 
         db.session.commit()

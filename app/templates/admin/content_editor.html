@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="mb-0"><i class="bi bi-pencil-square"></i> Content Editor</h2>
+  </div>
+
+  <div class="row">
+    <div class="col-12 col-lg-3 mb-4 mb-lg-0">
+      {% set active_page = 'content_editor' %}
+      {% include 'admin/_includes/sidebar.html' with context %}
+    </div>
+    <div class="col-12 col-lg-9">
+      <!-- Info Alert -->
+      <div class="alert alert-info">
+        <i class="bi bi-info-circle me-2"></i>
+        <strong>Content Editor</strong> - Edit help pages, documentation, and other markdown files directly from the admin panel. Backups are automatically created before saving.
+      </div>
+
+      <!-- Content Areas -->
+      {% for area_name, area_data in files_by_area.items() %}
+      <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+          <h5 class="mb-0"><i class="{{ area_data.icon }} me-2"></i>{{ area_name }}</h5>
+        </div>
+        <div class="card-body">
+          {% if area_data.files %}
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>File</th>
+                  <th>Size</th>
+                  <th>Modified</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for file in area_data.files %}
+                <tr>
+                  <td>
+                    <i class="bi bi-file-earmark-text me-2"></i>
+                    {{ file.path }}
+                  </td>
+                  <td>
+                    {% if file.size < 1024 %}
+                      {{ file.size }} B
+                    {% elif file.size < 1048576 %}
+                      {{ "%.1f"|format(file.size / 1024) }} KB
+                    {% else %}
+                      {{ "%.1f"|format(file.size / 1048576) }} MB
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if file.modified %}
+                      {{ file.modified.strftime('%Y-%m-%d %H:%M') }}
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
+                  <td>
+                    <a href="{{ url_for('admin.edit_file', file=file.full_path) }}" class="btn btn-sm btn-primary">
+                      <i class="bi bi-pencil"></i> Edit
+                    </a>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <p class="text-muted mb-0">No files found in this area.</p>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+
+      {% if not files_by_area %}
+      <div class="alert alert-warning">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        No content areas configured.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

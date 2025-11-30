@@ -15,6 +15,53 @@ from app.api import api_bp
 logger = structlog.get_logger(__name__)
 
 
+def create_clip_analytics(clip, user_id, view_count=0, discord_data=None):
+    """
+    Create analytics record for a clip.
+
+    Args:
+        clip: Clip model instance
+        user_id: User ID who owns the project
+        view_count: View count from platform (default 0)
+        discord_data: Optional dict with Discord engagement data:
+            {
+                "shares": int,
+                "reactions": int,
+                "reaction_types": dict  # e.g., {"👍": 5, "🔥": 3}
+            }
+    """
+    import json
+
+    from app.models import ClipAnalytics, db
+
+    try:
+        analytics = ClipAnalytics(
+            clip_id=clip.id,
+            user_id=user_id,
+            creator_name=clip.creator_name,
+            creator_id=clip.creator_id,
+            creator_platform=clip.source_platform,
+            game_name=clip.game_name,
+            view_count=view_count,
+            discord_shares=discord_data.get("shares", 0) if discord_data else 0,
+            discord_reactions=discord_data.get("reactions", 0) if discord_data else 0,
+            discord_reaction_types=(
+                json.dumps(discord_data.get("reaction_types", {}))
+                if discord_data and discord_data.get("reaction_types")
+                else None
+            ),
+            clip_created_at=clip.clip_created_at,
+        )
+        db.session.add(analytics)
+        db.session.commit()
+        current_app.logger.info(
+            f"Created analytics for clip {clip.id}: {clip.title} by {clip.creator_name}"
+        )
+    except Exception as e:
+        current_app.logger.error(f"Failed to create analytics for clip {clip.id}: {e}")
+        db.session.rollback()
+
+
 @api_bp.route("/projects", methods=["POST"])
 @login_required
 def create_project_api():
@@ -22,12 +69,27 @@ def create_project_api():
     data = request.get_json(silent=True) or {}
     name = (data.get("name") or "").strip()
     if not name:
+        # Generate a slug-style name using Faker
         try:
-            from datetime import date
+            from faker import Faker
 
-            name = f"Compilation of {date.today().isoformat()}"
-        except Exception:
-            name = "Compilation of Today"
+            fake = Faker()
+            # Create a Twitch-style slug: adjective-noun-number
+            adjective = fake.word().capitalize()
+            noun = fake.word().capitalize()
+            number = fake.random_int(min=100, max=999)
+            name = f"{adjective}{noun}{number}"
+            current_app.logger.info(f"Generated project name: {name}")
+        except Exception as e:
+            current_app.logger.warning(
+                f"Failed to generate Faker name: {e}, using fallback"
+            )
+            try:
+                from datetime import date
+
+                name = f"Compilation of {date.today().isoformat()}"
+            except Exception:
+                name = "Compilation of Today"
 
     description = (data.get("description") or "").strip() or None
 
@@ -334,6 +396,7 @@ def create_and_download_clips_api(project_id: int):
                 creator_id = obj.get("creator_id")
                 game_name = obj.get("game_name")
                 clip_created_at = obj.get("created_at")
+                view_count = obj.get("view_count", 0)
 
                 # Enrich missing metadata for Twitch clips
                 if platform == "twitch" and (
@@ -359,6 +422,9 @@ def create_and_download_clips_api(project_id: int):
                                     clip_created_at = twitch_clip.created_at
                                 if not title or title.startswith("Clip "):
                                     title = twitch_clip.title
+                                # Capture view count from enriched data
+                                if not view_count:
+                                    view_count = twitch_clip.view_count or 0
                     except Exception as enrich_err:
                         current_app.logger.warning(
                             f"Failed to enrich metadata for {url_s}: {enrich_err}"
@@ -396,6 +462,17 @@ def create_and_download_clips_api(project_id: int):
                     )
                     db.session.rollback()
                     continue
+
+                # Create analytics record for this clip
+                view_count = obj.get("view_count", 0)
+                discord_data = None
+                if obj.get("discord_shares") or obj.get("discord_reactions"):
+                    discord_data = {
+                        "shares": obj.get("discord_shares", 0),
+                        "reactions": obj.get("discord_reactions", 0),
+                        "reaction_types": obj.get("reaction_types", {}),
+                    }
+                create_clip_analytics(clip, current_user.id, view_count, discord_data)
 
                 try:
                     task = download_clip_task.apply_async(
@@ -1703,6 +1780,16 @@ def update_wizard_state_api(project_id: int):
 
     data = request.get_json(silent=True) or {}
 
+    # Log incoming data for debugging
+    logger.debug(
+        "wizard_state_update_request",
+        project_id=project_id,
+        data_keys=list(data.keys()),
+        has_status="status" in data,
+        status_value=data.get("status") if "status" in data else None,
+        status_type=type(data.get("status")).__name__ if "status" in data else None,
+    )
+
     # Update wizard_step (1-4)
     if "wizard_step" in data:
         step = int(data["wizard_step"])
@@ -1727,7 +1814,21 @@ def update_wizard_state_api(project_id: int):
 
     # Update status (e.g., DRAFT -> READY)
     if "status" in data:
-        status_value = data["status"].lower()
+        status_input = data["status"]
+
+        # Ensure status_input is a string
+        if not isinstance(status_input, str):
+            return (
+                jsonify(
+                    {
+                        "error": f"Status must be a string, got {type(status_input).__name__}"
+                    }
+                ),
+                400,
+            )
+
+        # Convert to uppercase to match database enum values
+        status_value = status_input.upper()
         try:
             new_status = ProjectStatus(status_value)
             # Only allow DRAFT -> READY or READY -> DRAFT transitions via this endpoint

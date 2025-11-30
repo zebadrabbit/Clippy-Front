@@ -9,6 +9,7 @@ import logging
 import mimetypes
 import os
 import subprocess
+from datetime import datetime
 from uuid import uuid4
 
 from flask import (
@@ -23,7 +24,7 @@ from flask import (
     send_file,
     url_for,
 )
-from flask_login import current_user, login_required
+from flask_login import current_user, login_required, login_user
 from werkzeug.utils import secure_filename
 
 from app import storage as storage_lib
@@ -2419,10 +2420,35 @@ def profile():
             first_name=John, last_name=Doe,
             timezone=America/New_York, date_format=US
     """
+    current_app.logger.info(
+        f"Profile route called - method: {request.method}, user: {current_user.username}"
+    )
+
     form = ProfileForm(current_user)
 
-    if form.validate_on_submit():
+    if request.method == "POST":
+        current_app.logger.info(
+            f"POST to profile - form keys: {list(request.form.keys())}"
+        )
+        current_app.logger.info(f"Form errors before validation: {form.errors}")
+
+    validation_result = form.validate_on_submit()
+
+    if request.method == "POST":
+        current_app.logger.info(f"Form validation result: {validation_result}")
+        current_app.logger.info(f"Form errors after validation: {form.errors}")
+
+    if validation_result:
         try:
+            # Debug logging
+            current_app.logger.info(
+                f"Profile update - form data: "
+                f"discord_channel_id={form.discord_channel_id.data}"
+            )
+            current_app.logger.info(
+                f"Profile update - request.form keys: {list(request.form.keys())}"
+            )
+
             # Update user profile - only update fields that were actually submitted
             # Check if personal info section was submitted (first_name is in that form)
             if "first_name" in request.form or "last_name" in request.form:
@@ -2430,14 +2456,13 @@ def profile():
                 current_user.last_name = form.last_name.data or None
 
             # Check if external services section was submitted
-            if (
-                "discord_user_id" in request.form
-                or "discord_channel_id" in request.form
-                or "twitch_username" in request.form
-            ):
-                current_user.discord_user_id = form.discord_user_id.data or None
+            # Note: discord_user_id and twitch_username are now set via OAuth flow, not through this form
+            if "discord_channel_id" in request.form:
+                current_app.logger.info(
+                    f"Updating integrations: "
+                    f"discord_channel_id={form.discord_channel_id.data}"
+                )
                 current_user.discord_channel_id = form.discord_channel_id.data or None
-                current_user.twitch_username = form.twitch_username.data or None
 
             # Preferences are in the first form, so update them when personal info is submitted
             if (
@@ -2496,9 +2521,8 @@ def profile():
     elif request.method == "GET":
         form.first_name.data = current_user.first_name
         form.last_name.data = current_user.last_name
-        form.discord_user_id.data = current_user.discord_user_id
+        # discord_user_id and twitch_username are shown in template but not editable via form (OAuth only)
         form.discord_channel_id.data = current_user.discord_channel_id
-        form.twitch_username.data = current_user.twitch_username
         form.date_format.data = current_user.date_format or "auto"
         try:
             form.timezone.data = current_user.timezone or ""
@@ -2618,6 +2642,13 @@ def account_notifications():
     return render_template(
         "auth/account_notifications.html", title="Notification Settings"
     )
+
+
+@main_bp.route("/notifications")
+@login_required
+def notifications_page():
+    """Display full notifications page with filtering and pagination."""
+    return render_template("main/notifications.html", title="Notifications")
 
 
 @main_bp.route("/account/danger")
@@ -2753,28 +2784,223 @@ def change_password():
     return redirect(url_for("main.account_security"))
 
 
-@main_bp.route("/connect/discord", methods=["POST"])
+@main_bp.route("/connect/discord", methods=["GET"])
 @login_required
 def connect_discord():
-    """Save Discord user identifier to the current user's account.
+    """Initiate Discord OAuth2 flow.
 
-    This is a lightweight placeholder for a full OAuth flow. Accepts
-    'discord_user_id' from a simple form submission and stores it.
+    Redirects user to Discord's authorization page where they grant permission
+    for the app to access their Discord user info.
     """
-    discord_id = (request.form.get("discord_user_id") or "").strip()
-    if not discord_id:
-        flash("Please provide a Discord User ID.", "warning")
+    client_id = current_app.config.get("DISCORD_CLIENT_ID")
+    redirect_uri = current_app.config.get("DISCORD_REDIRECT_URI")
+
+    if not client_id or not redirect_uri:
+        flash("Discord OAuth is not configured.", "danger")
         return redirect(url_for("main.account_integrations"))
+
+    # Build Discord OAuth URL
+    discord_oauth_url = (
+        f"https://discord.com/api/oauth2/authorize"
+        f"?client_id={client_id}"
+        f"&redirect_uri={redirect_uri}"
+        f"&response_type=code"
+        f"&scope=identify"
+    )
+
+    return redirect(discord_oauth_url)
+
+
+@main_bp.route("/discord/callback", methods=["GET"])
+def discord_callback():
+    """Handle Discord OAuth2 callback.
+
+    This route handles both login/signup (when state=login) and account linking
+    (when user is already logged in). Exchange authorization code for access token,
+    fetch user info, and either log in, create account, or link to existing account.
+    """
+    code = request.args.get("code")
+    error = request.args.get("error")
+    state = request.args.get("state")
+
+    # Check if this is a login flow or account linking flow
+    is_login_flow = state == "login"
+
+    if error:
+        current_app.logger.warning(f"Discord OAuth error: {error}")
+        flash("Discord authorization was denied or failed.", "warning")
+        if is_login_flow:
+            return redirect(url_for("auth.login"))
+        return redirect(url_for("main.account_integrations"))
+
+    if not code:
+        flash("No authorization code received from Discord.", "warning")
+        if is_login_flow:
+            return redirect(url_for("auth.login"))
+        return redirect(url_for("main.account_integrations"))
+
+    client_id = current_app.config.get("DISCORD_CLIENT_ID")
+    client_secret = current_app.config.get("DISCORD_CLIENT_SECRET")
+    redirect_uri = current_app.config.get("DISCORD_REDIRECT_URI")
+
+    if not all([client_id, client_secret, redirect_uri]):
+        flash("Discord OAuth is not properly configured.", "danger")
+        return redirect(url_for("main.account_integrations"))
+
     try:
-        current_user.discord_user_id = discord_id
-        db.session.commit()
-        flash("Discord connected successfully.", "success")
+        # Exchange code for access token
+        import requests
+
+        token_response = requests.post(
+            "https://discord.com/api/oauth2/token",
+            data={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+
+        if token_response.status_code != 200:
+            current_app.logger.error(
+                f"Discord token exchange failed: {token_response.status_code} - {token_response.text}"
+            )
+            flash("Failed to authenticate with Discord.", "danger")
+            return redirect(url_for("main.account_integrations"))
+
+        token_data = token_response.json()
+        access_token = token_data.get("access_token")
+
+        if not access_token:
+            flash("No access token received from Discord.", "danger")
+            return redirect(url_for("main.account_integrations"))
+
+        # Fetch user info from Discord
+        user_response = requests.get(
+            "https://discord.com/api/users/@me",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+        if user_response.status_code != 200:
+            current_app.logger.error(
+                f"Discord user fetch failed: {user_response.status_code} - {user_response.text}"
+            )
+            flash("Failed to fetch Discord user information.", "danger")
+            return redirect(url_for("main.account_integrations"))
+
+        user_data = user_response.json()
+        discord_user_id = user_data.get("id")
+        discord_username = user_data.get("username")
+        discord_email = user_data.get("email")
+
+        if not discord_user_id:
+            flash("Failed to get Discord User ID.", "danger")
+            if is_login_flow:
+                return redirect(url_for("auth.login"))
+            return redirect(url_for("main.account_integrations"))
+
+        # Handle login/signup flow
+        if is_login_flow:
+            # Check if user exists with this Discord ID
+            user = User.query.filter_by(discord_user_id=discord_user_id).first()
+
+            if user:
+                # Existing user - log them in
+                from flask_login import login_user
+
+                login_user(user, remember=True)
+                user.last_login = datetime.utcnow()
+                db.session.commit()
+
+                flash(f"Welcome back, {user.username}!", "success")
+                current_app.logger.info(
+                    f"User {user.username} logged in via Discord OAuth"
+                )
+                return redirect(url_for("main.dashboard"))
+
+            else:
+                # New user - create account
+                base_username = discord_username.lower().replace(" ", "_")
+                username = base_username
+                counter = 1
+                while User.query.filter_by(username=username).first():
+                    username = f"{base_username}{counter}"
+                    counter += 1
+
+                from app.models import Tier
+
+                default_tier = Tier.query.filter_by(name="Free").first()
+                if not default_tier:
+                    flash("System error: Default tier not found.", "danger")
+                    return redirect(url_for("auth.login"))
+
+                new_user = User(
+                    username=username,
+                    email=discord_email or f"{discord_user_id}@discord.user",
+                    discord_user_id=discord_user_id,
+                    tier_id=default_tier.id,
+                    email_verified=bool(discord_email),
+                )
+                new_user.password_hash = None
+
+                db.session.add(new_user)
+                db.session.commit()
+
+                from flask_login import login_user
+
+                login_user(new_user, remember=True)
+
+                flash(
+                    f"Welcome to ClippyFront, {username}! Your account has been created.",
+                    "success",
+                )
+                current_app.logger.info(
+                    f"New user registered via Discord OAuth: {username} (discord_id={discord_user_id})"
+                )
+                return redirect(url_for("main.dashboard"))
+
+        # Handle account linking flow (user already logged in)
+        else:
+            if not current_user.is_authenticated:
+                flash("You must be logged in to link Discord.", "warning")
+                return redirect(url_for("auth.login"))
+
+            # Check if this Discord ID is already linked to another account
+            existing_user = User.query.filter_by(
+                discord_user_id=discord_user_id
+            ).first()
+            if existing_user and existing_user.id != current_user.id:
+                flash(
+                    "This Discord account is already linked to another ClippyFront account.",
+                    "warning",
+                )
+                return redirect(url_for("main.account_integrations"))
+
+            # Save verified Discord User ID
+            current_user.discord_user_id = discord_user_id
+            db.session.commit()
+
+            flash(
+                f"Discord account '{discord_username}' connected successfully!",
+                "success",
+            )
+            current_app.logger.info(
+                f"User {current_user.username} connected Discord: {discord_user_id} ({discord_username})"
+            )
+            return redirect(url_for("main.account_integrations"))
+
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(
-            f"Discord connect failed for user {current_user.id}: {e}"
+        safe_log_error(
+            current_app.logger,
+            "Discord OAuth callback error",
+            exc_info=e,
+            user_id=current_user.id,
         )
-        flash("Failed to connect Discord.", "danger")
+        flash("An error occurred while connecting Discord.", "danger")
+
     return redirect(url_for("main.account_integrations"))
 
 
@@ -2795,28 +3021,200 @@ def disconnect_discord():
     return redirect(url_for("main.account_integrations"))
 
 
-@main_bp.route("/connect/twitch", methods=["POST"])
-@login_required
-def connect_twitch():
-    """Save Twitch username to the current user's account.
+@main_bp.route("/twitch/callback")
+def twitch_callback():
+    """Handle Twitch OAuth2 callback for both login/signup and account linking.
 
-    Placeholder for OAuth: accepts 'twitch_username' from form.
+    This unified endpoint handles two flows:
+    1. Login/signup (state=login): User authenticates via Twitch
+    2. Account linking (no state or state != login): Logged-in user connects Twitch
+
+    The state parameter determines which flow to execute.
     """
-    twitch_name = (request.form.get("twitch_username") or "").strip()
-    if not twitch_name:
-        flash("Please provide a Twitch username.", "warning")
+    code = request.args.get("code")
+    state = request.args.get("state")
+    error = request.args.get("error")
+
+    if error:
+        flash(f"Twitch authorization failed: {error}", "danger")
+        if state == "login":
+            return redirect(url_for("auth.login"))
         return redirect(url_for("main.account_integrations"))
+
+    if not code:
+        flash("Missing authorization code from Twitch.", "danger")
+        if state == "login":
+            return redirect(url_for("auth.login"))
+        return redirect(url_for("main.account_integrations"))
+
+    # Determine flow type based on state parameter
+    is_login_flow = state == "login"
+
+    # Account linking requires authentication
+    if not is_login_flow and not current_user.is_authenticated:
+        flash("You must be logged in to connect Twitch.", "danger")
+        return redirect(url_for("auth.login"))
+
+    client_id = current_app.config.get("TWITCH_CLIENT_ID")
+    client_secret = current_app.config.get("TWITCH_CLIENT_SECRET")
+    redirect_uri = current_app.config.get("TWITCH_REDIRECT_URI")
+
+    if not all([client_id, client_secret, redirect_uri]):
+        flash("Twitch OAuth is not configured.", "danger")
+        if is_login_flow:
+            return redirect(url_for("auth.login"))
+        return redirect(url_for("main.account_integrations"))
+
     try:
-        current_user.twitch_username = twitch_name
-        db.session.commit()
-        flash("Twitch connected successfully.", "success")
+        # Exchange code for access token
+        import requests
+
+        token_url = "https://id.twitch.tv/oauth2/token"
+        token_data = {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "code": code,
+            "grant_type": "authorization_code",
+            "redirect_uri": redirect_uri,
+        }
+
+        token_response = requests.post(token_url, data=token_data)
+        token_response.raise_for_status()
+        token_json = token_response.json()
+        access_token = token_json.get("access_token")
+
+        if not access_token:
+            raise ValueError("No access token received from Twitch")
+
+        # Get user info from Twitch API
+        user_url = "https://api.twitch.tv/helix/users"
+        headers = {"Authorization": f"Bearer {access_token}", "Client-Id": client_id}
+
+        user_response = requests.get(user_url, headers=headers)
+        user_response.raise_for_status()
+        user_json = user_response.json()
+
+        if not user_json.get("data"):
+            raise ValueError("No user data received from Twitch")
+
+        twitch_user = user_json["data"][0]
+        twitch_username = twitch_user.get("login")  # Twitch username
+        twitch_email = twitch_user.get("email")
+
+        if not twitch_username:
+            raise ValueError("No username received from Twitch")
+
+        # Handle login/signup flow
+        if is_login_flow:
+            # Look for existing user with this Twitch username
+            user = User.query.filter_by(twitch_username=twitch_username).first()
+
+            if user:
+                # Existing user - log them in
+                login_user(user, remember=True)
+                flash(f"Logged in as {user.username} via Twitch.", "success")
+                current_app.logger.info(
+                    f"User {user.username} logged in via Twitch: {twitch_username}"
+                )
+                return redirect(url_for("main.dashboard"))
+            else:
+                # New user - create account
+                # Use Twitch username as base, ensure it's unique
+                base_username = twitch_username
+                username = base_username
+                counter = 1
+                while User.query.filter_by(username=username).first():
+                    username = f"{base_username}{counter}"
+                    counter += 1
+
+                # Create new user
+                new_user = User(
+                    username=username,
+                    email=twitch_email or f"{twitch_username}@twitch.invalid",
+                    twitch_username=twitch_username,
+                    # No password - OAuth-only account
+                    email_verified=bool(twitch_email),
+                    created_at=datetime.utcnow(),
+                )
+
+                db.session.add(new_user)
+                db.session.commit()
+
+                login_user(new_user, remember=True)
+                flash(
+                    f"Account created! Welcome, {new_user.username}. "
+                    "You can set a password in your profile if you want to login without Twitch.",
+                    "success",
+                )
+                current_app.logger.info(
+                    f"New user {new_user.username} created via Twitch OAuth: {twitch_username}"
+                )
+                return redirect(url_for("main.dashboard"))
+
+        # Handle account linking flow
+        else:
+            # Check if this Twitch username is already linked to another account
+            existing_user = User.query.filter_by(
+                twitch_username=twitch_username
+            ).first()
+            if existing_user and existing_user.id != current_user.id:
+                flash(
+                    f"Twitch account @{twitch_username} is already linked to another account.",
+                    "danger",
+                )
+                return redirect(url_for("main.account_integrations"))
+
+            # Link to current user
+            current_user.twitch_username = twitch_username
+            db.session.commit()
+            flash(f"Twitch connected: @{twitch_username}", "success")
+            current_app.logger.info(
+                f"User {current_user.username} connected Twitch: {twitch_username}"
+            )
+            return redirect(url_for("main.account_integrations"))
+
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(
-            f"Twitch connect failed for user {current_user.id}: {e}"
+        safe_log_error(
+            current_app.logger,
+            "Twitch OAuth callback error",
+            exc_info=e,
+            extra={"code": code, "state": state},
         )
-        flash("Failed to connect Twitch.", "danger")
+        flash("Failed to connect Twitch. Please try again.", "danger")
+        if is_login_flow:
+            return redirect(url_for("auth.login"))
+
     return redirect(url_for("main.account_integrations"))
+
+
+@main_bp.route("/connect/twitch")
+@login_required
+def connect_twitch():
+    """Initiate Twitch OAuth2 flow for account linking.
+
+    Redirects user to Twitch's authorization page. After authorization,
+    Twitch redirects back to /twitch/callback where we link the account.
+
+    No state parameter means account linking (vs. state=login for login flow).
+    """
+    client_id = current_app.config.get("TWITCH_CLIENT_ID")
+    redirect_uri = current_app.config.get("TWITCH_REDIRECT_URI")
+
+    if not client_id or not redirect_uri:
+        flash("Twitch OAuth is not configured.", "danger")
+        return redirect(url_for("main.account_integrations"))
+
+    # Build Twitch OAuth URL without state parameter (indicates account linking)
+    twitch_oauth_url = (
+        f"https://id.twitch.tv/oauth2/authorize"
+        f"?client_id={client_id}"
+        f"&redirect_uri={redirect_uri}"
+        f"&response_type=code"
+        f"&scope=user:read:email"
+    )
+
+    return redirect(twitch_oauth_url)
 
 
 @main_bp.route("/disconnect/twitch", methods=["POST"])

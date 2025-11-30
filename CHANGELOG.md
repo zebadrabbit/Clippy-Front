@@ -7,6 +7,161 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2025-11-30
+
+### Added
+- **Admin Content Editor**
+  - New admin panel section at `/admin/content-editor` for editing markdown files
+  - Edit help pages (`app/help/content/*.md`) directly from admin UI
+  - Edit documentation files (`docs/*.md`) from admin UI
+  - Full-featured markdown editor with EasyMDE integration
+  - Live preview with side-by-side view toggle
+  - Auto-save to browser every 5 seconds
+  - Automatic `.backup` file creation before saving
+  - Syntax highlighting and markdown toolbar
+  - File browser with size and last modified date
+  - Unsaved changes warning on navigation
+  - Security: Path traversal protection and whitelisted directories only
+
+- **Enhanced Help Page Styling**
+  - Main content wrapped in cards with shadow and padding
+  - H2 headers with gradient backgrounds and colored left borders
+  - H3 headers with underlines and primary color
+  - Tables with shadows and primary-colored headers
+  - Blockquotes with light backgrounds and info-colored borders
+  - Code blocks styled with dark theme
+  - Related topics in styled cards with icons
+  - Feedback section in light card
+  - TOC sidebar in card with primary header
+  - Improved spacing and line-height for readability
+  - Better visual hierarchy with borders and backgrounds
+
+- **Privacy Policy**
+  - Comprehensive privacy policy at `/privacy`
+  - Detailed data collection transparency:
+    - Account Information (username, email, profile)
+    - Content Analytics (clip engagement metrics)
+    - Activity Logs (team/project audit trail)
+    - Render Usage (quota enforcement)
+    - Application Logs (debugging)
+  - Explicit list of what is NOT collected (no third-party analytics, no telemetry)
+  - Data security section (encryption, user isolation, HTTPS)
+  - Data retention policies
+  - User rights (access, delete, export, revoke integrations)
+  - Self-hosted deployment considerations
+  - Contact information with links to GitHub and help center
+
+- **Media Library Metadata Editing**
+  - Expanded edit modal for user media library at `/media`
+  - Attribution fields matching admin public library:
+    - Artist (for music/audio)
+    - Title (track or media title)
+    - Album (album name)
+    - License (CC-BY, CC0, Public Domain, etc.)
+    - Attribution URL (link to original source)
+    - Attribution Text (exact copyright notice)
+  - Modal expanded to `modal-lg` for better layout
+  - Data attributes added to media cards for pre-filling
+  - Full metadata support in edit form
+
+### Changed
+- **Help Page UI**
+  - Changed from plain content to card-based layout
+  - Improved typography with better font sizes and weights
+  - Enhanced color scheme with primary/secondary colors
+  - Better mobile responsiveness with padding adjustments
+  - Increased readability with improved line-height and spacing
+
+- **Admin Sidebar**
+  - Added "Content Editor" link with pencil-square icon
+  - Positioned between "Maintenance" and "Logs"
+  - Active state highlighting for current page
+
+### Fixed
+- **Help Page Text Contrast**
+  - Fixed blockquotes to use dark text on light background (was unreadable white text)
+  - Fixed H2 headers to use dark text on gradient background
+  - Fixed info boxes to use dark teal text on light blue background
+  - Improved overall accessibility and readability
+
+- **Privacy Policy Link**
+  - Changed from invalid `help.help_center` to correct `help.index` endpoint
+  - Fixed BuildError preventing privacy page from loading
+
+## [1.4.0] - 2025-11-30
+
+### Added
+- **Analytics System**
+  - Comprehensive clip engagement tracking from Twitch and Discord
+  - Database models: `ClipAnalytics`, `GameAnalytics`, `CreatorAnalytics`
+  - Dashboard at `/analytics` with period filtering (day/week/month/all-time)
+  - Overview metrics: total clips, total views, unique creators, unique games
+  - Top Creators leaderboard with clip count, views, Discord engagement, game diversity
+  - Top Games performance metrics with viral potential indicators
+  - Engagement Timeline showing daily/weekly trends
+  - Viral Clips filter for high-performing content
+  - 6 API endpoints for data access (`/analytics/api/*`)
+  - Background aggregation tasks for performance optimization
+  - 17 database indexes for fast queries
+  - Integration with Twitch API for view counts and metadata
+  - Integration with Discord for shares and reaction tracking
+  - Per-user data isolation and security
+  - Comprehensive documentation in `docs/ANALYTICS.md`
+
+- **UI Enhancements**
+  - Navbar icons for Dashboard (speedometer2), Projects (folder2-open), Teams (people), Media (collection-play)
+  - Profile picture display in navbar (32px rounded) with fallback icon
+  - Profile pictures on profile page (120px) and account sidebar (120px)
+  - Consistent iconography across navigation
+
+### Changed
+- **Database Connection Pool Optimization**
+  - Increased pool_size from 5 to 20 connections
+  - Increased max_overflow from 10 to 30 connections
+  - Total 50 concurrent connections available
+  - Prevents "QueuePool limit reached" timeout errors
+  - Configurable via `DB_POOL_SIZE` and `DB_MAX_OVERFLOW` env vars
+
+- **Clip Data Capture**
+  - `view_count` now captured from Twitch API in project wizard
+  - Discord shares and reactions tracked per clip
+  - Creator and game metadata enriched from Twitch
+  - Analytics created automatically on clip addition
+
+### Fixed
+- **Profile Image Routes**
+  - Navbar now correctly uses `profile_image_path` field (not `avatar_path`)
+  - Profile image route at `/profile/image` properly configured
+  - Fallback icon displayed when no profile image exists
+
+## [Unreleased - Pre-1.4.0]
+
+### Added
+- **Notification System Enhancements**
+  - Dedicated notifications page (`/notifications`) with filtering, pagination, bulk actions
+    - Filter by type (all event types), read/unread status, date range (today, week, month, 3 months, all)
+    - Bulk mark as read and bulk delete with checkbox selection
+    - Pagination with 20 items per page and ellipsis for many pages
+    - Real-time date formatting with relative times
+  - Actionable notification buttons for quick navigation
+    - "View Project", "Go to Team", "See Details", "View Invitation"
+    - Contextual actions based on notification type
+    - Available in both navbar dropdown and dedicated page
+  - Browser push notifications with Web Push API
+    - Service worker for offline/background alert delivery
+    - VAPID authentication for secure push messages
+    - Multi-device subscription management
+    - Automatic cleanup of expired/invalid subscriptions
+    - Click-to-navigate contextual actions
+    - Push settings UI in account notifications page
+  - Automatic retention policy for notification cleanup
+    - Celery Beat scheduled task runs daily
+    - Deletes read notifications older than 30 days (configurable via `NOTIFICATION_RETENTION_DAYS`)
+    - Never deletes unread notifications
+  - New dependencies: `pywebpush`, `py-vapid` for push notification support
+  - New database model: `PushSubscription` for managing user device subscriptions
+  - Configuration: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_EMAIL`
+
 ### Changed
 - **Discord Integration**
   - Increased message fetch limit from 20 to 40 URLs for better clip discovery

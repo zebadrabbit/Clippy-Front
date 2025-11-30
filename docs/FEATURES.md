@@ -93,6 +93,123 @@ See [TIERS-AND-QUOTAS.md](TIERS-AND-QUOTAS.md) for details.
 - **Bot setup**: Requires Message Content Intent and permission 65536
 - See [Discord Integration Guide](DISCORD_INTEGRATION.md) for setup
 
+## Analytics System
+
+### Overview Dashboard
+
+- **Total clips** collected from all sources
+- **Total views** aggregated from Twitch
+- **Unique creators** making clips
+- **Unique games** being clipped
+- **Date range** tracking for analytics period
+- **Top performers** (game and creator highlights)
+
+### Creator Leaderboards
+
+- **Clip count** per creator
+- **Total and average views** for engagement metrics
+- **Discord activity** (shares and reactions)
+- **Game diversity** showing content variety
+- **Period filtering** (day/week/month/all-time)
+- **Sortable columns** for custom analysis
+
+### Game Performance Metrics
+
+- **Clip volume** by game
+- **View aggregation** with averages
+- **Viral potential** indicators (high avg views)
+- **Creator diversity** per game
+- **Discord engagement** metrics
+- **Trending detection** for content opportunities
+
+### Engagement Analytics
+
+- **Timeline view** showing daily/weekly clip activity
+- **View trends** over time
+- **Discord shares** correlation
+- **Peak activity** period detection
+- **Growth tracking** month-over-month
+
+### Viral Clips Detection
+
+- **High-view filtering** (configurable threshold)
+- **Clip details** with creator and game
+- **Direct links** to source clips
+- **Engagement metrics** for each clip
+- **Content repurposing** opportunities
+
+### Background Processing
+
+- **Automated aggregation** via Celery tasks
+- **Period-based summaries** (daily/weekly/monthly/all-time)
+- **Performance optimization** with indexed tables
+- **Incremental updates** for real-time accuracy
+
+### API Endpoints
+
+- `GET /analytics/api/overview` - High-level summary stats
+- `GET /analytics/api/top-creators` - Creator leaderboard
+- `GET /analytics/api/top-games` - Game performance metrics
+- `GET /analytics/api/viral-clips` - High-performing clips
+- `GET /analytics/api/engagement-timeline` - Time-series data
+- `GET /analytics/api/peak-times` - Activity distribution
+
+### Data Capture
+
+- **Twitch integration** for view counts and metadata
+- **Discord integration** for shares and reactions
+- **Automatic enrichment** on clip creation
+- **Per-user isolation** for data security
+- **Deduplication** on clip URLs
+
+See [Analytics Documentation](ANALYTICS.md) for complete details.
+
+## Notification System
+
+### Real-time Notifications
+
+- **Server-Sent Events (SSE)** for instant updates
+- **Polling fallback** for environments without SSE support
+- **Navbar dropdown** with unread badge
+- **Auto-refresh** on new notifications
+- **Mark as read** inline or bulk
+- **Activity types**: compilation complete/failed, team member added, project shared, invitation received
+
+### Email Notifications
+
+- **SMTP integration** with TLS/SSL support (via `app/mailer.py`)
+- **Per-event-type toggles**: compilation, team activity, project sharing
+- **Daily digest** with configurable time (00:00-23:00)
+- **User preferences UI** in account settings
+- **Respects opt-out** settings for each notification type
+- **Requires configuration**: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`
+
+### Browser Push Notifications
+
+- **Web Push API** integration for offline/background alerts
+- **Service worker** (`app/static/sw.js`) for handling push events
+- **VAPID authentication** for secure delivery
+- **Multi-device support** with automatic subscription management
+- **Contextual actions**: click notification → navigate to project/team
+- **Automatic cleanup** of expired/invalid subscriptions
+- **Requires configuration**: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_EMAIL`
+- **Requires library**: `pip install pywebpush py-vapid`
+
+### Notification Management
+
+- **Dedicated notifications page** (`/notifications`) with:
+  - Pagination (20 per page)
+  - Filter by type (all event types)
+  - Filter by read/unread status
+  - Filter by date range (today, week, month, 3 months, all time)
+  - Bulk select with checkboxes
+  - Bulk mark as read
+  - Bulk delete
+- **Actionable buttons**: "View Project", "Go to Team", "See Details", "View Invitation"
+- **Retention policy**: Auto-delete read notifications after 30 days (configurable via `NOTIFICATION_RETENTION_DAYS`)
+- **Scheduled cleanup** via Celery Beat (runs daily)
+- **Real-time date formatting** with relative times ("2 hours ago")
+
 ### Content Policy
 
 - **Allowlist mode**: Only Twitch/Discord by default

@@ -2,7 +2,145 @@
 {% block content %}
 <div class="container py-5">
   <h2>Privacy Policy</h2>
-  <p class="text-muted">This is a placeholder privacy policy. Replace with your actual policy.</p>
-  <p>We respect your privacy. We store minimal data necessary to operate the service, such as account details and uploaded media metadata. We do not sell your data. See the full policy for details.</p>
+  <p class="text-muted">Last Updated: November 30, 2025</p>
+
+  <div class="card mb-4">
+    <div class="card-body">
+      <h4>Overview</h4>
+      <p>ClippyFront respects your privacy and is committed to transparency about data collection. All data is stored locally in your database instance and <strong>never shared with third parties</strong>. We do not use external analytics services or telemetry.</p>
+    </div>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-body">
+      <h4>What Data We Collect</h4>
+
+      <h5 class="mt-4">1. Account Information</h5>
+      <p>When you create an account, we store:</p>
+      <ul>
+        <li><strong>Username and email</strong> – For authentication and account recovery</li>
+        <li><strong>Password hash</strong> – Securely encrypted, never stored in plain text</li>
+        <li><strong>Profile information</strong> – Display name, avatar, bio (optional)</li>
+        <li><strong>Integration tokens</strong> – Twitch/Discord OAuth tokens (encrypted)</li>
+      </ul>
+
+      <h5 class="mt-4">2. Content Analytics (Your Clips Only)</h5>
+      <p>To power the Analytics Dashboard, we track engagement metrics for <strong>your Twitch clips</strong>:</p>
+      <ul>
+        <li><strong>Clip metadata</strong> – Creator name, game name, view count, creation date</li>
+        <li><strong>Discord engagement</strong> – Share count and reactions on clips shared in Discord</li>
+        <li><strong>Aggregated insights</strong> – Top creators, top games, viral clips, engagement trends</li>
+      </ul>
+      <p class="text-muted"><small><i class="bi bi-info-circle"></i> This data is YOUR content data (scoped to your user account) and used exclusively for analytics features visible in your dashboard.</small></p>
+
+      <h5 class="mt-4">3. Activity Logs (Audit Trail)</h5>
+      <p>For collaboration features and audit purposes, we log:</p>
+      <ul>
+        <li><strong>Team actions</strong> – Member added/removed, role changes, team creation/updates</li>
+        <li><strong>Project events</strong> – Project created, shared with teams, compilation started/completed</li>
+        <li><strong>Timestamps and user IDs</strong> – Who did what and when</li>
+      </ul>
+      <p class="text-muted"><small><i class="bi bi-info-circle"></i> Activity logs help you track team collaboration history and troubleshoot project issues.</small></p>
+
+      <h5 class="mt-4">4. Render Usage (Quota Enforcement)</h5>
+      <p>To enforce tier-based limits, we track:</p>
+      <ul>
+        <li><strong>Compiled video duration</strong> – Seconds of rendered output per project</li>
+        <li><strong>Monthly totals</strong> – Aggregated usage to enforce Free/Pro/Team tier quotas</li>
+      </ul>
+      <p class="text-muted"><small><i class="bi bi-info-circle"></i> This prevents abuse and ensures fair resource allocation across users.</small></p>
+
+      <h5 class="mt-4">5. Application Logs (Debugging)</h5>
+      <p>For troubleshooting and performance monitoring, we log:</p>
+      <ul>
+        <li><strong>Request metadata</strong> – API endpoint, HTTP method, IP address</li>
+        <li><strong>User context</strong> – User ID and username (if authenticated)</li>
+        <li><strong>Error traces</strong> – Stack traces for failed operations</li>
+        <li><strong>Background task status</strong> – Celery task IDs and worker names</li>
+      </ul>
+      <p class="text-muted"><small><i class="bi bi-info-circle"></i> Logs are rotated and stored in <code>instance/logs/</code> for operational debugging only.</small></p>
+    </div>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-body">
+      <h4>What We DO NOT Collect</h4>
+      <ul class="list-unstyled">
+        <li><i class="bi bi-x-circle text-danger"></i> <strong>No third-party analytics</strong> – We don't use Google Analytics, Amplitude, Mixpanel, Segment, or similar services</li>
+        <li><i class="bi bi-x-circle text-danger"></i> <strong>No external telemetry</strong> – All data stays in your PostgreSQL database</li>
+        <li><i class="bi bi-x-circle text-danger"></i> <strong>No data selling or sharing</strong> – We never sell, rent, or share your personal information with third parties</li>
+        <li><i class="bi bi-x-circle text-danger"></i> <strong>No tracking pixels</strong> – No invisible trackers or third-party cookies beyond session management</li>
+        <li><i class="bi bi-x-circle text-danger"></i> <strong>No PII harvesting</strong> – We only collect what's necessary for core functionality</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-body">
+      <h4>Data Security</h4>
+      <ul>
+        <li><strong>Encryption</strong> – Passwords are hashed with bcrypt; OAuth tokens are encrypted at rest</li>
+        <li><strong>User isolation</strong> – All queries are scoped by <code>user_id</code> to prevent cross-user data leaks</li>
+        <li><strong>Database pooling</strong> – Connection limits prevent resource exhaustion and DoS attacks</li>
+        <li><strong>HTTPS</strong> – All traffic is encrypted in transit (when deployed with SSL/TLS)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-body">
+      <h4>Data Retention</h4>
+      <ul>
+        <li><strong>Account data</strong> – Retained until account deletion</li>
+        <li><strong>Activity logs</strong> – Retained indefinitely for audit trail (team collaboration history)</li>
+        <li><strong>Application logs</strong> – Rotated after 30 days or 50MB per file</li>
+        <li><strong>Analytics data</strong> – Retained as long as associated clips exist</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-body">
+      <h4>Your Rights</h4>
+      <p>You have the right to:</p>
+      <ul>
+        <li><strong>Access your data</strong> – View all data associated with your account via API endpoints or admin panel (if admin)</li>
+        <li><strong>Delete your data</strong> – Delete your account and all associated projects, media, and analytics</li>
+        <li><strong>Export your data</strong> – Download compiled videos and media files at any time</li>
+        <li><strong>Revoke integrations</strong> – Disconnect Twitch/Discord OAuth at any time from account settings</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-body">
+      <h4>Self-Hosted Deployments</h4>
+      <p>If you're running ClippyFront on your own infrastructure:</p>
+      <ul>
+        <li>You control all data storage and retention policies</li>
+        <li>You are responsible for database backups and security</li>
+        <li>You can audit the codebase to verify data collection practices</li>
+        <li>You can disable analytics features if desired (set <code>ENABLE_ANALYTICS=false</code> in environment)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-body">
+      <h4>Changes to This Policy</h4>
+      <p>We may update this privacy policy from time to time. Changes will be reflected in the "Last Updated" date at the top of this page. Significant changes will be announced via in-app notifications.</p>
+    </div>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-body">
+      <h4>Contact</h4>
+      <p>If you have questions about this privacy policy or data practices, please contact us through:</p>
+      <ul>
+        <li>GitHub Issues: <a href="https://github.com/zebadrabbit/Clippy-Front/issues" target="_blank">https://github.com/zebadrabbit/Clippy-Front/issues</a></li>
+        <li>Help Center: <a href="{{ url_for('help.index') }}">Browse help documentation</a></li>
+      </ul>
+    </div>
+  </div>
 </div>
 {% endblock %}

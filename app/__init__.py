@@ -970,6 +970,11 @@ def register_blueprints(flask_app):
 
     flask_app.register_blueprint(admin_bp, url_prefix="/admin")
 
+    # Analytics routes
+    from app.analytics import analytics_bp
+
+    flask_app.register_blueprint(analytics_bp, url_prefix="/analytics")
+
     # Help system routes
     from app.help.routes import help_bp
 

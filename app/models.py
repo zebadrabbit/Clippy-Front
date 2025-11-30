@@ -110,11 +110,11 @@ class ProjectStatus(Enum):
     - FAILED: Video compilation failed
     """
 
-    DRAFT = "draft"
-    READY = "ready"
-    PROCESSING = "processing"
-    COMPLETED = "completed"
-    FAILED = "failed"
+    DRAFT = "DRAFT"
+    READY = "READY"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
 
 
 class MediaType(Enum):
@@ -1940,3 +1940,287 @@ class DismissedAnnouncement(db.Model):
 
     def __repr__(self) -> str:
         return f"<DismissedAnnouncement user={self.user_id} announcement={self.announcement_id}>"
+
+
+class PushSubscription(db.Model):
+    """
+    Web Push API subscriptions for browser push notifications.
+
+    Stores the subscription data needed to send push notifications
+    to users' browsers when they're offline or in the background.
+    """
+
+    __tablename__ = f"{_TABLE_PREFIX}push_subscriptions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey(f"{_TABLE_PREFIX}users.id"),
+        nullable=False,
+        index=True,
+    )
+
+    # Push subscription endpoint and keys
+    endpoint = db.Column(db.Text, nullable=False)
+    p256dh_key = db.Column(db.Text, nullable=False)
+    auth_key = db.Column(db.Text, nullable=False)
+
+    # User agent for tracking which browser/device
+    user_agent = db.Column(db.Text, nullable=True)
+
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    last_used_at = db.Column(db.DateTime, nullable=True)
+
+    # Relationships
+    user = db.relationship(
+        "User",
+        backref=db.backref("push_subscriptions", cascade="all, delete-orphan"),
+    )
+
+    # Index for efficient endpoint lookups
+    __table_args__ = (
+        db.Index(f"{_TABLE_PREFIX}ix_push_endpoint", endpoint, unique=True),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<PushSubscription user={self.user_id} endpoint={self.endpoint[:50]}...>"
+        )
+
+    def to_dict(self) -> dict:
+        """Convert subscription to dictionary."""
+        return {
+            "id": self.id,
+            "endpoint": self.endpoint,
+            "keys": {"p256dh": self.p256dh_key, "auth": self.auth_key},
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "last_used_at": self.last_used_at.isoformat()
+            if self.last_used_at
+            else None,
+        }
+
+
+class ClipAnalytics(db.Model):
+    """
+    Analytics model for tracking clip-level engagement metrics.
+
+    Aggregates data from Twitch clips and Discord shares to provide
+    insights on content performance, creator activity, and community engagement.
+    """
+
+    __tablename__ = f"{_TABLE_PREFIX}clip_analytics"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # Clip reference
+    clip_id = db.Column(
+        db.Integer,
+        db.ForeignKey(f"{_TABLE_PREFIX}clips.id"),
+        nullable=False,
+        index=True,
+    )
+
+    # User who owns the project/compilation
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey(f"{_TABLE_PREFIX}users.id"),
+        nullable=False,
+        index=True,
+    )
+
+    # Creator/Clipper identification
+    creator_name = db.Column(
+        db.String(120), index=True
+    )  # Twitch username who created clip
+    creator_id = db.Column(db.String(64), index=True)  # Platform user ID
+    creator_platform = db.Column(db.String(20))  # 'twitch', 'discord', etc.
+
+    # Game/Category
+    game_name = db.Column(db.String(120), index=True)
+    game_id = db.Column(db.String(64))
+
+    # Engagement metrics (from platform)
+    view_count = db.Column(db.Integer, default=0)
+
+    # Discord engagement
+    discord_shares = db.Column(db.Integer, default=0)  # Times shared in Discord
+    discord_reactions = db.Column(db.Integer, default=0)  # Total reaction count
+    discord_reaction_types = db.Column(db.Text)  # JSON: {"👍": 5, "🔥": 3}
+
+    # Temporal data
+    clip_created_at = db.Column(
+        db.DateTime, index=True
+    )  # When clip was created on platform
+    first_seen_at = db.Column(
+        db.DateTime, default=datetime.utcnow
+    )  # When we first captured it
+    last_updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    # Relationships
+    clip = db.relationship("Clip", backref="analytics")
+    user = db.relationship("User", backref="clip_analytics")
+
+    # Indexes for common queries
+    __table_args__ = (
+        db.Index(f"{_TABLE_PREFIX}ix_analytics_user_game", user_id, game_name),
+        db.Index(f"{_TABLE_PREFIX}ix_analytics_creator", user_id, creator_name),
+        db.Index(f"{_TABLE_PREFIX}ix_analytics_created", user_id, clip_created_at),
+    )
+
+    def __repr__(self) -> str:
+        return f"<ClipAnalytics clip={self.clip_id} creator={self.creator_name} game={self.game_name}>"
+
+
+class GameAnalytics(db.Model):
+    """
+    Aggregated analytics for games/categories.
+
+    Tracks which games generate the most clips, views, and engagement
+    to help streamers understand their best-performing content.
+    """
+
+    __tablename__ = f"{_TABLE_PREFIX}game_analytics"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # User (streamer) this analytics belongs to
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey(f"{_TABLE_PREFIX}users.id"),
+        nullable=False,
+        index=True,
+    )
+
+    # Game identification
+    game_name = db.Column(db.String(120), nullable=False, index=True)
+    game_id = db.Column(db.String(64))  # Platform game ID
+
+    # Time period for this aggregation
+    period_start = db.Column(db.DateTime, nullable=False, index=True)
+    period_end = db.Column(db.DateTime, nullable=False)
+    period_type = db.Column(
+        db.String(20), default="day"
+    )  # 'day', 'week', 'month', 'all_time'
+
+    # Aggregated metrics
+    clip_count = db.Column(db.Integer, default=0)
+    total_views = db.Column(db.Integer, default=0)
+    total_duration = db.Column(db.Float, default=0.0)  # Total seconds of clips
+    avg_view_count = db.Column(db.Float, default=0.0)
+    discord_shares = db.Column(db.Integer, default=0)
+    discord_reactions = db.Column(db.Integer, default=0)
+
+    # Top performers
+    top_clip_id = db.Column(db.Integer)  # Most viewed clip for this game
+    top_clip_views = db.Column(db.Integer, default=0)
+
+    # Unique creators/clippers for this game
+    unique_creators = db.Column(db.Integer, default=0)
+
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    # Relationships
+    user = db.relationship("User", backref="game_analytics")
+
+    # Unique constraint: one record per user/game/period
+    __table_args__ = (
+        db.UniqueConstraint(
+            user_id,
+            game_name,
+            period_type,
+            period_start,
+            name=f"{_TABLE_PREFIX}uq_game_analytics_period",
+        ),
+        db.Index(
+            f"{_TABLE_PREFIX}ix_game_analytics_period",
+            user_id,
+            period_type,
+            period_start,
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"<GameAnalytics user={self.user_id} game={self.game_name} period={self.period_type}>"
+
+
+class CreatorAnalytics(db.Model):
+    """
+    Aggregated analytics for clip creators.
+
+    Tracks who's creating/sharing the most clips to identify
+    active community members and potential collaborators.
+    """
+
+    __tablename__ = f"{_TABLE_PREFIX}creator_analytics"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # User (streamer) this analytics belongs to
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey(f"{_TABLE_PREFIX}users.id"),
+        nullable=False,
+        index=True,
+    )
+
+    # Creator identification
+    creator_name = db.Column(db.String(120), nullable=False, index=True)
+    creator_id = db.Column(db.String(64), index=True)
+    creator_platform = db.Column(db.String(20))  # 'twitch', 'discord'
+    creator_avatar_url = db.Column(db.String(500))  # Cached avatar URL
+
+    # Time period for this aggregation
+    period_start = db.Column(db.DateTime, nullable=False, index=True)
+    period_end = db.Column(db.DateTime, nullable=False)
+    period_type = db.Column(
+        db.String(20), default="day"
+    )  # 'day', 'week', 'month', 'all_time'
+
+    # Aggregated metrics
+    clip_count = db.Column(db.Integer, default=0)
+    total_views = db.Column(db.Integer, default=0)
+    avg_view_count = db.Column(db.Float, default=0.0)
+    discord_shares = db.Column(db.Integer, default=0)  # If they share clips in Discord
+    discord_reactions = db.Column(
+        db.Integer, default=0
+    )  # Reactions on their shared clips
+
+    # Game diversity
+    unique_games = db.Column(db.Integer, default=0)
+    top_game = db.Column(db.String(120))  # Most clipped game by this creator
+
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    # Relationships
+    user = db.relationship("User", backref="creator_analytics")
+
+    # Unique constraint: one record per user/creator/period
+    __table_args__ = (
+        db.UniqueConstraint(
+            user_id,
+            creator_name,
+            period_type,
+            period_start,
+            name=f"{_TABLE_PREFIX}uq_creator_analytics_period",
+        ),
+        db.Index(
+            f"{_TABLE_PREFIX}ix_creator_analytics_period",
+            user_id,
+            period_type,
+            period_start,
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"<CreatorAnalytics user={self.user_id} creator={self.creator_name} period={self.period_type}>"

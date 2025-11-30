@@ -2,11 +2,13 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "1.3.0"
-__version_info__ = (1, 3, 0)
+__version__ = "1.5.0"
+__version_info__ = (1, 5, 0)
 
 # Version history tracking
 VERSION_HISTORY = {
+    "1.5.0": "Admin content editor for help pages and docs, enhanced help page styling with cards and visual breaks, comprehensive privacy policy update, media library metadata editing (attribution fields), UI polish and accessibility improvements",
+    "1.4.0": "Analytics system with clip engagement tracking, creator/game leaderboards, viral clips detection, engagement timeline, database pool optimization (20/30), navbar icons, profile picture display",
     "1.3.0": "Pricing system, account settings refactor, tier pricing UI, currency/location/timezone config, profile image centering",
     "1.2.1": "Portrait zoom expansion (100-180%), preview mode zoom support, toast auto-dismiss (10s)",
     "1.2.0": "Duration-based clip fetching, ingest code removal, bug fixes",

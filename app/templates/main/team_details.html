@@ -154,8 +154,8 @@
                                     <br>
                                     <small class="text-muted">Created {{ project.created_at.strftime('%b %d, %Y') }}</small>
                                 </div>
-                                <span class="badge bg-{{ 'success' if project.status == 'completed' else 'warning' }}">
-                                    {{ project.status }}
+                                <span class="badge bg-{{ 'success' if project.status.value == 'COMPLETED' else 'warning' }}">
+                                    {{ project.status.name }}
                                 </span>
                             </div>
                         </a>

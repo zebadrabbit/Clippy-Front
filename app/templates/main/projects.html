@@ -88,7 +88,7 @@
                   {% endif %}
 
                   {# Try to get compilation thumbnail first #}
-                  {% if p.status and p.status.value == 'completed' and p.output_filename %}
+                  {% if p.status and p.status.value == 'COMPLETED' and p.output_filename %}
                     {% set compilation_media = p.media_files.filter_by(media_type=MediaType.COMPILATION).first() %}
                     {% if compilation_media and compilation_media.thumbnail_path %}
                       {% set thumb_url = url_for('main.media_thumbnail', media_id=compilation_media.id) %}
@@ -121,15 +121,15 @@
 
                   {# Status badge with wizard step #}
                   {% if p.status %}
-                    {% if p.status.value == 'draft' and p.wizard_step %}
+                    {% if p.status.value == 'DRAFT' and p.wizard_step %}
                       <span class="badge bg-secondary position-absolute top-0 start-0 m-2" style="opacity:0.9;">
                         <i class="bi bi-pencil-square me-1"></i>Draft: Step {{ p.wizard_step }}/4
                       </span>
-                    {% elif p.status.value == 'ready' %}
+                    {% elif p.status.value == 'READY' %}
                       <span class="badge bg-success position-absolute top-0 start-0 m-2" style="opacity:0.9;">
                         <i class="bi bi-check-circle me-1"></i>Ready to Compile
                       </span>
-                    {% elif p.status.value == 'processing' %}
+                    {% elif p.status.value == 'PROCESSING' %}
                       <span class="badge bg-info position-absolute top-0 start-0 m-2" style="opacity:0.9;">
                         <span class="spinner-border spinner-border-sm me-1" style="width:0.75rem;height:0.75rem;"></span>Compiling...
                       </span>
@@ -170,11 +170,11 @@
               </a>
               <div class="card-footer bg-transparent border-top position-relative" style="z-index: 10;">
                 <div class="d-flex gap-2">
-                  {% if p.status and p.status.value == 'draft' and p.wizard_step %}
+                  {% if p.status and p.status.value == 'DRAFT' and p.wizard_step %}
                     <a href="{{ url_for('main.project_wizard', project_id=p.id) }}" class="btn btn-sm btn-primary flex-grow-1" onclick="event.stopPropagation();" title="Continue editing in wizard">
                       <i class="bi bi-arrow-right-circle"></i> Resume Step {{ p.wizard_step }}
                     </a>
-                  {% elif p.status and p.status.value == 'ready' %}
+                  {% elif p.status and p.status.value == 'READY' %}
                     <a href="{{ url_for('main.project_wizard', project_id=p.id) }}#step-4" class="btn btn-sm btn-success flex-grow-1" onclick="event.stopPropagation();" title="Start compilation">
                       <i class="bi bi-play-circle"></i> Compile Now
                     </a>
