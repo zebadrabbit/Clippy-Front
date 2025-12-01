@@ -2,11 +2,12 @@
 Version management for ClippyFront application.
 """
 
-__version__ = "1.6.1"
-__version_info__ = (1, 6, 1)
+__version__ = "1.6.2"
+__version_info__ = (1, 6, 2)
 
 # Version history tracking
 VERSION_HISTORY = {
+    "1.6.2": "Admin UI improvements: structlog integration in logs viewer, binary update automation, dark theme consistency, Faker-based confirmations, platform presets, SystemSetting get/set methods",
     "1.6.1": "Push notification configuration fixes, VAPID key format corrections, API route registration",
     "1.6.0": "Mandatory two-factor authentication (TOTP), YouTube OAuth login/signup, Discord-style help system, security enhancements",
     "1.5.0": "Admin content editor for help pages and docs, enhanced help page styling with cards and visual breaks, comprehensive privacy policy update, media library metadata editing (attribution fields), UI polish and accessibility improvements",

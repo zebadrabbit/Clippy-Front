@@ -42,6 +42,7 @@ from app.models import (
     UserRole,
     db,
 )
+from app.tasks.binary_updates import check_binary_updates_task
 from app.tasks.celery_app import celery_app
 from app.tasks.media_maintenance import reindex_media_task
 from app.version import get_changelog, get_version
@@ -1036,27 +1037,151 @@ def system_info():
 def logs():
     """
     System logs viewer for debugging and monitoring.
+    Reads structlog JSON files from instance/logs/.
+
+    Query params:
+        log_file: Which log file to view (app, worker, error)
+        lines: Number of lines to display (default 100)
+        level: Filter by log level (debug, info, warning, error)
 
     Returns:
         Response: Rendered logs template
     """
-    # This would typically read from log files
-    # For now, return a placeholder
+    import json
+
+    from app.logging_config import get_log_dir
+
+    log_dir = get_log_dir(current_app.instance_path)
+
+    # Get parameters
+    log_file = request.args.get("log_file", "app")
+    lines_to_show = int(request.args.get("lines", "100"))
+    level_filter = request.args.get("level", "").lower()
+    search_query = request.args.get("search", "").strip()
+
+    # Map log file names to actual files
+    log_files = {
+        "app": "app.json",
+        "worker": "worker.json",
+        "error": "error.json",
+    }
+
+    if log_file not in log_files:
+        log_file = "app"
+
+    log_path = os.path.join(log_dir, log_files[log_file])
+
+    logs = []
+    log_exists = os.path.exists(log_path)
+
+    if log_exists:
+        try:
+            # Read last N lines from the log file
+            with open(log_path, encoding="utf-8") as f:
+                # Read all lines and get the last N
+                all_lines = f.readlines()
+                recent_lines = (
+                    all_lines[-lines_to_show:]
+                    if len(all_lines) > lines_to_show
+                    else all_lines
+                )
+                recent_lines.reverse()  # Show newest first
+
+                for line in recent_lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+
+                    try:
+                        log_entry = json.loads(line)
+
+                        # Apply level filter (case-insensitive)
+                        if level_filter:
+                            # Check both 'level' and 'levelname' fields
+                            entry_level = (
+                                log_entry.get("levelname") or log_entry.get("level", "")
+                            ).lower()
+                            if entry_level != level_filter:
+                                continue
+
+                        # Apply search filter
+                        if search_query:
+                            search_lower = search_query.lower()
+                            # Search in event, message, and other string fields
+                            searchable = json.dumps(log_entry).lower()
+                            if search_lower not in searchable:
+                                continue
+
+                        # Parse timestamp
+                        timestamp_str = log_entry.get("timestamp") or log_entry.get(
+                            "asctime", ""
+                        )
+                        try:
+                            from datetime import datetime
+
+                            # Try parsing ISO format
+                            if "T" in timestamp_str or "+" in timestamp_str:
+                                timestamp = datetime.fromisoformat(
+                                    timestamp_str.replace("Z", "+00:00")
+                                )
+                            else:
+                                # Try parsing simple datetime format
+                                timestamp = datetime.strptime(
+                                    timestamp_str, "%Y-%m-%d %H:%M:%S"
+                                )
+                        except Exception:
+                            timestamp = timestamp_str
+
+                        # Get level (check both 'level' and 'levelname')
+                        level = (
+                            log_entry.get("levelname") or log_entry.get("level", "INFO")
+                        ).upper()
+                        # Get event/message (check both fields)
+                        event = log_entry.get("event") or log_entry.get("message", "")
+                        # Get logger name (check both 'logger' and 'name')
+                        logger = log_entry.get("logger") or log_entry.get("name", "")
+
+                        logs.append(
+                            {
+                                "timestamp": timestamp,
+                                "level": level,
+                                "event": event,
+                                "logger": logger,
+                                "data": {
+                                    k: v
+                                    for k, v in log_entry.items()
+                                    if k
+                                    not in [
+                                        "timestamp",
+                                        "asctime",
+                                        "level",
+                                        "levelname",
+                                        "event",
+                                        "message",
+                                        "logger",
+                                        "name",
+                                    ]
+                                },
+                                "raw": log_entry,
+                            }
+                        )
+                    except json.JSONDecodeError:
+                        # If line is not valid JSON, skip it
+                        continue
+        except Exception as e:
+            flash(f"Error reading log file: {e}", "danger")
+
     return render_template(
         "admin/logs.html",
         title="System Logs",
-        logs=[
-            {
-                "timestamp": datetime.utcnow(),
-                "level": "INFO",
-                "message": "System started",
-            },
-            {
-                "timestamp": datetime.utcnow(),
-                "level": "INFO",
-                "message": "Database connected",
-            },
-        ],
+        logs=logs,
+        log_file=log_file,
+        log_exists=log_exists,
+        log_path=log_path,
+        lines_to_show=lines_to_show,
+        level_filter=level_filter,
+        search_query=search_query,
+        available_files=log_files,
     )
 
 
@@ -1085,36 +1210,33 @@ def system_config():
                 "type": "str",
                 "label": "Server Timezone (e.g., America/New_York)",
             },
-            {"key": "OUTPUT_VIDEO_QUALITY", "type": "str", "label": "Output Quality"},
+            {
+                "key": "DEFAULT_PLATFORM_PRESET",
+                "type": "select",
+                "label": "Default Platform Preset",
+                "options": [
+                    ("youtube", "YouTube (1920x1080, 16:9)"),
+                    ("youtube_shorts", "YouTube Shorts (1080x1920, 9:16)"),
+                    ("tiktok", "TikTok (1080x1920, 9:16)"),
+                    ("instagram_feed", "Instagram Feed (1080x1080, 1:1)"),
+                    ("instagram_reel", "Instagram Reels (1080x1920, 9:16)"),
+                    ("instagram_story", "Instagram Stories (1080x1920, 9:16)"),
+                    ("twitter", "Twitter/X (1920x1080, 16:9)"),
+                    ("facebook", "Facebook (1920x1080, 16:9)"),
+                    ("twitch", "Twitch Clips (1920x1080, 16:9)"),
+                    ("custom", "Custom Settings"),
+                ],
+            },
             {"key": "USE_GPU_QUEUE", "type": "bool", "label": "Prefer GPU Queue"},
-            {
-                "key": "DEFAULT_OUTPUT_RESOLUTION",
-                "type": "str",
-                "label": "Default Output Resolution",
-            },
-            {
-                "key": "DEFAULT_OUTPUT_FORMAT",
-                "type": "str",
-                "label": "Default Output Format",
-            },
-            {
-                "key": "DEFAULT_MAX_CLIP_DURATION",
-                "type": "int",
-                "label": "Default Max Clip Duration (s)",
-            },
-            {
-                "key": "DEFAULT_TRANSITION_DURATION_SECONDS",
-                "type": "int",
-                "label": "Default Transition Duration (s)",
-            },
-            {
-                "key": "AVERAGE_CLIP_DURATION_SECONDS",
-                "type": "int",
-                "label": "Average Clip Duration (s)",
-            },
         ],
         "Security": [
             {"key": "FORCE_HTTPS", "type": "bool", "label": "Force HTTPS"},
+            {
+                "key": "FORCE_2FA",
+                "type": "bool",
+                "label": "Force 2FA for All Users",
+                "default": "true",
+            },
         ],
         "Rate Limiting": [
             {
@@ -1125,9 +1247,14 @@ def system_config():
             {"key": "RATELIMIT_DEFAULT", "type": "str", "label": "Default Rate Limit"},
         ],
         "Binaries": [
-            {"key": "FFMPEG_BINARY", "type": "str", "label": "ffmpeg Binary"},
-            {"key": "FFPROBE_BINARY", "type": "str", "label": "ffprobe Binary"},
-            {"key": "YT_DLP_BINARY", "type": "str", "label": "yt-dlp Binary"},
+            {
+                "key": "PREFER_SYSTEM_FFMPEG",
+                "type": "bool",
+                "label": "Prefer System FFmpeg (over ./bin/ffmpeg)",
+            },
+            {"key": "FFMPEG_BINARY", "type": "str", "label": "ffmpeg Binary Path"},
+            {"key": "FFPROBE_BINARY", "type": "str", "label": "ffprobe Binary Path"},
+            {"key": "YT_DLP_BINARY", "type": "str", "label": "yt-dlp Binary Path"},
         ],
         "Thumbnails": [
             {
@@ -1164,60 +1291,81 @@ def system_config():
                 "key": "LOG_LEVEL",
                 "type": "str",
                 "label": "Log Level (DEBUG/INFO/WARNING/ERROR)",
+                "help": "Controls structlog verbosity. DEBUG shows all logs, INFO filters noisy requests.",
             },
-            {"key": "LOG_DIR", "type": "str", "label": "Log Directory (override)"},
+            {
+                "key": "LOG_DIR",
+                "type": "str",
+                "label": "Log Directory (override)",
+                "help": "Defaults to instance/logs/. Structlog writes app.json, worker.json, error.json.",
+            },
         ],
         "FFmpeg Encoding": [
             {
                 "key": "FFMPEG_BITRATE",
                 "type": "str",
                 "label": "Video Bitrate (e.g., 12M)",
+                "default": "12M",
             },
             {
                 "key": "FFMPEG_AUDIO_BITRATE",
                 "type": "str",
                 "label": "Audio Bitrate (e.g., 192k)",
+                "default": "192k",
             },
             {
                 "key": "FFMPEG_CQ",
                 "type": "int",
                 "label": "NVENC CQ / CRF (lower=better, 18-28)",
+                "default": "19",
             },
             {
                 "key": "FFMPEG_NVENC_PRESET",
                 "type": "str",
                 "label": "NVENC Preset (slow/medium/fast)",
+                "default": "slow",
             },
             {
                 "key": "FFMPEG_GOP",
                 "type": "int",
                 "label": "GOP Size (keyframe interval)",
+                "default": "120",
             },
             {
                 "key": "FFMPEG_RC_LOOKAHEAD",
                 "type": "int",
                 "label": "NVENC RC Lookahead",
+                "default": "20",
             },
             {
                 "key": "FFMPEG_AQ_STRENGTH",
                 "type": "int",
                 "label": "NVENC AQ Strength (1-15)",
+                "default": "8",
             },
-            {"key": "FFMPEG_SPATIAL_AQ", "type": "bool", "label": "Enable Spatial AQ"},
+            {
+                "key": "FFMPEG_SPATIAL_AQ",
+                "type": "bool",
+                "label": "Enable Spatial AQ",
+                "default": "true",
+            },
             {
                 "key": "FFMPEG_TEMPORAL_AQ",
                 "type": "bool",
                 "label": "Enable Temporal AQ",
+                "default": "true",
             },
             {
                 "key": "FFMPEG_DISABLE_NVENC",
                 "type": "bool",
                 "label": "Disable NVENC (use CPU)",
+                "default": "false",
             },
             {
                 "key": "DISABLE_OVERLAY",
                 "type": "bool",
                 "label": "Disable Creator Overlay",
+                "default": "false",
             },
         ],
         "FFmpeg CLI Arguments": [
@@ -1424,10 +1572,12 @@ def system_config():
             "log_dir_exists": _exists(log_dir),
             "log_dir_writable": _rw(log_dir)[1] if _exists(log_dir) else False,
             "current_level": log_level.upper(),
-            "app_log": os.path.join(log_dir, "app.log"),
-            "worker_log": os.path.join(log_dir, "worker.log"),
-            "app_log_exists": _exists(os.path.join(log_dir, "app.log")),
-            "worker_log_exists": _exists(os.path.join(log_dir, "worker.log")),
+            "app_log": os.path.join(log_dir, "app.json"),
+            "worker_log": os.path.join(log_dir, "worker.json"),
+            "error_log": os.path.join(log_dir, "error.json"),
+            "app_log_exists": _exists(os.path.join(log_dir, "app.json")),
+            "worker_log_exists": _exists(os.path.join(log_dir, "worker.json")),
+            "error_log_exists": _exists(os.path.join(log_dir, "error.json")),
         }
 
     # Add FFmpeg diagnostics
@@ -1459,14 +1609,38 @@ def system_config():
 
     # Add yt-dlp diagnostics
     if section == "ytdlp" or not section:
-        ytdlp_bin = os.environ.get("YT_DLP_BINARY", "yt-dlp")
-        ytdlp_cookies = os.environ.get("YT_DLP_COOKIES")
+        from app.ffmpeg_config import _resolve_binary
+
+        ytdlp_resolved = _resolve_binary(current_app, "yt-dlp")
+        ytdlp_cookies = current_app.config.get("YT_DLP_COOKIES") or os.environ.get(
+            "YT_DLP_COOKIES"
+        )
+        ytdlp_args = current_app.config.get("YT_DLP_ARGS") or os.environ.get(
+            "YT_DLP_ARGS"
+        )
 
         config_info["ytdlp"] = {
-            "binary": ytdlp_bin,
-            "binary_exists": _exists(ytdlp_bin) if os.path.isabs(ytdlp_bin) else None,
+            "binary_resolved": ytdlp_resolved,
             "cookies_path": ytdlp_cookies,
             "cookies_exists": _exists(ytdlp_cookies) if ytdlp_cookies else False,
+            "cli_args": ytdlp_args or "(none)",
+        }
+
+    # Add binaries diagnostics with resolved paths
+    if section == "binaries" or not section:
+        from app.ffmpeg_config import _resolve_binary
+
+        config_info["binaries"] = {
+            "ffmpeg_resolved": _resolve_binary(current_app, "ffmpeg"),
+            "ffprobe_resolved": _resolve_binary(current_app, "ffprobe"),
+            "ytdlp_resolved": _resolve_binary(current_app, "yt-dlp"),
+            "prefer_system_ffmpeg": str(
+                os.getenv(
+                    "PREFER_SYSTEM_FFMPEG",
+                    current_app.config.get("PREFER_SYSTEM_FFMPEG", ""),
+                )
+            ).lower()
+            in {"1", "true", "yes", "on"},
         }
 
     # Persist updates
@@ -1662,9 +1836,44 @@ def restart(target: str):
 @admin_required
 def maintenance():
     """Admin-only maintenance actions: reindex media and deduplicate entries."""
+    from faker import Faker
+
+    fake = Faker()
+
     if request.method == "POST":
         action = request.form.get("action")
-        if action == "reindex":
+        if action == "check_binary_updates":
+            task = check_binary_updates_task.delay()
+            flash(
+                f"Started binary update check ({task.id}). You will be notified if updates are available.",
+                "info",
+            )
+        elif action == "update_binaries":
+            # Trigger script to update local binaries
+            try:
+                import subprocess
+
+                script_path = os.path.join(
+                    current_app.root_path, "..", "scripts", "install_local_binaries.sh"
+                )
+                result = subprocess.run(
+                    ["bash", script_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=300,  # 5 minute timeout
+                )
+                if result.returncode == 0:
+                    flash(
+                        "Binaries updated successfully. Check logs for details.",
+                        "success",
+                    )
+                else:
+                    flash(f"Binary update failed: {result.stderr}", "danger")
+            except subprocess.TimeoutExpired:
+                flash("Binary update timed out. Please check manually.", "warning")
+            except Exception as e:
+                flash(f"Binary update error: {str(e)}", "danger")
+        elif action == "reindex":
             task = reindex_media_task.delay(False)
             flash(
                 f"Started reindex task ({task.id}). Check Jobs in the UI to monitor.",
@@ -1680,6 +1889,14 @@ def maintenance():
             )
         elif action == "purge_all_user_data":
             # DANGEROUS: Clear all user media, projects, and related data
+            # Validate confirmation word
+            expected_word = request.form.get("expected_word", "")
+            user_input = request.form.get("confirmation_word", "")
+
+            if user_input.strip().lower() != expected_word.strip().lower():
+                flash("Purge cancelled: Confirmation word did not match.", "warning")
+                return redirect(url_for("admin.maintenance"))
+
             try:
                 stats = _purge_all_user_data()
                 flash(
@@ -1696,8 +1913,28 @@ def maintenance():
                 flash(f"Purge failed: {str(e)}", "danger")
         return redirect(url_for("admin.maintenance"))
 
-    # GET: show simple form
-    return render_template("admin/maintenance.html", title="Maintenance")
+    # GET: show simple form with random confirmation word
+    confirmation_word = fake.word().upper()
+
+    # Get binary update info
+    updates_raw = SystemSetting.get("BINARY_UPDATES_AVAILABLE", "{}")
+    checked_at_raw = SystemSetting.get("BINARY_UPDATES_CHECKED_AT")
+
+    binary_updates = {}
+    try:
+        import ast
+
+        binary_updates = ast.literal_eval(updates_raw) if updates_raw else {}
+    except Exception:
+        pass
+
+    return render_template(
+        "admin/maintenance.html",
+        title="Maintenance",
+        confirmation_word=confirmation_word,
+        binary_updates=binary_updates,
+        updates_checked_at=checked_at_raw,
+    )
 
 
 def _purge_all_user_data():

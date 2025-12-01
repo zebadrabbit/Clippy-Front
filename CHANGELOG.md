@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.2] - 2025-11-30
+
+### Added
+- **Binary Update Automation**
+  - Weekly Celery beat task for checking ffmpeg, ffprobe, and yt-dlp updates
+  - GitHub API integration for yt-dlp version checking
+  - ffmpeg.org parsing for ffmpeg version detection
+  - Admin notifications when updates are available
+  - One-click binary update via maintenance page
+  - SystemSetting storage for update status and timestamps
+  - Documentation: `docs/BINARY_UPDATES.md`
+- **SystemSetting Model Enhancements**
+  - `SystemSetting.get(key, default)` class method for key-value retrieval
+  - `SystemSetting.set(key, value, value_type, group)` class method for storing settings
+- **User Preferences System**
+  - New `/account/preferences` page for user-specific settings
+  - API endpoints: `GET/PUT /api/user-preferences`
+  - Default platform preset selection (YouTube, TikTok, Instagram, etc.)
+  - Theme preference (light/dark/auto) - UI only, backend stub
+  - Language preference (en/es/fr) - UI only, backend stub
+- **Platform Presets**
+  - Added `DEFAULT_PLATFORM_PRESET` to system config with 10 presets
+  - Presets: YouTube, YouTube Shorts, TikTok, Instagram (Feed/Reels/Stories), Twitter, Facebook, Twitch, Custom
+
+### Changed
+- **Admin UI Consistency**
+  - All admin pages now use consistent dark theme with sidebar navigation
+  - Content editor and file editor updated with `admin-dark.css`
+  - Removed hardcoded `bg-primary` colors in favor of CSS variables
+  - CodeMirror editor styled for dark theme with proper color variables
+- **Logs Viewer Overhaul**
+  - Complete rewrite to work with structlog JSON files (`app.json`, `worker.json`, `error.json`)
+  - Real-time JSON log parsing with filtering by file, level, and search query
+  - Log entries display with #36363c background and 5px colored left borders (error=red, warning=yellow, info=blue, debug=gray)
+  - Collapsible JSON view for each log entry
+  - Dropdowns for log file selection, lines (50-1000), and level filtering
+  - Search box with full-text filtering across all JSON fields
+  - Supports both `levelname`/`level`, `asctime`/`timestamp`, `message`/`event`, `name`/`logger` fields for compatibility
+- **System Config Page**
+  - Logging section updated to show structlog status with app.json/worker.json/error.json
+  - Help text updated: "50 MB rotation, 10 backups (500 MB total)"
+  - FFmpeg defaults added as placeholders in empty fields (bitrate: 12M, audio: 192k, CQ: 19, preset: slow, GOP: 120, etc.)
+  - yt-dlp section now shows resolved binary paths and CLI arguments
+  - New "Binaries" section showing resolved paths for ffmpeg, ffprobe, yt-dlp with system/local preference toggle
+- **Maintenance Page**
+  - Binary Updates section added above danger zone
+  - Shows available updates with current → latest version
+  - Buttons for "Update Binaries" (runs `scripts/install_local_binaries.sh`) and "Recheck"
+  - Purge button now triggers Faker-based confirmation modal instead of browser confirm()
+  - Random word confirmation (server-side validation) for destructive operations
+- **Flash Message Behavior**
+  - Changed from auto-hide (10s) to dismissible only
+  - Removed `data-bs-delay` attribute and set `data-bs-autohide="false"`
+- **Account Settings Cleanup**
+  - Moved preferences section to dedicated `/account/preferences` page
+  - Notification settings remain on `/account/notifications` page
+  - Improved JavaScript error handling with `typeof showToast === 'function'` checks
+  - Fixed missing button IDs and event handlers for privacy settings
+
+### Fixed
+- **Binary Resolution Bug**
+  - Fixed `_resolve_binary()` calls missing `app` parameter in admin routes
+  - Now properly calls `_resolve_binary(current_app, "ffmpeg")` etc.
+- **Container Width on Logs Page**
+  - Changed `container-fluid` to `container` for better readability
+
 ## [1.6.1] - 2025-11-30
 
 ### Fixed

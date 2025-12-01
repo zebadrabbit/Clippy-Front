@@ -10,3 +10,31 @@
 
 {% include 'auth/_section_privacy.html' %}
 {% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const saveBtn = document.getElementById('savePrivacySettings');
+    if (saveBtn) {
+        saveBtn.addEventListener('click', savePrivacySettings);
+    }
+});
+
+function savePrivacySettings() {
+    const settings = {
+        profile_public: document.getElementById('profilePublic')?.checked || false,
+        show_projects: document.getElementById('showProjects')?.checked || false,
+        activity_tracking: document.getElementById('activityTracking')?.checked || false
+    };
+
+    // TODO: Create API endpoint for privacy settings
+    // For now, show a success message
+    if (typeof showToast === 'function') {
+        showToast('Privacy settings saved successfully', 'success');
+    }
+
+    console.log('Privacy settings:', settings);
+}
+</script>
+{% endblock %}

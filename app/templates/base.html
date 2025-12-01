@@ -170,10 +170,9 @@
                     {% set bg = 'danger' if cat == 'danger' else 'success' if cat == 'success' else 'info' if cat == 'info' else 'warning' if cat == 'warning' else 'secondary' %}
                     {% set icon = 'exclamation-triangle' if cat == 'danger' else 'check-circle' if cat == 'success' else 'info-circle' if cat == 'info' else 'exclamation-triangle' if cat == 'warning' else 'bell' %}
                     <div class="toast text-bg-{{ bg }} border-0 mb-2" role="alert" aria-live="assertive" aria-atomic="true" data-bs-autohide="false">
-                        <div class="d-flex">
+                        <div class="d-flex align-items-center">
                             <div class="toast-body">
                                 <i class="bi bi-{{ icon }} me-2"></i>
-                                {% if cat == 'success' %}<span class="me-2">🎬 Showtime!</span>{% endif %}
                                 {{ message }}
                             </div>
                             <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>

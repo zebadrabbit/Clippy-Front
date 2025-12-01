@@ -1,59 +1,92 @@
 {% extends "base.html" %}
 
 {% block styles %}
-{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin-dark.css') }}">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
 <style>
   .CodeMirror {
     height: 600px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--bs-border-color);
     border-radius: 0.375rem;
+    background-color: var(--bs-body-bg);
+    color: var(--bs-body-color);
+  }
+  .CodeMirror-scroll {
+    background-color: var(--bs-body-bg);
   }
   .editor-toolbar {
     border-top-left-radius: 0.375rem;
     border-top-right-radius: 0.375rem;
+    background-color: var(--bs-secondary-bg);
+    border-color: var(--bs-border-color);
+  }
+  .editor-toolbar a {
+    color: var(--bs-body-color) !important;
+  }
+  .editor-toolbar a:hover,
+  .editor-toolbar a.active {
+    background-color: var(--bs-tertiary-bg);
+    border-color: var(--bs-border-color);
+  }
+  .editor-toolbar i.separator {
+    border-left: 1px solid var(--bs-border-color);
+    border-right: 1px solid var(--bs-border-color);
   }
   .preview-pane {
     height: 600px;
     overflow-y: auto;
-    border: 1px solid #ddd;
+    border: 1px solid var(--bs-border-color);
     border-radius: 0.375rem;
     padding: 1.5rem;
-    background: white;
+    background-color: var(--bs-body-bg);
+    color: var(--bs-body-color);
+  }
+  .CodeMirror-cursor {
+    border-left-color: var(--bs-body-color);
+  }
+  .cm-s-easymde .cm-comment {
+    background: transparent;
   }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container-fluid py-4">
-  <div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-      <h2 class="mb-0"><i class="bi bi-pencil-square"></i> Edit File</h2>
-      <p class="text-muted mb-0">{{ rel_path }}</p>
+  <div class="row">
+    <h2 class="mb-3"><i class="bi bi-pencil-square"></i> Admin Dashboard</h2>
+    <div class="col-12 col-lg-3 mb-3 mb-lg-0 admin-sidebar">
+      {% set active_page = 'content_editor' %}
+      {% include 'admin/_includes/sidebar.html' with context %}
     </div>
-    <a href="{{ url_for('admin.content_editor') }}" class="btn btn-secondary">
-      <i class="bi bi-arrow-left"></i> Back to List
-    </a>
-  </div>
-
-  <form method="POST" action="{{ url_for('admin.save_file') }}" id="editorForm">
-    <input type="hidden" name="file_path" value="{{ file_path }}">
-
-    <div class="card mb-3">
-      <div class="card-header bg-light d-flex justify-content-between align-items-center">
+    <div class="col-12 col-lg-9 admin-content">
+      <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
-          <i class="bi bi-file-earmark-text me-2"></i>
-          <strong>{{ rel_path }}</strong>
+          <h3 class="mb-0">Edit File</h3>
+          <p class="text-muted mb-0">{{ rel_path }}</p>
         </div>
-        <div>
-          <button type="button" class="btn btn-sm btn-outline-secondary me-2" id="togglePreview">
-            <i class="bi bi-eye"></i> Preview
-          </button>
-          <button type="submit" class="btn btn-sm btn-primary">
-            <i class="bi bi-save"></i> Save Changes
-          </button>
-        </div>
+        <a href="{{ url_for('admin.content_editor') }}" class="btn btn-secondary">
+          <i class="bi bi-arrow-left"></i> Back to List
+        </a>
       </div>
+
+      <form method="POST" action="{{ url_for('admin.save_file') }}" id="editorForm">
+        <input type="hidden" name="file_path" value="{{ file_path }}">
+
+        <div class="card mb-3">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+              <i class="bi bi-file-earmark-text me-2"></i>
+              <strong>{{ rel_path }}</strong>
+            </div>
+            <div>
+              <button type="button" class="btn btn-sm btn-outline-secondary me-2" id="togglePreview">
+                <i class="bi bi-eye"></i> Preview
+              </button>
+              <button type="submit" class="btn btn-sm btn-primary">
+                <i class="bi bi-save"></i> Save Changes
+              </button>
+            </div>
+          </div>
       <div class="card-body p-0">
         <div class="row g-0">
           <!-- Editor Pane -->

@@ -1,0 +1,108 @@
+{%extends "auth/_account_base.html" %}
+
+{% set active = 'preferences' %}
+
+{% block account_content %}
+<h3 class="mb-4">
+    <i class="bi bi-sliders"></i>
+    Preferences
+</h3>
+
+{% include 'auth/_section_preferences.html' %}
+
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="{{ url_for('static', filename='js/utils.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadUserPreferences();
+
+    // Save general preferences
+    const savePreferencesBtn = document.getElementById('savePreferences');
+    if (savePreferencesBtn) {
+        savePreferencesBtn.addEventListener('click', saveUserPreferences);
+    }
+});
+
+function loadUserPreferences() {
+    fetch('/api/user-preferences')
+        .then(response => response.json())
+        .then(data => {
+            if (data.preferences) {
+                const prefs = data.preferences;
+
+                // Set default preset
+                const presetSelect = document.getElementById('defaultPreset');
+                if (presetSelect && prefs.default_platform_preset) {
+                    presetSelect.value = prefs.default_platform_preset;
+                }
+
+                // Set theme
+                const themeSelect = document.getElementById('theme');
+                if (themeSelect && prefs.theme) {
+                    themeSelect.value = prefs.theme;
+                }
+
+                // Set language
+                const languageSelect = document.getElementById('language');
+                if (languageSelect && prefs.language) {
+                    languageSelect.value = prefs.language;
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error loading preferences:', error);
+        });
+}
+
+function saveUserPreferences() {
+    const preferences = {};
+
+    // Get default preset
+    const presetSelect = document.getElementById('defaultPreset');
+    if (presetSelect) {
+        preferences.default_platform_preset = presetSelect.value;
+    }
+
+    // Get theme
+    const themeSelect = document.getElementById('theme');
+    if (themeSelect) {
+        preferences.theme = themeSelect.value;
+    }
+
+    // Get language
+    const languageSelect = document.getElementById('language');
+    if (languageSelect) {
+        preferences.language = languageSelect.value;
+    }
+
+    fetch('/api/user-preferences', {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(preferences)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            if (typeof showToast === 'function') {
+                showToast('Preferences saved successfully', 'success');
+            }
+        } else {
+            if (typeof showToast === 'function') {
+                showToast(data.error || 'Error saving preferences', 'error');
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error saving preferences:', error);
+        if (typeof showToast === 'function') {
+            showToast('Error saving preferences', 'error');
+        }
+    });
+}
+</script>
+{% endblock %}

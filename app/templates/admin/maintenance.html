@@ -13,6 +13,76 @@
       {% include 'admin/_includes/sidebar.html' with context %}
     </div>
     <div class="col-12 col-lg-9 admin-content">
+      <!-- Binary Updates Section -->
+      <div class="card mb-3">
+        <div class="card-header d-flex align-items-center justify-content-between">
+          <div>
+            <i class="bi bi-arrow-repeat"></i> <strong>Binary Updates</strong>
+          </div>
+          {% if updates_checked_at %}
+            <small class="text-muted">Last checked: {{ updates_checked_at }}</small>
+          {% endif %}
+        </div>
+        <div class="card-body">
+          <p class="card-text">
+            Check for updates to ffmpeg, ffprobe, and yt-dlp binaries. If updates are available, you can update them using the local installer script.
+          </p>
+
+          {% if binary_updates %}
+            <div class="alert alert-warning">
+              <strong><i class="bi bi-info-circle"></i> Updates Available</strong>
+              <ul class="mb-0 mt-2">
+                {% for binary, info in binary_updates.items() %}
+                  <li>
+                    <strong>{{ binary }}</strong>: {{ info.current }} → {{ info.latest }}
+                    <br><small class="text-muted">Path: <code>{{ info.path }}</code></small>
+                  </li>
+                {% endfor %}
+              </ul>
+            </div>
+
+            <div class="d-flex gap-2">
+              <form method="post" class="d-inline">
+                <input type="hidden" name="action" value="update_binaries">
+                <button type="submit" class="btn btn-primary">
+                  <i class="bi bi-download"></i> Update Binaries
+                </button>
+              </form>
+              <form method="post" class="d-inline">
+                <input type="hidden" name="action" value="check_binary_updates">
+                <button type="submit" class="btn btn-outline-secondary">
+                  <i class="bi bi-arrow-clockwise"></i> Recheck
+                </button>
+              </form>
+            </div>
+          {% else %}
+            <p class="text-muted mb-3">
+              <i class="bi bi-check-circle"></i>
+              {% if updates_checked_at %}
+                All binaries are up to date.
+              {% else %}
+                No update check has been performed yet.
+              {% endif %}
+            </p>
+
+            <form method="post">
+              <input type="hidden" name="action" value="check_binary_updates">
+              <button type="submit" class="btn btn-primary">
+                <i class="bi bi-arrow-clockwise"></i> Check for Updates
+              </button>
+            </form>
+          {% endif %}
+
+          <hr class="my-3">
+
+          <div class="small text-muted">
+            <strong>Note:</strong> Binary updates use <code>scripts/install_local_binaries.sh</code> to download and install the latest versions to <code>./bin/</code>.
+            The update check runs as a background Celery task and will notify admins when updates are available.
+          </div>
+        </div>
+      </div>
+
+      <!-- Danger Zone -->
       <div class="card mt-3 border-danger">
         <div class="card-body">
           <h5 class="card-title text-danger">
@@ -38,15 +108,61 @@
           <p class="card-text text-muted">
             <small><i class="bi bi-info-circle"></i> Use this to clean up stale data, orphaned files, or reset the system to a clean state while keeping user accounts.</small>
           </p>
-          <form method="post" onsubmit="return confirm('⚠️ FINAL WARNING ⚠️\n\nThis will DELETE ALL USER DATA permanently!\n\nAre you absolutely sure you want to continue?\n\nType YES in the browser prompt if you are certain.');">
-            <input type="hidden" name="action" value="purge_all_user_data" />
-            <button type="submit" class="btn btn-danger btn-lg">
-              <i class="bi bi-trash3-fill"></i> PURGE ALL USER DATA
-            </button>
-          </form>
+          <button type="button" class="btn btn-danger btn-lg" data-bs-toggle="modal" data-bs-target="#purgeConfirmModal">
+            <i class="bi bi-trash3-fill"></i> PURGE ALL USER DATA
+          </button>
         </div>
       </div>
     </div>
   </div>
 </div>
+
+<!-- Purge Confirmation Modal -->
+<div class="modal fade" id="purgeConfirmModal" tabindex="-1" aria-labelledby="purgeConfirmModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title" id="purgeConfirmModalLabel">
+          <i class="bi bi-exclamation-triangle-fill"></i> Confirm Purge Operation
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-danger">
+          <strong>⚠️ FINAL WARNING ⚠️</strong>
+          <p class="mb-0">This will <strong>DELETE ALL USER DATA PERMANENTLY</strong>!</p>
+        </div>
+        <p>To confirm this destructive operation, please type the following word exactly as shown:</p>
+        <div class="text-center my-3">
+          <h4 class="badge bg-dark text-white fs-5 px-4 py-2" style="letter-spacing: 2px;">{{ confirmation_word }}</h4>
+        </div>
+        <form method="post" id="purgeForm">
+          <input type="hidden" name="action" value="purge_all_user_data">
+          <input type="hidden" name="expected_word" value="{{ confirmation_word }}">
+          <div class="mb-3">
+            <label for="confirmationWordInput" class="form-label">Type the word above:</label>
+            <input type="text" class="form-control" id="confirmationWordInput" name="confirmation_word" autocomplete="off" required>
+          </div>
+          <div class="d-flex justify-content-end gap-2">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-danger" id="purgeSubmitBtn" disabled>
+              <i class="bi bi-trash3-fill"></i> PURGE ALL USER DATA
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Enable submit button only when confirmation word matches
+document.getElementById('confirmationWordInput').addEventListener('input', function(e) {
+  const expected = '{{ confirmation_word }}'.toLowerCase();
+  const input = e.target.value.toLowerCase();
+  const submitBtn = document.getElementById('purgeSubmitBtn');
+  submitBtn.disabled = (input !== expected);
+});
+</script>
+
 {% endblock %}

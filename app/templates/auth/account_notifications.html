@@ -10,7 +10,6 @@
 
 {% include 'auth/_section_push.html' %}
 {% include 'auth/_section_notifications.html' %}
-{% include 'auth/_section_preferences.html' %}
 
 {% endblock %}
 
@@ -19,4 +18,103 @@
 <script src="{{ url_for('static', filename='js/utils.js') }}"></script>
 <script src="{{ url_for('static', filename='js/push-notifications.js') }}"></script>
 <script src="{{ url_for('static', filename='js/account_settings.js') }}"></script>
+<script>
+// Load notification preferences on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadNotificationPreferences();
+
+    // Show/hide digest settings based on checkbox
+    const emailDigestCheckbox = document.getElementById('emailDigestEnabled');
+    if (emailDigestCheckbox) {
+        emailDigestCheckbox.addEventListener('change', function() {
+            const digestSettings = document.getElementById('digestSettings');
+            if (digestSettings) {
+                digestSettings.style.display = this.checked ? 'block' : 'none';
+            }
+        });
+    }
+
+    // Save notification preferences
+    const saveNotificationBtn = document.getElementById('saveNotificationPrefs');
+    if (saveNotificationBtn) {
+        saveNotificationBtn.addEventListener('click', saveNotificationPreferences);
+    }
+
+
+});
+
+function loadNotificationPreferences() {
+    fetch('/api/notification-preferences')
+        .then(response => response.json())
+        .then(data => {
+            const prefs = data.preferences;
+
+            // Set all checkboxes and fields
+            document.querySelectorAll('.notification-pref').forEach(elem => {
+                const field = elem.dataset.field;
+                if (field in prefs) {
+                    if (elem.type === 'checkbox') {
+                        elem.checked = prefs[field];
+                    } else if (elem.type === 'time') {
+                        elem.value = prefs[field] || '09:00';
+                    } else {
+                        elem.value = prefs[field];
+                    }
+                }
+            });
+
+            // Show digest settings if enabled
+            const digestSettings = document.getElementById('digestSettings');
+            if (digestSettings && prefs.email_digest_enabled) {
+                digestSettings.style.display = 'block';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading preferences:', error);
+            if (typeof showToast === 'function') {
+                showToast('Error loading notification preferences', 'error');
+            }
+        });
+}
+
+function saveNotificationPreferences() {
+    const preferences = {};
+
+    document.querySelectorAll('.notification-pref').forEach(elem => {
+        const field = elem.dataset.field;
+        if (elem.type === 'checkbox') {
+            preferences[field] = elem.checked;
+        } else {
+            preferences[field] = elem.value;
+        }
+    });
+
+    fetch('/api/notification-preferences', {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(preferences)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            if (typeof showToast === 'function') {
+                showToast('Notification preferences saved successfully', 'success');
+            }
+        } else {
+            if (typeof showToast === 'function') {
+                showToast(data.error || 'Error saving preferences', 'error');
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error saving preferences:', error);
+        if (typeof showToast === 'function') {
+            showToast('Error saving notification preferences', 'error');
+        }
+    });
+}
+
+</script>
 {% endblock %}

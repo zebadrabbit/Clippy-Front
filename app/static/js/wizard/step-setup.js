@@ -470,7 +470,9 @@ async function handleNext(wizard) {
     }, 1500);
   } catch (err) {
     console.error('[step-setup] Error creating project:', err);
-    alert(`Error creating project: ${err.message}`);
+    if (typeof showToast === 'function') {
+      showToast(`Error creating project: ${err.message}`, 'error');
+    }
   }
 }
 
@@ -505,12 +507,16 @@ async function handleSaveAsTask(wizard) {
     const data = await res.json();
     console.log('[step-setup] Task saved:', data.id);
 
-    alert('Project saved as draft! You can continue editing it from the Projects page.');
+    if (typeof showToast === 'function') {
+      showToast('Project saved as draft! You can continue editing it from the Projects page.', 'success');
+    }
 
     // Redirect to projects page
     window.location.href = '/projects';
   } catch (err) {
     console.error('[step-setup] Error saving task:', err);
-    alert(`Error saving task: ${err.message}`);
+    if (typeof showToast === 'function') {
+      showToast(`Error saving task: ${err.message}`, 'error');
+    }
   }
 }

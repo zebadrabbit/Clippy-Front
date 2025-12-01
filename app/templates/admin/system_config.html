@@ -105,7 +105,7 @@
       <!-- Logging Diagnostics -->
       <div class="card mb-3">
         <div class="card-header d-flex align-items-center gap-2">
-          <i class="bi bi-file-earmark-text"></i> <strong>Logging Status</strong>
+          <i class="bi bi-file-earmark-text"></i> <strong>Structlog Status</strong>
         </div>
         <div class="card-body">
           <div class="row g-3">
@@ -125,8 +125,8 @@
               <div class="small text-muted">Current Log Level</div>
               <span class="badge bg-primary-subtle text-primary">{{ config_info.logging.current_level }}</span>
             </div>
-            <div class="col-md-6">
-              <div class="small text-muted">App Log</div>
+            <div class="col-md-4">
+              <div class="small text-muted">App Log (JSON)</div>
               <div class="d-flex align-items-center gap-2">
                 <code class="text-break">{{ config_info.logging.app_log }}</code>
                 {% if config_info.logging.app_log_exists %}
@@ -134,11 +134,20 @@
                 {% endif %}
               </div>
             </div>
-            <div class="col-md-6">
-              <div class="small text-muted">Worker Log</div>
+            <div class="col-md-4">
+              <div class="small text-muted">Worker Log (JSON)</div>
               <div class="d-flex align-items-center gap-2">
                 <code class="text-break">{{ config_info.logging.worker_log }}</code>
                 {% if config_info.logging.worker_log_exists %}
+                  <span class="badge bg-success-subtle text-success">exists</span>
+                {% endif %}
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="small text-muted">Error Log (JSON)</div>
+              <div class="d-flex align-items-center gap-2">
+                <code class="text-break">{{ config_info.logging.error_log }}</code>
+                {% if config_info.logging.error_log_exists %}
                   <span class="badge bg-success-subtle text-success">exists</span>
                 {% endif %}
               </div>
@@ -147,7 +156,9 @@
         </div>
       </div>
       <div class="alert alert-info small">
-        <strong>Note:</strong> Log files rotate at 10 MB, keeping 5 backups. Change <code>LOG_LEVEL</code> to DEBUG/INFO/WARNING/ERROR as needed.
+        <strong>Structlog:</strong> All logs are written as structured JSON. Files rotate at 50 MB, keeping 10 backups (500 MB total).
+        <code>app.json</code> contains all logs, <code>worker.json</code> contains Celery worker logs, <code>error.json</code> contains errors/warnings only.
+        Set <code>LOG_LEVEL</code> to DEBUG to see verbose output, or INFO for production (filters noisy requests).
       </div>
       {% endif %}
 
@@ -251,17 +262,14 @@
         <div class="card-body">
           <div class="row g-3">
             <div class="col-md-6">
-              <div class="small text-muted">yt-dlp Binary</div>
-              <code class="text-break">{{ config_info.ytdlp.binary }}</code>
-              {% if config_info.ytdlp.binary_exists is not none %}
-                {% if config_info.ytdlp.binary_exists %}
-                  <span class="badge bg-success-subtle text-success ms-2">exists</span>
-                {% else %}
-                  <span class="badge bg-danger-subtle text-danger ms-2">not found</span>
-                {% endif %}
-              {% endif %}
+              <div class="small text-muted">yt-dlp Binary (Resolved)</div>
+              <code class="text-break">{{ config_info.ytdlp.binary_resolved }}</code>
             </div>
             <div class="col-md-6">
+              <div class="small text-muted">CLI Arguments</div>
+              <code class="text-break">{{ config_info.ytdlp.cli_args }}</code>
+            </div>
+            <div class="col-md-12">
               <div class="small text-muted">Cookies File</div>
               {% if config_info.ytdlp.cookies_path %}
                 <code class="text-break">{{ config_info.ytdlp.cookies_path }}</code>
@@ -278,7 +286,49 @@
         </div>
       </div>
       <div class="alert alert-info small">
-        <strong>Cookies:</strong> Required for downloading age-restricted or member-only content. Export from browser using a cookie extension.
+        <strong>yt-dlp:</strong> Uses resolved binary path (local <code>./bin/yt-dlp</code> or system).
+        Cookies are required for age-restricted, member-only, or platform-specific content (Discord, Twitch VODs).
+        Export cookies from your browser using a cookie extension and set <code>YT_DLP_COOKIES</code> to the file path.
+      </div>
+      {% endif %}
+
+      {% if section == 'binaries' %}
+      <!-- Binaries Diagnostics -->
+      <div class="card mb-3">
+        <div class="card-header d-flex align-items-center gap-2">
+          <i class="bi bi-terminal"></i> <strong>Binary Paths (Resolved)</strong>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-12">
+              <div class="small text-muted">Prefer System FFmpeg</div>
+              {% if config_info.binaries.prefer_system_ffmpeg %}
+                <span class="badge bg-info-subtle text-info">Enabled</span>
+                <small class="text-muted ms-2">Using system ffmpeg instead of ./bin/ffmpeg</small>
+              {% else %}
+                <span class="badge bg-secondary-subtle text-secondary">Disabled</span>
+                <small class="text-muted ms-2">Using ./bin/ffmpeg if available</small>
+              {% endif %}
+            </div>
+            <div class="col-md-4">
+              <div class="small text-muted">FFmpeg (Resolved)</div>
+              <code class="text-break">{{ config_info.binaries.ffmpeg_resolved }}</code>
+            </div>
+            <div class="col-md-4">
+              <div class="small text-muted">FFprobe (Resolved)</div>
+              <code class="text-break">{{ config_info.binaries.ffprobe_resolved }}</code>
+            </div>
+            <div class="col-md-4">
+              <div class="small text-muted">yt-dlp (Resolved)</div>
+              <code class="text-break">{{ config_info.binaries.ytdlp_resolved }}</code>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="alert alert-info small">
+        <strong>Local binaries:</strong> Install to <code>./bin/</code> using <code>scripts/install_local_binaries.sh</code>.
+        <strong>System binaries:</strong> Use system PATH versions (e.g., from apt/yum/brew).
+        Toggle "Prefer System FFmpeg" to choose between local and system ffmpeg.
       </div>
       {% endif %}
 
@@ -348,13 +398,28 @@
               <div class="col-md-6">
                 <label class="form-label">{{ item.label }}</label>
                 {% if item.type == 'bool' %}
-                  {% set checked = values.get(item.key, '').lower() in ['1','true','yes','on'] %}
+                  {% set current_value = values.get(item.key, '') %}
+                  {% set default_value = item.get('default', '') %}
+                  {% set checked = current_value.lower() in ['1','true','yes','on'] if current_value else default_value.lower() in ['1','true','yes','on'] %}
                   <div class="form-check form-switch">
                     <input class="form-check-input" type="checkbox" name="setting_{{ item.key }}" {% if checked %}checked{% endif %}>
-                    <span class="form-text">Enable/Disable</span>
+                    <span class="form-text">Enable/Disable{% if item.get('default') %} (Default: {{ 'On' if default_value.lower() in ['1','true','yes','on'] else 'Off' }}){% endif %}</span>
                   </div>
+                {% elif item.type == 'select' %}
+                  <select class="form-select" name="setting_{{ item.key }}">
+                    {% for option_value, option_label in item.options %}
+                      <option value="{{ option_value }}" {% if values.get(item.key, '') == option_value %}selected{% endif %}>{{ option_label }}</option>
+                    {% endfor %}
+                  </select>
                 {% else %}
-                  <input class="form-control" name="setting_{{ item.key }}" value="{{ values.get(item.key, '') }}">
+                  {% set current_value = values.get(item.key, '') %}
+                  {% set default_value = item.get('default', '') %}
+                  <input class="form-control" name="setting_{{ item.key }}" value="{{ current_value }}" {% if default_value and not current_value %}placeholder="{{ default_value }}"{% endif %}>
+                  {% if item.get('help') %}
+                    <div class="form-text small">{{ item.help }}</div>
+                  {% elif default_value and not current_value %}
+                    <div class="form-text small">Default: {{ default_value }}</div>
+                  {% endif %}
                 {% endif %}
               </div>
               {% endfor %}

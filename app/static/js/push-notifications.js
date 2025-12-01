@@ -60,7 +60,9 @@
   async function subscribeToPush(registration) {
     if (!VAPID_PUBLIC_KEY) {
       console.error('[Push] VAPID public key not configured');
-      alert('Push notifications are not configured on this server.');
+      if (typeof showToast === 'function') {
+        showToast('Push notifications are not configured on this server', 'error');
+      }
       return;
     }
 
@@ -70,7 +72,9 @@
 
       if (permission !== 'granted') {
         console.log('[Push] Notification permission denied');
-        alert('Please allow notifications to enable push notifications.');
+        if (typeof showToast === 'function') {
+          showToast('Please allow notifications to enable push notifications', 'warning');
+        }
         return;
       }
 
@@ -89,7 +93,9 @@
       showToast('Push notifications enabled!', 'success');
     } catch (error) {
       console.error('[Push] Failed to subscribe:', error);
-      alert('Failed to enable push notifications. Please try again.');
+      if (typeof showToast === 'function') {
+        showToast('Failed to enable push notifications. Please try again.', 'error');
+      }
     }
   }
 
@@ -112,7 +118,9 @@
       }
     } catch (error) {
       console.error('[Push] Failed to unsubscribe:', error);
-      alert('Failed to disable push notifications. Please try again.');
+      if (typeof showToast === 'function') {
+        showToast('Failed to disable push notifications. Please try again.', 'error');
+      }
     }
   }
 

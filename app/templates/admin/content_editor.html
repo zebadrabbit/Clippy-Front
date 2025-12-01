@@ -1,17 +1,18 @@
 {% extends "base.html" %}
 
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin-dark.css') }}">
+{% endblock %}
+
 {% block content %}
 <div class="container py-4">
-  <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2 class="mb-0"><i class="bi bi-pencil-square"></i> Content Editor</h2>
-  </div>
-
   <div class="row">
-    <div class="col-12 col-lg-3 mb-4 mb-lg-0">
+    <h2 class="mb-3"><i class="bi bi-pencil-square"></i> Admin Dashboard</h2>
+    <div class="col-12 col-lg-3 mb-3 mb-lg-0 admin-sidebar">
       {% set active_page = 'content_editor' %}
       {% include 'admin/_includes/sidebar.html' with context %}
     </div>
-    <div class="col-12 col-lg-9">
+    <div class="col-12 col-lg-9 admin-content">
       <!-- Info Alert -->
       <div class="alert alert-info">
         <i class="bi bi-info-circle me-2"></i>
@@ -21,7 +22,7 @@
       <!-- Content Areas -->
       {% for area_name, area_data in files_by_area.items() %}
       <div class="card mb-4">
-        <div class="card-header bg-primary text-white">
+        <div class="card-header">
           <h5 class="mb-0"><i class="{{ area_data.icon }} me-2"></i>{{ area_name }}</h5>
         </div>
         <div class="card-body">

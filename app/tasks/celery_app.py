@@ -67,6 +67,10 @@ def make_celery(app_name=__name__):
             "schedule": 86400.0,  # Run daily (24 hours in seconds)
             "args": (config.NOTIFICATION_RETENTION_DAYS,),
         },
+        "check-binary-updates": {
+            "task": "app.tasks.binary_updates.check_binary_updates_task",
+            "schedule": 604800.0,  # Run weekly (7 days in seconds)
+        },
     }
     celery_app.conf.beat_schedule = beat_schedule
 

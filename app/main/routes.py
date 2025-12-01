@@ -2761,6 +2761,13 @@ def account_notifications():
     )
 
 
+@main_bp.route("/account/preferences")
+@login_required
+def account_preferences():
+    """Display user preferences."""
+    return render_template("auth/account_preferences.html", title="Preferences")
+
+
 @main_bp.route("/notifications")
 @login_required
 def notifications_page():

@@ -63,7 +63,9 @@ function setupNavigation(wizard) {
 
   nextBtn?.addEventListener('click', async () => {
     if (!wizard.projectId) {
-      alert('No project loaded.');
+      if (typeof showToast === 'function') {
+        showToast('No project loaded.', 'error');
+      }
       return;
     }
     try {
@@ -504,7 +506,9 @@ function updateProgressUI() {
  */
 async function startCompilation(wizard) {
   if (!wizard.projectId) {
-    alert('No project loaded yet.');
+    if (typeof showToast === 'function') {
+      showToast('No project loaded yet.', 'error');
+    }
     return;
   }
 
@@ -572,7 +576,9 @@ async function startCompilation(wizard) {
       .filter(v => Number.isFinite(v));
 
     if (!ids.length) {
-      alert('Add at least one clip to the timeline.');
+      if (typeof showToast === 'function') {
+        showToast('Add at least one clip to the timeline.', 'warning');
+      }
       if (cancelBtn) cancelBtn.disabled = true;
       if (startBtn) startBtn.disabled = false;
       return;
@@ -683,7 +689,9 @@ async function startCompilation(wizard) {
     compileTimer = setInterval(poll, 1200);
     poll();
   } catch (e) {
-    alert('Couldn\'t start the cut: ' + e.message);
+    if (typeof showToast === 'function') {
+      showToast('Couldn\'t start the cut: ' + e.message, 'error');
+    }
   }
 }
 

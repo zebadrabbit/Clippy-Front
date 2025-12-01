@@ -190,7 +190,9 @@
       ensureBsModal().hide();
       showToast('Media updated successfully', 'success');
     } else {
-      alert((resp && resp.error) || 'Update failed');
+      if (typeof showToast === 'function') {
+        showToast((resp && resp.error) || 'Update failed', 'error');
+      }
     }
   });
 
@@ -209,7 +211,9 @@
       ensureBsModal().hide();
       showToast('Media deleted successfully', 'success');
     } else {
-      alert((resp && resp.error) || 'Delete failed');
+      if (typeof showToast === 'function') {
+        showToast((resp && resp.error) || 'Delete failed', 'error');
+      }
     }
   });
 
@@ -245,7 +249,9 @@
       if (card) card.closest('.col').remove();
       showToast('Media deleted successfully', 'success');
     } else {
-      alert((resp && resp.error) || 'Delete failed');
+      if (typeof showToast === 'function') {
+        showToast((resp && resp.error) || 'Delete failed', 'error');
+      }
     }
   }
 

@@ -47,10 +47,8 @@ document.addEventListener('DOMContentLoaded', function() {
       .then(data => {
         if (data.success) {
           // Show success message
-          const alert = document.getElementById('verification-alert');
-          if (alert) {
-            alert.className = 'alert alert-success';
-            alert.innerHTML = '<i class="bi bi-check-circle"></i> Verification email sent! Please check your inbox.';
+          if (typeof showToast === 'function') {
+            showToast('Verification email sent! Please check your inbox.', 'success');
           }
           // Update button state
           btn.innerHTML = '<i class="bi bi-check"></i> Email Sent';
@@ -68,11 +66,9 @@ document.addEventListener('DOMContentLoaded', function() {
       })
       .catch(error => {
         console.error('Error:', error);
-        // Show error in alert
-        const alert = document.getElementById('verification-alert');
-        if (alert) {
-          alert.className = 'alert alert-danger';
-          alert.innerHTML = '<i class="bi bi-exclamation-triangle"></i> Failed to send verification email. Please try again.';
+        // Show error toast
+        if (typeof showToast === 'function') {
+          showToast('Failed to send verification email. Please try again.', 'error');
         }
         // Reset button
         btn.disabled = false;

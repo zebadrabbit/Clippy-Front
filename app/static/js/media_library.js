@@ -80,7 +80,10 @@
       });
       this.on('error', function(file, errorMessage, xhr) {
         console.error('Upload error:', errorMessage, xhr);
-        alert('Upload failed: ' + (typeof errorMessage === 'string' ? errorMessage : JSON.stringify(errorMessage)));
+        const msg = typeof errorMessage === 'string' ? errorMessage : JSON.stringify(errorMessage);
+        if (typeof showToast === 'function') {
+          showToast('Upload failed: ' + msg, 'error');
+        }
         try { dz.removeFile(file); } catch (_) {}
       });
       this.on('complete', function(file) {

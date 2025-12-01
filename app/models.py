@@ -1158,6 +1158,31 @@ class SystemSetting(db.Model):
     def __repr__(self) -> str:
         return f"<SystemSetting {self.key}={self.value}>"
 
+    @classmethod
+    def get(cls, key: str, default: str | None = None) -> str | None:
+        """Get a system setting value by key."""
+        setting = cls.query.filter_by(key=key).first()
+        return setting.value if setting else default
+
+    @classmethod
+    def set(
+        cls, key: str, value: str, value_type: str = "str", group: str | None = None
+    ) -> "SystemSetting":
+        """Set a system setting value, creating or updating as needed."""
+        setting = cls.query.filter_by(key=key).first()
+        if setting:
+            setting.value = str(value)
+            setting.updated_at = datetime.utcnow()
+        else:
+            setting = cls(
+                key=key,
+                value=str(value),
+                value_type=value_type,
+                group=group,
+            )
+            db.session.add(setting)
+        return setting
+
 
 class Theme(db.Model):
     """UI theme with colors and branding assets.

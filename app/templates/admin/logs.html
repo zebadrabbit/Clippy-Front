@@ -1,15 +1,213 @@
 {% extends "base.html" %}
 
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin-dark.css') }}">
+<style>
+  .log-entry {
+    font-size: 0.9rem;
+    padding: 0.75rem 1rem !important;
+    background-color: #36363c !important;
+  }
+  .log-entry-error {
+    border-left: 5px solid var(--bs-danger) !important;
+  }
+  .log-entry-warning {
+    border-left: 5px solid var(--bs-warning) !important;
+  }
+  .log-entry-debug {
+    border-left: 5px solid var(--bs-secondary) !important;
+  }
+  .log-entry-info {
+    border-left: 5px solid var(--bs-info) !important;
+  }
+  .log-timestamp {
+    color: var(--bs-secondary);
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+  .log-level {
+    display: inline-block;
+  }
+  .log-event {
+    font-weight: 500;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .log-logger {
+    color: var(--bs-secondary);
+    font-size: 0.85rem;
+    font-family: 'Courier New', monospace;
+  }
+  .log-data {
+    color: var(--bs-text-muted);
+    font-size: 0.85rem;
+    font-family: 'Courier New', monospace;
+  }
+  .log-data strong {
+    color: var(--bs-secondary);
+  }
+  .log-json {
+    background-color: var(--bs-secondary-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.25rem;
+    padding: 0.5rem;
+    margin-top: 0.5rem;
+    overflow-x: auto;
+    font-size: 0.8rem;
+  }
+  .log-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container py-4">
-  <h2 class="mb-3"><i class="bi bi-clipboard-data"></i> Logs</h2>
-  <div class="list-group">
-    {% for log in logs %}
-      <div class="list-group-item d-flex justify-content-between">
-        <span>[{{ log.timestamp }}] {{ log.level }}</span>
-        <span>{{ log.message }}</span>
+  <div class="row">
+    <h2 class="mb-3"><i class="bi bi-clipboard-data"></i> Admin Dashboard</h2>
+    <div class="col-12 col-lg-3 mb-3 mb-lg-0 admin-sidebar">
+      {% set active_page = 'logs' %}
+      {% include 'admin/_includes/sidebar.html' with context %}
+    </div>
+    <div class="col-12 col-lg-9 admin-content">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">System Logs</h3>
+        <a href="{{ url_for('admin.logs', log_file=log_file, lines=lines_to_show, level=level_filter, search=search_query) }}" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-arrow-clockwise"></i> Refresh
+        </a>
       </div>
-    {% endfor %}
+
+      <!-- Filters -->
+      <div class="card mb-3">
+        <div class="card-body">
+          <form method="get" class="row g-3">
+            <div class="col-md-3">
+              <label class="form-label">Log File</label>
+              <select name="log_file" class="form-select" onchange="this.form.submit()">
+                <option value="app" {% if log_file == 'app' %}selected{% endif %}>App Logs (app.json)</option>
+                <option value="worker" {% if log_file == 'worker' %}selected{% endif %}>Worker Logs (worker.json)</option>
+                <option value="error" {% if log_file == 'error' %}selected{% endif %}>Error Logs (error.json)</option>
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Lines</label>
+              <select name="lines" class="form-select" onchange="this.form.submit()">
+                <option value="50" {% if lines_to_show == 50 %}selected{% endif %}>50</option>
+                <option value="100" {% if lines_to_show == 100 %}selected{% endif %}>100</option>
+                <option value="250" {% if lines_to_show == 250 %}selected{% endif %}>250</option>
+                <option value="500" {% if lines_to_show == 500 %}selected{% endif %}>500</option>
+                <option value="1000" {% if lines_to_show == 1000 %}selected{% endif %}>1000</option>
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Level</label>
+              <select name="level" class="form-select" onchange="this.form.submit()">
+                <option value="" {% if not level_filter %}selected{% endif %}>All</option>
+                <option value="debug" {% if level_filter == 'debug' %}selected{% endif %}>Debug</option>
+                <option value="info" {% if level_filter == 'info' %}selected{% endif %}>Info</option>
+                <option value="warning" {% if level_filter == 'warning' %}selected{% endif %}>Warning</option>
+                <option value="error" {% if level_filter == 'error' %}selected{% endif %}>Error</option>
+              </select>
+            </div>
+            <div class="col-md-5">
+              <label class="form-label">Search</label>
+              <div class="input-group">
+                <input type="text" name="search" class="form-control" placeholder="Search logs..." value="{{ search_query }}">
+                <button type="submit" class="btn btn-outline-secondary">
+                  <i class="bi bi-search"></i>
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Log Info -->
+      {% if not log_exists %}
+        <div class="alert alert-warning">
+          <i class="bi bi-exclamation-triangle"></i> Log file not found: <code>{{ log_path }}</code>
+        </div>
+      {% else %}
+        <div class="alert alert-info small">
+          <i class="bi bi-info-circle"></i>
+          Showing <strong>{{ logs|length }}</strong> most recent entries from <code>{{ log_path }}</code>
+          {% if level_filter %} | Filtered by level: <strong>{{ level_filter.upper() }}</strong>{% endif %}
+          {% if search_query %} | Search: <strong>{{ search_query }}</strong>{% endif %}
+        </div>
+      {% endif %}
+
+      <!-- Logs -->
+      {% if logs %}
+        <div class="card">
+          <div class="card-body p-0">
+            <div class="list-group list-group-flush">
+              {% for log in logs %}
+                <div class="list-group-item log-entry log-entry-{{ log.level|lower }}">
+                  <div class="log-header">
+                    <span class="log-timestamp">
+                      {% if log.timestamp is string %}
+                        {{ log.timestamp }}
+                      {% else %}
+                        {{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}
+                      {% endif %}
+                    </span>
+                    <span class="log-level">
+                      {% if log.level == 'ERROR' or log.level == 'CRITICAL' %}
+                        <span class="badge bg-danger">{{ log.level }}</span>
+                      {% elif log.level == 'WARNING' %}
+                        <span class="badge bg-warning text-dark">{{ log.level }}</span>
+                      {% elif log.level == 'DEBUG' %}
+                        <span class="badge bg-secondary">{{ log.level }}</span>
+                      {% else %}
+                        <span class="badge bg-info">{{ log.level }}</span>
+                      {% endif %}
+                    </span>
+                    {% if log.logger %}
+                      <span class="log-logger">{{ log.logger }}</span>
+                    {% endif %}
+                  </div>
+
+                  <div class="log-event">{{ log.event }}</div>
+
+                  {% if log.data %}
+                    <div class="log-data mt-2">
+                      {% for key, value in log.data.items() %}
+                        {% if key not in ['_record', 'process', 'process_name', 'thread', 'thread_name'] %}
+                          <div><strong>{{ key }}:</strong> {{ value }}</div>
+                        {% endif %}
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+
+                  <div class="mt-2">
+                    <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#json-{{ loop.index }}">
+                      <i class="bi bi-code-square"></i> View JSON
+                    </button>
+                  </div>
+
+                  <div class="collapse" id="json-{{ loop.index }}">
+                    <pre class="log-json mb-0"><code>{{ log.raw | tojson(indent=2) }}</code></pre>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      {% elif log_exists %}
+        <div class="alert alert-secondary">
+          <i class="bi bi-inbox"></i> No log entries found matching the current filters.
+        </div>
+      {% endif %}
+
+      <div class="alert alert-info small mt-3">
+        <strong>Note:</strong> Logs are stored as structured JSON in <code>instance/logs/</code>.
+        Files rotate at 50 MB, keeping 10 backups (500 MB total).
+        See <a href="{{ url_for('admin.system_config', section='logging') }}" class="alert-link">Logging Configuration</a> for more details.
+      </div>
+    </div>
   </div>
 </div>
 {% endblock %}

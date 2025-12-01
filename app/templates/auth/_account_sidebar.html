@@ -65,6 +65,9 @@
     </h6>
   </div>
   <div class="list-group list-group-flush">
+    <a href="{{ url_for('main.account_preferences') }}" class="list-group-item list-group-item-action {% if active=='preferences' %}active{% endif %}">
+      <i class="bi bi-sliders"></i> Preferences
+    </a>
     <a href="{{ url_for('main.account_notifications') }}" class="list-group-item list-group-item-action {% if active=='notifications' %}active{% endif %}">
       <i class="bi bi-bell"></i> Notifications
     </a>

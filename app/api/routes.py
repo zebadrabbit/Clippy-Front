@@ -449,3 +449,97 @@ def enrich_clip_urls_api():
             "count": len(enriched_clips),
         }
     )
+
+
+# ============================================================================
+# User Preferences API Endpoints
+# ============================================================================
+
+
+@api_bp.route("/user-preferences", methods=["GET"])
+@login_required
+def get_user_preferences():
+    """
+    Get user preferences.
+
+    Returns:
+        {
+            "preferences": {
+                "default_platform_preset": "youtube",
+                "theme": "dark",
+                "language": "en"
+            }
+        }
+    """
+    # For now, return default values since we don't have a preferences table yet
+    # TODO: Add UserPreferences model or fields to User model
+    preferences = {
+        "default_platform_preset": getattr(
+            current_user, "default_platform_preset", "youtube"
+        ),
+        "theme": getattr(current_user, "theme", "dark"),
+        "language": getattr(current_user, "language", "en"),
+    }
+    return jsonify({"preferences": preferences})
+
+
+@api_bp.route("/user-preferences", methods=["PUT"])
+@login_required
+def update_user_preferences():
+    """
+    Update user preferences.
+
+    Request body:
+        {
+            "default_platform_preset": str (optional),
+            "theme": str (optional),
+            "language": str (optional)
+        }
+
+    Returns:
+        {
+            "success": true,
+            "preferences": { ... }
+        }
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    # For now, just return success since we don't have a preferences table yet
+    # TODO: Add UserPreferences model or fields to User model and save them
+
+    # Validate platform preset if provided
+    if "default_platform_preset" in data:
+        valid_presets = [
+            "youtube",
+            "youtube_shorts",
+            "tiktok",
+            "instagram_feed",
+            "instagram_reel",
+            "instagram_story",
+            "twitter",
+            "facebook",
+            "twitch",
+            "custom",
+        ]
+        if data["default_platform_preset"] not in valid_presets:
+            return jsonify({"error": "Invalid platform preset"}), 400
+
+    # Validate theme if provided
+    if "theme" in data:
+        if data["theme"] not in ["light", "dark", "auto"]:
+            return jsonify({"error": "Invalid theme"}), 400
+
+    # Validate language if provided
+    if "language" in data:
+        if data["language"] not in ["en", "es", "fr"]:
+            return jsonify({"error": "Invalid language"}), 400
+
+    preferences = {
+        "default_platform_preset": data.get("default_platform_preset", "youtube"),
+        "theme": data.get("theme", "dark"),
+        "language": data.get("language", "en"),
+    }
+
+    return jsonify({"success": True, "preferences": preferences})
